@@ -76,6 +76,10 @@ It runs everything, not just the current change's tests, so a later change can't
 | A6b | Fidelity: the reference against every hand-computed `expected.json` | `npm run fidelity` | P2.2 |
 | A6c | Fidelity: the TypeScript loader against `expected.json`, in two staging modes, with idempotency fingerprints | `npm run fidelity:loader` | P4.5 |
 | A7 | ccusage comparison on fixtures, with known deltas | `npm run compare:ccusage` | P2.3 |
+
+The same comparison runs against a user's own logs as `nilometer verify` (D-064). Its rules live in
+`core/verify/compare.ts`, shared with A7 so the two cannot drift; A7 passing unchanged after that
+extraction is the evidence it changed nothing.
 | A8 | Idempotency fingerprints | part of A6c | P4.3 |
 | A9 | Banned-phrase test over rendered viewer output | `vitest run tests/wording` | P7.1 |
 | A10a–c | Secret and personal-data scan | `gitleaks git` (history) · `gitleaks dir` (working tree) · `npm run scan:personal` | P0.2 |

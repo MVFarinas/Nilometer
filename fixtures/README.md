@@ -150,3 +150,15 @@ The text is: the concatenation of every string `message.content[].text` when `co
 - **Ordering:** requests, events, and every report list are sorted by `(file, first run, line)`, as defined under Reading.
 - **Null fields in totals:** they count as 0.
 - **`requests`** is the post-dedup set. `lines.request` counts request lines before dedup.
+
+### 18-streaming-across-midnight
+
+One response written as two cumulative snapshots five seconds apart, straddling UTC midnight. Pins
+which day a streamed response counts on when its snapshots fall either side of the boundary
+([D-058](../decisions.md)).
+
+### 19-repeated-snapshot-across-midnight
+
+One response written as three lines carrying the **same** counts, straddling UTC midnight. Case 18's
+counts grow, so the largest-output rule picks a line by itself; here it picks none, and the tie-break
+decides the day. Pins the earliest-of-equals rule ([D-065](../decisions.md)).

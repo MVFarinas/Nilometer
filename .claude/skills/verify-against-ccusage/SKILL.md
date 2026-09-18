@@ -5,7 +5,7 @@ description: Build or run the fidelity suite that proves ingestion and cost numb
 
 # Verifying the numbers
 
-**Counts are necessary, not sufficient.** Row counts can match while token values are shifted, partial, or double-counted. This suite uses five checks, each stronger than the last. A change to ingest, dedup, or pricing isn't done until all five pass. Decisions: D-001, D-002, D-003, D-005, D-011.
+**Counts are necessary, not sufficient.** Row counts can match while token values are shifted, partial, or double-counted. This suite uses five checks, each stronger than the last, and `nilometer verify` carries the same comparison to a user's own machine. A change to ingest, dedup, or pricing isn't done until all five pass. Decisions: D-001, D-002, D-003, D-005, D-011.
 
 ## Fixtures
 
@@ -38,6 +38,26 @@ The checks compare our SQL against a **separate, deliberately naive implementati
 
 - **Share no code.** It must not import the loader's parser, dedup, or classification helpers. The two have to agree independently, not share one mistake.
 - **When a rule changes in `decisions.md`, change both implementations.** If only one changes, the suite fails, and that failure is the point.
+
+## The same comparison, on a user's own logs
+
+`nilometer verify` (D-064) applies the rules below where the logs actually are, not to the fixtures.
+The comparison itself — `sameValue`, `diffTotals`, `normalizeCcusage` — lives in
+`core/verify/compare.ts` and is **shared** by the audit and the command, so the two can never answer
+"do these agree" differently. Change the rules in one place.
+
+What `verify` deliberately does not do, and the audit still must:
+
+- **Cost.** `verify` compares tokens only: cost needs both price tables to agree, which is a
+  different question from whether the logs were read the same way. The fixture comparison checks
+  cost, because there both tables are known.
+- **Known deltas.** `verify` has no list of expected disagreements; it reports what it finds. The
+  documented deltas below belong to the fixtures.
+- **Everything already gone.** `verify` compares only days both sides can see, and excludes the
+  current day, because ingestion is a snapshot and Claude Code keeps writing after it.
+
+Its output carries no path, repository name, session id or prompt text, so a tester can send a
+result without sending their data. A test asserts that; keep it true.
 
 ## Comparing against ccusage
 
