@@ -794,3 +794,28 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Existing installs move across by running `init` again**, which updates the command in place and keeps the install record. Nothing needs to be uninstalled first.
   - **The data directory now holds an executable script**, listed in `DATA_DIR_FILES` so it is made owner-only with everything else. It sits beside `wrapped-command`, which was already executed and already protected.
   - **Publishing to a registry is no longer blocked by this.** It stays unscheduled for its own reasons (an account, a name that can't be unpublished quietly, and a release workflow).
+
+## D-057: Node 24 with `better-sqlite3` stays; `node:sqlite` is measured and kept in reserve (2026-09-18)
+
+- **Status:** accepted. Closes R2.3, which had been "decide from the spike" since the release plan was written.
+- **Context:** The runtime is what the tool asks of someone else's machine. `better-sqlite3` is a native module: it needs a prebuilt binary for the platform or a compiler, and it is compiled against one Node major version — a mismatch doesn't degrade, it crashes. That was observed on the development machine, where the shell's older Node segfaults on the module built for Node 24. Node's built-in `node:sqlite` would remove the native dependency entirely. The question was whether it produces the same numbers, which is the only thing that matters here.
+- **The spike (2026-09-18), both drivers against the same real database, read-only:**
+
+  | | `better-sqlite3` | `node:sqlite` |
+  |---|---|---|
+  | Every report view and three aggregates, compared row for row | reference | **0 mismatches** |
+  | Integer columns (token sums) | `number` | `number`, equal |
+  | BLOB columns (`raw_lines.bytes`) | `Buffer` | `Uint8Array` |
+  | Reading every report query | 19.1 s | 21.5 s (about 12% slower) |
+  | Experimental warning on Node 24.21 | — | none |
+
+- **What a port would cost:** eight `db.transaction()` call sites become explicit `BEGIN`/`COMMIT`, three `db.pragma()` calls become `exec("PRAGMA …")`, and the one `.raw()` maps to `setReturnArrays()`. The BLOB difference is the only trap: ingestion calls `Buffer` methods on `raw_lines.bytes`, and a `Uint8Array` has no `toString("utf8")` or `equals`. It fails as a `TypeError` rather than a wrong number, which is the right way for it to fail.
+- **Options:**
+  - (a) **Keep Node 24 with `better-sqlite3`.** Chosen.
+  - (b) Port to `node:sqlite` now. Rejected for now: the prize is losing the native build, which nobody has yet been unable to install, while the port touches every write path and has to be re-verified against the fidelity checks and ccusage. It also makes reads about 12% slower, on a report that is already too slow for a different reason.
+  - (c) Support a wider range of Node versions. Rejected: every major needs its own `better-sqlite3` build and its own CI job, and a version mismatch is exactly the crash this project already hit once.
+- **Decision:** (a). `.nvmrc` and `engines` stay at Node 24.
+- **Consequences:**
+  - **`node:sqlite` is now a measured option, not a guess.** If someone can't install the native module, or if publishing to a registry makes prebuilt binaries a support burden, the port is known to produce identical results and the work is known to be contained.
+  - **Revisit when there's a reason**, not on a schedule: a platform without a prebuilt binary, or a Node release that breaks the module.
+  - **The spike found something else.** Reading every report view takes about 16 seconds on a real database, and `obs_unattributed_usage` is about 55% of that while returning one row per window. That is a separate problem from the driver, and the faster driver is the one already in use.
