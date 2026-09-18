@@ -185,12 +185,36 @@ export interface RunDeps {
 }
 
 /**
+ * The audit's checks as this platform can run them.
+ *
+ * Windows skips 32 tests it can't run: symbolic links need Developer Mode, and `chmod` there only
+ * toggles the read-only attribute (D-049). The functions those tests cover are then never executed,
+ * so the 100% threshold can't be met by a suite that is deliberately smaller — it would be
+ * measuring the skips, not the code. A4 therefore runs the tests without coverage on Windows, and
+ * says so in the summary, so a record pasted from that machine can't be read as a full audit
+ * (D-052). The thresholds stay exactly where they are on macOS and in CI, which is where the whole
+ * suite runs.
+ * @param platform - The platform; defaults to this one.
+ * @returns The checks to run, in order.
+ */
+export function checksFor(platform: NodeJS.Platform = process.platform): readonly AuditCheck[] {
+  if (platform !== "win32") {
+    return AUDIT_CHECKS;
+  }
+  return AUDIT_CHECKS.map((check) =>
+    check.id === "A4"
+      ? { ...check, name: "Unit tests (coverage is a POSIX gate)", args: ["run"] }
+      : check,
+  );
+}
+
+/**
  * Runs the full audit and prints its summary.
  * @param deps - Command execution, clock, and output.
- * @param checks - Checks to run; defaults to {@link AUDIT_CHECKS}.
+ * @param checks - Checks to run; defaults to what this platform can run.
  * @returns Process exit code: 0 only if every check passed and at least one ran.
  */
-export function main(deps: RunDeps, checks: readonly AuditCheck[] = AUDIT_CHECKS): number {
+export function main(deps: RunDeps, checks: readonly AuditCheck[] = checksFor()): number {
   const results = runChecks(checks, deps.run, deps.now);
   deps.print(`\n${formatSummary(results)}`);
   return results.length > 0 && results.every((result) => result.passed) ? 0 : 1;

@@ -42,7 +42,7 @@ This project documents more than a default code style would. Tooling enforces it
 
 ### Testing
 
-- **Every function has unit tests.** Enforced by a coverage threshold of **100% of functions**, **≥ 95% of lines**, and **≥ 90% of branches** in `vitest --coverage`. Lowering a threshold needs an ADR.
+- **Every function has unit tests.** Enforced by a coverage threshold of **100% of functions**, **≥ 95% of lines**, and **≥ 90% of branches** in `vitest --coverage`. Lowering a threshold needs an ADR. The thresholds are a **POSIX gate**: Windows skips the tests it can't run (symbolic links, file modes), so the functions those cover are never executed there and the threshold would be measuring the skips. On Windows `npm run audit` runs the tests without coverage and names the check `Unit tests (coverage is a POSIX gate)`, so a record pasted from that machine can't be read as a full audit (D-052).
 - **Each unit test covers** the normal case, each edge case the TSDoc names, and each `@throws`.
 - **SQL views are tested by running them** on an in-memory database seeded from fixtures, not by mocking the database.
 - **No real session logs or payloads in the repository.** Fixtures are synthetic. Checks against real logs run locally, and only pass/fail and ratios are recorded.
@@ -70,7 +70,7 @@ It runs everything, not just the current change's tests, so a later change can't
 | A1 | Types | `tsc --noEmit` (strict) | P0.2 |
 | A2 | Lint + documentation rules | `eslint .` (typescript-eslint + jsdoc) | P0.2 |
 | A3 | Formatting | `prettier --check .` | P0.2 |
-| A4 | Unit tests + coverage thresholds | `vitest run --coverage` | P0.2 |
+| A4 | Unit tests + coverage thresholds | `vitest run --coverage` (tests only on Windows, D-052) | P0.2 |
 | A5 | Schema column comments | `tsx scripts/audit/schema-docs.cli.ts` | P3.1 |
 | A6a | Fidelity: the Python reference's own unit tests | `python3 -m unittest discover -s scripts/fidelity` | P2.2 |
 | A6b | Fidelity: the reference against every hand-computed `expected.json` | `npm run fidelity` | P2.2 |

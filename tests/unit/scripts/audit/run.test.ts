@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AUDIT_CHECKS,
+  checksFor,
   commandCandidates,
   defaultDeps,
   formatSummary,
@@ -44,6 +45,27 @@ describe("AUDIT_CHECKS", () => {
   it("covers the checks added so far: A1-A7, A9, A10, and A11", () => {
     const prefixes = new Set(AUDIT_CHECKS.map((check) => check.id.replace(/[a-z]$/, "")));
     expect([...prefixes]).toEqual(["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A9", "A10", "A11"]);
+  });
+});
+
+describe("checksFor", () => {
+  it("runs the standard checks unchanged off Windows", () => {
+    expect(checksFor("darwin")).toBe(AUDIT_CHECKS);
+    expect(checksFor("linux")).toBe(AUDIT_CHECKS);
+  });
+
+  it("drops coverage from A4 on Windows and names the check accordingly (D-052)", () => {
+    // 32 tests skip there, so the functions they cover are never executed and the 100% threshold
+    // would be measuring the skips. The summary has to say the gate didn't run.
+    const windows = checksFor("win32");
+    const a4 = windows.find((check) => check.id === "A4");
+    expect(a4?.args).toEqual(["run"]);
+    expect(a4?.name).toBe("Unit tests (coverage is a POSIX gate)");
+    // Only A4 differs; every other check is the same object as on POSIX.
+    expect(windows.filter((check) => check.id !== "A4")).toEqual(
+      AUDIT_CHECKS.filter((check) => check.id !== "A4"),
+    );
+    expect(windows).toHaveLength(AUDIT_CHECKS.length);
   });
 });
 

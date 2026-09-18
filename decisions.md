@@ -707,3 +707,19 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Found by re-running on Windows, three times.** Each round found faults in the round before it, and none of them could have been seen from macOS. The first fix ran the checks but split a command path containing a space and still read a missing tool as an ordinary failure; the second fixed both but left one spawn site — the ccusage comparison's own `runCommand` — consulting nothing. Only re-running on the machine found each one.
   - **Windows without gitleaks and shellcheck** reports those three checks as `FAIL (not installed)`. That's accurate: on that machine the audit is incomplete, and the Linux CI run is what clears them.
   - **Symbolic-link tests skip on Windows without Developer Mode** (5 of them after D-050, 32 skipped in total), as D-049 established.
+
+## D-052: The coverage thresholds are a POSIX gate; Windows runs the tests without them (2026-09-18)
+
+- **Status:** accepted. Found when the PC re-ran the audit after D-051 fixed the runner.
+- **Context:** With the audit finally running on Windows, check A4 still failed there — not on a test, but on the threshold: **832 passed, 32 skipped, functions 98.74%**. The skips are the tests Windows can't run (symbolic links need Developer Mode; `chmod` only toggles the read-only attribute, D-049), and the gap is exactly the code they cover: `core/install/private-files.ts` at 85.71% of functions, `viewer/report.ts` at 66.66%, and a branch in `runCommand` that Windows returns from before reaching. The same suite reaches 100% on macOS and in CI. No amount of test-writing closes this while those tests skip, because the functions can't be executed on the platform at all.
+- **Options:**
+  - (a) Lower the thresholds, or make them platform-aware. Rejected: it weakens the gate on the platforms where the whole suite does run, and creates a second, quieter definition of "the audit passed".
+  - (b) Exclude the affected files from the threshold on Windows. Rejected: the exclusion list would have to grow with every platform-specific test, and a file excluded for one platform is excluded from everyone's attention.
+  - (c) Rewrite the skipped tests to run everywhere by injecting a fake filesystem. Rejected for now: those tests exist to check what real `chmod` and real symbolic links do (D-043, D-050). A test that only exercises injected doubles would stop being the test that caught anything.
+  - (d) **Run the tests on Windows without the coverage thresholds, and say so.** **Chosen.**
+- **Decision:** (d). `checksFor(platform)` in `scripts/audit/run.ts` drops `--coverage` from A4 on Windows and renames it `Unit tests (coverage is a POSIX gate)`. The name is in the summary table, so an audit record pasted from Windows shows on its face which gate didn't run. The thresholds are untouched where the whole suite runs.
+- **Consequences:**
+  - **Nothing is lowered.** macOS and the Linux CI job still enforce 100% of functions; a function without a test still fails the audit there.
+  - **Windows still proves the code works there**, which is what that machine is for: 864 tests, 832 run, 0 failed.
+  - **CI already agreed with this:** the Windows job runs `npx vitest run`, without coverage. This makes the local audit match what CI does.
+  - **A full audit on Windows also needs gitleaks and shellcheck**, which aren't installed there; those three checks report `FAIL (not installed)`. The complete audit is the Linux CI run and a macOS run, and that is now written down rather than assumed.
