@@ -1,0 +1,13 @@
+{
+  // Compiles only shipped code into dist/. Tests, scripts, and config files are never built.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": ".",
+    "declaration": false,
+    "sourceMap": true
+  },
+  "include": ["core", "hooks", "viewer", "cli"],
+  "exclude": ["node_modules", "dist", "coverage", "tests", "scripts"]
+}

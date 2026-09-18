@@ -1,0 +1,132 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`runCli > prints help and exits 0 with no arguments 1`] = `
+"Usage: nilometer [options] [command]
+
+Reports the observed cost of a Claude subscription.
+
+Options:
+  -h, --help                  display help for command
+
+Commands:
+  init [options]              Register the status line hook in Claude Code's
+                              settings, keeping any existing status line, then
+                              backfill from session logs.
+  ingest [options]            Read new session log lines and status line
+                              readings into the database.
+  report [options]            Print what was observed, then projections in a
+                              separate section, from the database. Run ingest
+                              first for the latest data.
+  explain [options] <metric>  List the events behind a number in the report,
+                              with where each was read from, and re-add them.
+                              Metrics: limit-hits, mid-task, lockout,
+                              not-resumed, headroom, peak, unattributed,
+                              by-model, by-repo, burn-rate, api-list-price.
+  plan-price                  Enter or list the plan's USD list price, shown
+                              beside API list price.
+  uninstall [options]         Remove the hook and restore the status line
+                              setting it replaced. Recorded data is kept.
+  help [command]              display help for command"
+`;
+
+exports[`runCli > prints stable help for explain 1`] = `
+"Usage: nilometer explain [options] <metric>
+
+List the events behind a number in the report, with where each was read from,
+and re-add them. Metrics: limit-hits, mid-task, lockout, not-resumed, headroom,
+peak, unattributed, by-model, by-repo, burn-rate, api-list-price.
+
+Options:
+  --data-dir <path>  data directory holding the database
+  --all              list every event, not only the first 20 per number
+  -h, --help         display help for command"
+`;
+
+exports[`runCli > prints stable help for ingest 1`] = `
+"Usage: nilometer ingest [options]
+
+Read new session log lines and status line readings into the database.
+
+Options:
+  --data-dir <path>  data directory holding the database and spool
+  --full             reread every file from the start instead of resuming
+  --json             print the outcome as JSON on stdout
+  -h, --help         display help for command"
+`;
+
+exports[`runCli > prints stable help for init 1`] = `
+"Usage: nilometer init [options]
+
+Register the status line hook in Claude Code's settings, keeping any existing
+status line, then backfill from session logs.
+
+Options:
+  --settings <path>  settings file to change (default: ~/.claude/settings.json)
+  --data-dir <path>  where readings are recorded (default:
+                     ~/.local/share/nilometer)
+  -h, --help         display help for command"
+`;
+
+exports[`runCli > prints stable help for plan-price 1`] = `
+"Usage: nilometer plan-price [options] [command]
+
+Enter or list the plan's USD list price, shown beside API list price.
+
+Options:
+  -h, --help                   display help for command
+
+Commands:
+  set [options] <month> <usd>  Record the plan's USD list price per month from
+                               <month> (YYYY-MM) on. Re-entering a month
+                               replaces it.
+  list [options]               List the entered plan prices.
+  help [command]               display help for command"
+`;
+
+exports[`runCli > prints stable help for plan-price list 1`] = `
+"Usage: nilometer plan-price list [options]
+
+List the entered plan prices.
+
+Options:
+  --data-dir <path>  data directory holding the database
+  -h, --help         display help for command"
+`;
+
+exports[`runCli > prints stable help for plan-price set 1`] = `
+"Usage: nilometer plan-price set [options] <month> <usd>
+
+Record the plan's USD list price per month from <month> (YYYY-MM) on.
+Re-entering a month replaces it.
+
+Options:
+  --name <plan>      the plan's name
+  --data-dir <path>  data directory holding the database
+  -h, --help         display help for command"
+`;
+
+exports[`runCli > prints stable help for report 1`] = `
+"Usage: nilometer report [options]
+
+Print what was observed, then projections in a separate section, from the
+database. Run ingest first for the latest data.
+
+Options:
+  --data-dir <path>  data directory holding the database
+  --json             print unrounded rows and the report's labels as JSON
+  --save             also save a dated copy (text and JSON) in the data
+                     directory's reports folder
+  -h, --help         display help for command"
+`;
+
+exports[`runCli > prints stable help for uninstall 1`] = `
+"Usage: nilometer uninstall [options]
+
+Remove the hook and restore the status line setting it replaced. Recorded data
+is kept.
+
+Options:
+  --settings <path>  settings file to change, if no install record names it
+  --data-dir <path>  data directory holding the install record
+  -h, --help         display help for command"
+`;

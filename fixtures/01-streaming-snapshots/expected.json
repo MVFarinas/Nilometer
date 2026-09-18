@@ -1,0 +1,88 @@
+{
+  "final": {
+    "requests": [
+      {
+        "dedup_key": "s01/m/msg_01a",
+        "file": "projects/-fixture-demo/s01.jsonl",
+        "line": 4,
+        "session_id": "s01",
+        "message_id": "msg_01a",
+        "request_id": "req_01a",
+        "model": "claude-sonnet-5",
+        "timestamp": "2026-09-01T10:00:02.000Z",
+        "is_sidechain": false,
+        "cwd": "/fixture/demo",
+        "input_tokens": 10,
+        "output_tokens": 42,
+        "cache_read_tokens": 1000,
+        "cache_write_5m_tokens": 0,
+        "cache_write_1h_tokens": 200,
+        "cache_write_unsplit_tokens": null
+      },
+      {
+        "dedup_key": "s01/m/msg_01b",
+        "file": "projects/-fixture-demo/s01.jsonl",
+        "line": 6,
+        "session_id": "s01",
+        "message_id": "msg_01b",
+        "request_id": "req_01b",
+        "model": "claude-sonnet-5",
+        "timestamp": "2026-09-01T10:01:02.000Z",
+        "is_sidechain": false,
+        "cwd": "/fixture/demo",
+        "input_tokens": 3,
+        "output_tokens": 7,
+        "cache_read_tokens": 1200,
+        "cache_write_5m_tokens": 0,
+        "cache_write_1h_tokens": 0,
+        "cache_write_unsplit_tokens": null
+      }
+    ],
+    "totals_by_model": {
+      "claude-sonnet-5": {
+        "requests": 2,
+        "input_tokens": 13,
+        "output_tokens": 49,
+        "cache_read_tokens": 2200,
+        "cache_write_5m_tokens": 0,
+        "cache_write_1h_tokens": 200,
+        "cache_write_unsplit_tokens": 0
+      }
+    },
+    "totals_by_day_utc": {
+      "2026-09-01": {
+        "claude-sonnet-5": {
+          "requests": 2,
+          "input_tokens": 13,
+          "output_tokens": 49,
+          "cache_read_tokens": 2200,
+          "cache_write_5m_tokens": 0,
+          "cache_write_1h_tokens": 200,
+          "cache_write_unsplit_tokens": 0
+        }
+      }
+    },
+    "events": [],
+    "report": {
+      "lines": {
+        "malformed": 0,
+        "limit_hit": 0,
+        "api_error": 0,
+        "synthetic_other": 0,
+        "request": 4,
+        "retry_notice": 0,
+        "ignored_type": 2
+      },
+      "malformed": [],
+      "ignored_types": {
+        "user": 2
+      },
+      "unkeyed_requests": 0,
+      "unknown_error_values": {},
+      "missing_fields": [],
+      "unparsed_timestamps": [],
+      "non_message_iterations": [],
+      "retry_rate_limits_present": 0
+    }
+  }
+}

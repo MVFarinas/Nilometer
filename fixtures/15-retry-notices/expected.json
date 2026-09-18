@@ -1,0 +1,93 @@
+{
+  "final": {
+    "requests": [
+      {
+        "dedup_key": "s15/m/msg_15a",
+        "file": "projects/-fixture-demo/s15.jsonl",
+        "line": 3,
+        "session_id": "s15",
+        "message_id": "msg_15a",
+        "request_id": "req_15a",
+        "model": "claude-sonnet-5",
+        "timestamp": "2026-09-01T10:00:04.000Z",
+        "is_sidechain": false,
+        "cwd": "/fixture/demo",
+        "input_tokens": 2,
+        "output_tokens": 8,
+        "cache_read_tokens": 0,
+        "cache_write_5m_tokens": 0,
+        "cache_write_1h_tokens": 0,
+        "cache_write_unsplit_tokens": null
+      }
+    ],
+    "totals_by_model": {
+      "claude-sonnet-5": {
+        "requests": 1,
+        "input_tokens": 2,
+        "output_tokens": 8,
+        "cache_read_tokens": 0,
+        "cache_write_5m_tokens": 0,
+        "cache_write_1h_tokens": 0,
+        "cache_write_unsplit_tokens": 0
+      }
+    },
+    "totals_by_day_utc": {
+      "2026-09-01": {
+        "claude-sonnet-5": {
+          "requests": 1,
+          "input_tokens": 2,
+          "output_tokens": 8,
+          "cache_read_tokens": 0,
+          "cache_write_5m_tokens": 0,
+          "cache_write_1h_tokens": 0,
+          "cache_write_unsplit_tokens": 0
+        }
+      }
+    },
+    "events": [
+      {
+        "class": "retry_notice",
+        "session_id": "s15",
+        "timestamp": "2026-09-01T10:00:01.000Z",
+        "file": "projects/-fixture-demo/s15.jsonl",
+        "line": 1,
+        "error": null,
+        "api_error_status": 429,
+        "window": null,
+        "reset_text": null
+      },
+      {
+        "class": "retry_notice",
+        "session_id": "s15",
+        "timestamp": "2026-09-01T10:00:02.000Z",
+        "file": "projects/-fixture-demo/s15.jsonl",
+        "line": 2,
+        "error": null,
+        "api_error_status": 429,
+        "window": null,
+        "reset_text": null
+      }
+    ],
+    "report": {
+      "lines": {
+        "malformed": 0,
+        "limit_hit": 0,
+        "api_error": 0,
+        "synthetic_other": 0,
+        "request": 1,
+        "retry_notice": 2,
+        "ignored_type": 1
+      },
+      "malformed": [],
+      "ignored_types": {
+        "system/turn_duration": 1
+      },
+      "unkeyed_requests": 0,
+      "unknown_error_values": {},
+      "missing_fields": [],
+      "unparsed_timestamps": [],
+      "non_message_iterations": [],
+      "retry_rate_limits_present": 1
+    }
+  }
+}

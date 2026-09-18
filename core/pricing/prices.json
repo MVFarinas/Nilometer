@@ -1,0 +1,147 @@
+{
+  "comment": "Anthropic API list prices, USD per million tokens. Every row was read from source_url on verified_on. effective_from 0000-01-01 means in effect since release as far as can be verified (D-020). A price change adds a row; never edit a past row. See the pricing-table skill.",
+  "rows": [
+    {
+      "model_id": "claude-fable-5-1",
+      "effective_from": "0000-01-01",
+      "input": 10,
+      "output": 50,
+      "cache_write_5m": 12.5,
+      "cache_write_1h": 20,
+      "cache_read": 0.25,
+      "fast": null,
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-13"
+    },
+    {
+      "model_id": "claude-fable-5",
+      "effective_from": "0000-01-01",
+      "input": 10,
+      "output": 50,
+      "cache_write_5m": 12.5,
+      "cache_write_1h": 20,
+      "cache_read": 1,
+      "fast": null,
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-13"
+    },
+    {
+      "model_id": "claude-opus-5",
+      "effective_from": "0000-01-01",
+      "input": 5,
+      "output": 25,
+      "cache_write_5m": 6.25,
+      "cache_write_1h": 10,
+      "cache_read": 0.5,
+      "fast": {
+        "input": 10,
+        "output": 50,
+        "cache_write_5m": 12.5,
+        "cache_write_1h": 20,
+        "cache_read": 1
+      },
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-13"
+    },
+    {
+      "model_id": "claude-opus-4-8",
+      "effective_from": "0000-01-01",
+      "input": 5,
+      "output": 25,
+      "cache_write_5m": 6.25,
+      "cache_write_1h": 10,
+      "cache_read": 0.5,
+      "fast": {
+        "input": 10,
+        "output": 50,
+        "cache_write_5m": 12.5,
+        "cache_write_1h": 20,
+        "cache_read": 1
+      },
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-13"
+    },
+    {
+      "model_id": "claude-opus-4-7",
+      "effective_from": "0000-01-01",
+      "input": 5,
+      "output": 25,
+      "cache_write_5m": 6.25,
+      "cache_write_1h": 10,
+      "cache_read": 0.5,
+      "fast": null,
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-13"
+    },
+    {
+      "model_id": "claude-opus-4-6",
+      "effective_from": "0000-01-01",
+      "input": 5,
+      "output": 25,
+      "cache_write_5m": 6.25,
+      "cache_write_1h": 10,
+      "cache_read": 0.5,
+      "fast": null,
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-13"
+    },
+    {
+      "model_id": "claude-sonnet-5",
+      "effective_from": "0000-01-01",
+      "input": 2,
+      "output": 10,
+      "cache_write_5m": 2.5,
+      "cache_write_1h": 4,
+      "cache_read": 0.2,
+      "fast": null,
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-13"
+    },
+    {
+      "model_id": "claude-sonnet-4-6",
+      "effective_from": "0000-01-01",
+      "input": 3,
+      "output": 15,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6,
+      "cache_read": 0.3,
+      "fast": null,
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-13"
+    },
+    {
+      "model_id": "claude-haiku-4-5-20251001",
+      "effective_from": "0000-01-01",
+      "input": 1,
+      "output": 5,
+      "cache_write_5m": 1.25,
+      "cache_write_1h": 2,
+      "cache_read": 0.1,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-13"
+    },
+    {
+      "model_id": "claude-haiku-4-5",
+      "effective_from": "0000-01-01",
+      "input": 1,
+      "output": 5,
+      "cache_write_5m": 1.25,
+      "cache_write_1h": 2,
+      "cache_read": 0.1,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-13"
+    }
+  ]
+}

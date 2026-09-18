@@ -1,0 +1,10 @@
+# Prettier formats code and config only. Markdown docs keep their hand-written layout.
+*.md
+node_modules/
+dist/
+coverage/
+package-lock.json
+
+# Fixtures are test data whose exact bytes matter; formatting would change what they test.
+tests/fixtures/
+fixtures/

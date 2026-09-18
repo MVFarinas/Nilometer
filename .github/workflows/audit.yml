@@ -1,0 +1,77 @@
+# Runs the standard audit (docs/development.md § Audits, D-016) on every push and pull request, and
+# the test suite on macOS and Windows (D-049).
+# Real session logs never exist in CI, so real-log checks stay local (docs/development.md § Testing).
+name: audit
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      # Pinned to the version used locally so A10 behaves identically in both places.
+      GITLEAKS_VERSION: 8.30.1
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Full history: check A10a scans every commit, not just the tip.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          # The independent reference implementation (D-017) runs on Python 3.
+          python-version: "3.12"
+
+      - name: Install gitleaks
+        run: |
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$archive" "$base/$archive"
+          curl -sSfL -o checksums.txt "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          # Refuse a corrupted or substituted download.
+          grep " $archive\$" checksums.txt | sha256sum --check -
+          tar -xzf "$archive" gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          rm -f "$archive" checksums.txt
+
+      - name: Install dependencies
+        # Install scripts are denied in package.json (allowScripts); prebuilt binaries are used.
+        run: npm ci
+
+      - name: Audit
+        run: npm run audit
+
+  tests:
+    # The full audit needs Python, gitleaks, and shellcheck, so it runs on Linux above. The test suite
+    # runs everywhere Nilometer is supported. On Windows, Git Bash provides `sh` on PATH (D-049).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Tests
+        run: npx vitest run

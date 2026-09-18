@@ -1,0 +1,122 @@
+{
+  "final": {
+    "requests": [
+      {
+        "dedup_key": "s05/r/req_05a",
+        "file": "projects/-fixture-demo/s05.jsonl",
+        "line": 2,
+        "session_id": "s05",
+        "message_id": null,
+        "request_id": "req_05a",
+        "model": "claude-sonnet-5",
+        "timestamp": "2026-09-01T10:00:02.000Z",
+        "is_sidechain": false,
+        "cwd": "/fixture/demo",
+        "input_tokens": 1,
+        "output_tokens": 8,
+        "cache_read_tokens": 0,
+        "cache_write_5m_tokens": 0,
+        "cache_write_1h_tokens": 0,
+        "cache_write_unsplit_tokens": null
+      },
+      {
+        "dedup_key": "s05/m/msg_05b",
+        "file": "projects/-fixture-demo/s05.jsonl",
+        "line": 3,
+        "session_id": "s05",
+        "message_id": "msg_05b",
+        "request_id": null,
+        "model": "claude-sonnet-5",
+        "timestamp": "2026-09-01T10:00:03.000Z",
+        "is_sidechain": false,
+        "cwd": "/fixture/demo",
+        "input_tokens": 1,
+        "output_tokens": 6,
+        "cache_read_tokens": 0,
+        "cache_write_5m_tokens": 0,
+        "cache_write_1h_tokens": 0,
+        "cache_write_unsplit_tokens": null
+      },
+      {
+        "dedup_key": null,
+        "file": "projects/-fixture-demo/s05.jsonl",
+        "line": 4,
+        "session_id": "s05",
+        "message_id": null,
+        "request_id": null,
+        "model": "claude-sonnet-5",
+        "timestamp": "2026-09-01T10:00:04.000Z",
+        "is_sidechain": false,
+        "cwd": "/fixture/demo",
+        "input_tokens": 1,
+        "output_tokens": 2,
+        "cache_read_tokens": 0,
+        "cache_write_5m_tokens": 0,
+        "cache_write_1h_tokens": 0,
+        "cache_write_unsplit_tokens": null
+      },
+      {
+        "dedup_key": null,
+        "file": "projects/-fixture-demo/s05.jsonl",
+        "line": 5,
+        "session_id": "s05",
+        "message_id": null,
+        "request_id": null,
+        "model": "claude-sonnet-5",
+        "timestamp": "2026-09-01T10:00:05.000Z",
+        "is_sidechain": false,
+        "cwd": "/fixture/demo",
+        "input_tokens": 1,
+        "output_tokens": 3,
+        "cache_read_tokens": 0,
+        "cache_write_5m_tokens": 0,
+        "cache_write_1h_tokens": 0,
+        "cache_write_unsplit_tokens": null
+      }
+    ],
+    "totals_by_model": {
+      "claude-sonnet-5": {
+        "requests": 4,
+        "input_tokens": 4,
+        "output_tokens": 19,
+        "cache_read_tokens": 0,
+        "cache_write_5m_tokens": 0,
+        "cache_write_1h_tokens": 0,
+        "cache_write_unsplit_tokens": 0
+      }
+    },
+    "totals_by_day_utc": {
+      "2026-09-01": {
+        "claude-sonnet-5": {
+          "requests": 4,
+          "input_tokens": 4,
+          "output_tokens": 19,
+          "cache_read_tokens": 0,
+          "cache_write_5m_tokens": 0,
+          "cache_write_1h_tokens": 0,
+          "cache_write_unsplit_tokens": 0
+        }
+      }
+    },
+    "events": [],
+    "report": {
+      "lines": {
+        "malformed": 0,
+        "limit_hit": 0,
+        "api_error": 0,
+        "synthetic_other": 0,
+        "request": 5,
+        "retry_notice": 0,
+        "ignored_type": 0
+      },
+      "malformed": [],
+      "ignored_types": {},
+      "unkeyed_requests": 2,
+      "unknown_error_values": {},
+      "missing_fields": [],
+      "unparsed_timestamps": [],
+      "non_message_iterations": [],
+      "retry_rate_limits_present": 0
+    }
+  }
+}

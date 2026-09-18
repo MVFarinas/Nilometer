@@ -1,0 +1,26 @@
+{
+  // Type-checks every TypeScript file in the repo, tests and scripts included (audit check A1).
+  // Emitting build output is tsconfig.build.json's job, so this config never writes files.
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2024"],
+    "types": ["node"],
+    "strict": true,
+    // Array and record lookups may be undefined; forces handling of missing log fields.
+    "noUncheckedIndexedAccess": true,
+    // `{ a?: string }` must not accept an explicit `undefined`, keeping NULL-vs-absent distinct.
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    // Type-only imports must say so, which keeps the hook's runtime imports minimal (D-008).
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["core", "hooks", "viewer", "cli", "scripts", "tests", "*.config.ts"],
+  "exclude": ["node_modules", "dist", "coverage"]
+}

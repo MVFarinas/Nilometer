@@ -1,0 +1,18 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Local databases and spool files created while developing; they hold real usage data.
+*.db
+*.db-wal
+*.db-shm
+*.spool.jsonl
+
+# Machine-local files
+.DS_Store
+.env
+.env.*
+
+# Python bytecode from running the reference implementation
+__pycache__/

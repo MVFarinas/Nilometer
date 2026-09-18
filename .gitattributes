@@ -1,0 +1,4 @@
+# Check out every file exactly as committed, on every platform (D-046).
+# Git for Windows converts line endings to CRLF by default, which breaks the POSIX status line hook
+# and changes the bytes of test fixtures. Turning conversion off makes a Windows clone match the repo.
+* -text

@@ -1,0 +1,7 @@
+[
+  [
+    "{{REPO}}",
+    "{{REPO}}-worktree",
+    "{{REPO}}/packages/sub"
+  ]
+]

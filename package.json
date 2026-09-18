@@ -1,0 +1,64 @@
+{
+  "name": "nilometer",
+  "version": "0.1.0",
+  "description": "Reports the observed cost of a Claude subscription: interruptions when the plan is too small, unused headroom when it is too big.",
+  "license": "MIT",
+  "author": "Mark Fariñas",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MVFarinas/Nilometer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MVFarinas/Nilometer/issues"
+  },
+  "homepage": "https://github.com/MVFarinas/Nilometer#readme",
+  "private": true,
+  "description": "Reports the observed cost of a Claude subscription: interruptions when the plan is too small, unused headroom when it is too big.",
+  "type": "module",
+  "bin": {
+    "nilometer": "dist/cli/main.cli.js"
+  },
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "tsc -p tsconfig.build.json && node dist/cli/main.cli.js",
+    "dev": "tsx cli/main.cli.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "scan:personal": "tsx scripts/audit/scan-personal.cli.ts",
+    "audit": "tsx scripts/audit/run.cli.ts",
+    "fixtures": "tsx scripts/fixtures/generate.cli.ts",
+    "compare:ccusage": "tsx scripts/compare/ccusage.cli.ts",
+    "fidelity": "python3 scripts/fidelity/reference.py --check fixtures",
+    "fidelity:loader": "tsx scripts/fidelity/loader-check.cli.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^24.13.4",
+    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/eslint-plugin": "^1.6.27",
+    "eslint": "^10.10.0",
+    "eslint-plugin-jsdoc": "^64.3.10",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.13",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^5.0.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "commander": "^15.0.0"
+  },
+  "allowScripts": {
+    "better-sqlite3": false,
+    "esbuild": false,
+    "fsevents": false
+  }
+}
