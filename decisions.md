@@ -761,3 +761,17 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **The hook is local and uncommitted**, like the push guard in private clones, so no machine-specific path is ever committed. It has to be installed per clone, which the script's own header documents.
   - **One copy of the code.** Contributions land in public and stay there, with their author's name on them.
   - **The export stays** for as long as the two repositories both exist, and becomes unnecessary once the public one is the only place code lives.
+
+## D-055: The test run's temporary root is canonicalized, because Windows shortens long user names (2026-09-18)
+
+- **Status:** accepted. Found by the public repository's Windows CI job, which failed while the same commit passed on the Windows PC.
+- **Context:** Five `attribution.test.ts` tests failed on the GitHub Windows runner, comparing two spellings of the same directory. The runner's account name is longer than eight characters, so `TEMP` holds its 8.3 short form (a truncation ending in `~1`) while git reports the name in full. Every failing assertion was a temp path that differed only in that one segment. The tests already called `realpathSync` for the macOS case of exactly this problem (`/var` → `/private/var`), but plain `realpathSync` on Windows resolves links without expanding a short name; only `realpathSync.native` does.
+- **Why the PC didn't see it:** its user name is eight characters or fewer, so nothing is shortened there. The two Windows machines disagreed, and only CI had the long name.
+- **Options:**
+  - (a) Use `realpathSync.native` at the three call sites that failed. Rejected: it fixes the instances, and the next test to compare a built path against a tool's output starts the same way.
+  - (b) **Canonicalize the run's temporary root once, before any test derives a path from it.** Chosen. Everything downstream — every worker, every child process, every `mkdtempSync(join(tmpdir(), …))` — then spells the root the way the filesystem does.
+- **Decision:** (b), in `tests/setup/temp-root.ts`.
+- **Consequences:**
+  - **The per-test `realpathSync` calls stay** and are now redundant for the root, which is harmless: canonicalizing an already-canonical path returns it unchanged.
+  - **Not a product defect, but a real product limit.** In use, `cwd` comes from Claude Code and `repo_root` from git. If a `cwd` ever arrived with a short name, the two would disagree and one repository would be recorded as two — the same shape as the `C:`/`c:` duplicate that [D-049](decisions.md) fixed. That one was fixable in a migration because a drive letter's case can be normalized from the string alone; a short name can't, since expanding it needs the directory to still exist, and missing directories stay attributable by path (D-028). It isn't normalized, and nothing has been seen in real data. Recorded here so a duplicate repository row on Windows has a first place to look.
+  - **A second Windows machine earns its place.** The PC and the CI runner disagree about user names, temp paths, and symbolic-link permissions, and each has now caught something the other couldn't.
