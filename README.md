@@ -352,11 +352,15 @@ projections. *Built and audited 2026-09-13, and in daily use since.* Windows fol
   come from you.
 - **Linux beyond CI.** The test suite passes on Linux in CI, but nobody has yet run the hook on a
   Linux desktop for a week and compared the result.
-- **A limit hit on another account.** Every interruption number — the count, the elapsed lockout
-  time, the reset wording — was built from session logs and one subscription that has not hit a
-  limit yet. What those metrics need next is evidence from a plan that hits limits regularly, not
-  more code. If you run into limits and try this, the ingest summary counts and the report headings
-  are the useful thing to share; the reports themselves are yours and stay local.
+- **A limit hit recorded while the tool is running.** The interruption metrics — the count, the
+  elapsed lockout time, the reset wording — have exactly one real event behind them: a single
+  5-hour limit hit from July 2026, backfilled from a session log, on a Claude Code version that
+  predates automatic resumption. The metric re-sums to it correctly, and the resumption after it was
+  a person, hours after the window had already reset. What hasn't been seen is a hit recorded while
+  the status line hook is running, or a plan that reaches its limits regularly; until then
+  [D-022](decisions.md) reports the logged fields as written and labels nothing as automatic. If you
+  run into limits and try this, the ingest summary counts and the report headings are the useful
+  thing to share; the reports themselves are yours and stay local.
 
 **Under review once v1 has a month of real use:**
 

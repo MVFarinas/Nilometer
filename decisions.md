@@ -361,7 +361,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 
 ## D-022: Resumption is reported as activity; auto-resume is not inferred (2026-09-13)
 
-- **Status:** accepted, provisional. Revisit at the first limit hit logged after the hook is installed.
+- **Status:** accepted, provisional. Revisit at the first limit hit logged after the hook is installed. **Re-inspected 2026-09-18** and unchanged: the only hit on record is still the 2.1.214 one described below, and the source log has since been deleted by Claude Code's 30-day cleanup, so it survives only because ingestion copies raw lines into the database. Inspecting it again needed no file. Structure, for the next reader: `type: "assistant"`, `isApiErrorMessage: true`, `error: "rate_limit"`, no `rate_limits` on the retry; the window reset 2.8 hours after the hit, and the session's next line came about seven hours after that reset, from a `user` line with `origin.kind: "human"` preceded by two `queue-operation` lines (classified `ignored_type`, not reported as unknown).
 - **Context:** Claude Code resumes automatically after a reset since 2.1.234 (README, Auto-resume). The only logged limit hit on disk (2.1.214) predates that, so how an automatic continuation is logged hasn't been observed. The user line after that hit had `origin.kind: "human"`. Step P6.1 asked for this ADR after inspecting a post-install hit; that hit hasn't happened, and waiting would block the metric.
 - **Options:**
   - (a) Wait for a post-install hit before building the metric.
