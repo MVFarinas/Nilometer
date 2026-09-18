@@ -195,6 +195,8 @@ Install from a clone: Nilometer isn't published to npm yet. There's no GUI, inst
 
 **Requirements:** Node.js 24 (the version in `.nvmrc`), git, and Claude Code signed in with a Pro or Max subscription. Running `npm run audit` also needs Python 3, gitleaks, and shellcheck.
 
+On Node 24 before 24.15, `npm ci` prints `EBADENGINE` warnings for three lint plugins that ask for a newer Node. They're development dependencies, they don't affect Nilometer, and the install still succeeds.
+
 - **macOS:** tested.
 - **Linux:** the test suite passes in CI.
 - **Windows:** tested with **Git for Windows** installed ([D-049](decisions.md)). Claude Code runs the status line through Git Bash when Git for Windows is present, so the shell hook works unchanged; without it, Claude Code uses PowerShell and the hook can't run. Run the commands below in Git Bash. On Windows the hook adds roughly 110 ms per reply at p95, against about 35 ms on macOS (2026-09-17).
