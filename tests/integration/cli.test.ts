@@ -18,7 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SH, homeEnv } from "../setup/platform.js";
 
 /** This repository's root. */
@@ -98,6 +98,11 @@ function backups(settingsPath: string): string[] {
 /** A custom status line with formatting JSON.stringify wouldn't produce. */
 const CUSTOM =
   '{\n    "statusLine": {"type": "command", "command": "cat >/dev/null; printf \'custom %s\' ok", "padding": 0},\n    "theme": "dark"\n}\n';
+
+// Each test here starts several real CLI processes, and Node plus tsx plus coverage instrumentation
+// costs a second or two per start. Vitest's 5-second default timed this file out on a loaded
+// machine while nothing was wrong (D-051), and CI runners are slower than a laptop.
+vi.setConfig({ testTimeout: 60_000 });
 
 describe("init on each settings state", () => {
   it("no settings file: creates one; the hook records and shows the model name", () => {

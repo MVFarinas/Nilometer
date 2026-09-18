@@ -5,13 +5,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AUDIT_CHECKS,
-  type AuditCheck,
-  type CommandRunner,
-  type RunDeps,
+  NOT_STARTED,
+  commandCandidates,
   defaultDeps,
   formatSummary,
   main,
   runChecks,
+  type AuditCheck,
+  type CommandRunner,
+  type RunDeps,
 } from "../../../../scripts/audit/run.js";
 
 /** Two checks used across tests; the commands are never actually executed. */
@@ -93,12 +95,23 @@ describe("formatSummary", () => {
   it("shows the exit code of failures and counts them in the overall line", () => {
     const results = runChecks(
       CHECKS,
-      (command) => (command === "second" ? 127 : 0),
+      (command) => (command === "second" ? 2 : 0),
       () => 0,
     );
     const summary = formatSummary(results);
-    expect(summary).toContain("| X2 | Second | FAIL (exit 127) | 0.0s |");
+    expect(summary).toContain("| X2 | Second | FAIL (exit 2) | 0.0s |");
     expect(summary.endsWith("AUDIT: FAIL (1 of 2 checks failed)")).toBe(true);
+  });
+
+  it("says a check's tool isn't installed instead of printing a shell's error code (D-051)", () => {
+    // gitleaks and shellcheck aren't installed everywhere; that's a different problem from a
+    // check that ran and found something, and the summary goes into an audit record.
+    const results = runChecks(
+      CHECKS,
+      (command) => (command === "second" ? NOT_STARTED : 0),
+      () => 0,
+    );
+    expect(formatSummary(results)).toContain("| X2 | Second | FAIL (not installed) | 0.0s |");
   });
 
   it("never reports PASS for an empty result list", () => {
@@ -138,6 +151,18 @@ describe("main", () => {
     const { deps } = depsWith(run);
     main(deps);
     expect(run).toHaveBeenCalledTimes(AUDIT_CHECKS.length);
+  });
+});
+
+describe("commandCandidates", () => {
+  it("tries the plain name everywhere, and python after python3 on Windows (D-051)", () => {
+    // `npm run` puts node_modules/.bin on PATH, so the name alone is right on POSIX.
+    expect(commandCandidates("tsc", "darwin")).toEqual(["tsc"]);
+    expect(commandCandidates("python3", "darwin")).toEqual(["python3"]);
+    expect(commandCandidates("gitleaks", "linux")).toEqual(["gitleaks"]);
+    // Windows ships a python3 stub that isn't an interpreter; real installs are `python`.
+    expect(commandCandidates("python3", "win32")).toEqual(["python3", "python"]);
+    expect(commandCandidates("tsc", "win32")).toEqual(["tsc"]);
   });
 });
 

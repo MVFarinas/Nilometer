@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { slash } from "../../../setup/platform.js";
+import { absolute, slash } from "../../../setup/platform.js";
 
 import {
   type InstallOptions,
@@ -91,7 +91,7 @@ describe("resolveTargets", () => {
       dataDirOverride: "/flag-data",
     });
     expect(slash(targets.settingsPath)).toBe("/cfg/settings.json");
-    expect(targets.dataDir).toBe("/flag-data");
+    expect(slash(targets.dataDir)).toBe(absolute("/flag-data"));
   });
 });
 

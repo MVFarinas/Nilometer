@@ -4,7 +4,7 @@
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { slash } from "../../../setup/platform.js";
+import { absolute, slash } from "../../../setup/platform.js";
 
 import {
   DATA_DIR_NAME,
@@ -43,7 +43,7 @@ describe("resolveDataDir", () => {
           env: { NILOMETER_HOME: "~/aua", XDG_DATA_HOME: "/data/xdg" },
         }),
       ),
-    ).toBe("/home/example/aua");
+    ).toBe(absolute("/home/example/aua"));
   });
 
   it("makes a relative --data-dir or NILOMETER_HOME absolute (D-050)", () => {
@@ -58,18 +58,20 @@ describe("resolveDataDir", () => {
     expect(fromEnv).toBe(resolve(process.cwd(), "../mydata"));
     // An absolute value is untouched, and "~" still expands.
     expect(slash(resolveDataDir({ home: HOME, env: {}, override: "~/aua" }))).toBe(
-      "/home/example/aua",
+      absolute("/home/example/aua"),
     );
   });
 
   it("prefers the --data-dir flag over everything", () => {
     expect(
-      resolveDataDir({
-        home: HOME,
-        env: { NILOMETER_HOME: "/env/aua" },
-        override: "/flag/aua",
-      }),
-    ).toBe("/flag/aua");
+      slash(
+        resolveDataDir({
+          home: HOME,
+          env: { NILOMETER_HOME: "/env/aua" },
+          override: "/flag/aua",
+        }),
+      ),
+    ).toBe(absolute("/flag/aua"));
   });
 
   it("treats empty strings as unset", () => {

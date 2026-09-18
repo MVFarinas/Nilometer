@@ -20,7 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CAN_SYMLINK, HAS_POSIX_MODES, SH } from "../setup/platform.js";
 
 /** Absolute path of the hook under test. */
@@ -124,6 +124,11 @@ function readSpool(dataDir: string): SpoolLine[] {
 function decode(line: SpoolLine): Buffer {
   return Buffer.from(line.payload_b64, "base64");
 }
+
+// Each test here starts several real CLI processes, and Node plus tsx plus coverage instrumentation
+// costs a second or two per start. Vitest's 5-second default timed this file out on a loaded
+// machine while nothing was wrong (D-051), and CI runners are slower than a laptop.
+vi.setConfig({ testTimeout: 60_000 });
 
 describe("payload capture", () => {
   const cases: [string, Buffer][] = [

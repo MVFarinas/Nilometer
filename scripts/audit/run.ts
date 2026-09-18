@@ -100,6 +100,39 @@ export const AUDIT_CHECKS: readonly AuditCheck[] = [
   { id: "A11", name: "Shell hook lint", command: "shellcheck", args: ["hooks/statusline.sh"] },
 ];
 
+/** Exit code reported when a check's command isn't installed, or couldn't be started. */
+export const NOT_STARTED = 127;
+
+/**
+ * `cmd.exe`'s "is not recognized as an internal or external command" code.
+ *
+ * Windows ships a `python3` stub that exits with this instead of running Python, so a check that
+ * gets it hasn't really run and the next candidate is tried (D-051).
+ */
+const WINDOWS_NOT_RECOGNIZED = 9009;
+
+/**
+ * Lists the executables to try for one check's command, in order.
+ *
+ * On Windows the tools installed by npm are `.cmd` shims, which Node refuses to spawn without a
+ * shell, and `python3` may be the Windows Store stub rather than an interpreter. Everywhere else
+ * the name alone is right, because `npm run` puts `node_modules/.bin` on PATH (D-051).
+ * @param command - The command named by the check.
+ * @param platform - The platform; defaults to this one.
+ * @returns One or more commands to try, in order.
+ */
+export function commandCandidates(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  const candidates = [command];
+  if (platform === "win32" && command === "python3") {
+    // Real interpreters on Windows are usually installed as `python`.
+    candidates.push("python");
+  }
+  return candidates;
+}
+
 /**
  * Runs a command with output streamed to the terminal. Injected so tests don't spawn processes.
  * @param command - Executable name.
@@ -134,7 +167,9 @@ export function runChecks(
  */
 export function formatSummary(results: readonly CheckResult[]): string {
   const rows = results.map((result) => {
-    const status = result.passed ? "PASS" : `FAIL (exit ${result.exitCode})`;
+    // A missing tool is a different problem from a check that ran and found something.
+    const reason = result.exitCode === NOT_STARTED ? "not installed" : `exit ${result.exitCode}`;
+    const status = result.passed ? "PASS" : `FAIL (${reason})`;
     // Seconds with one decimal is precise enough to notice a slow check without noise.
     const seconds = (result.durationMs / 1000).toFixed(1);
     return `| ${result.check.id} | ${result.check.name} | ${status} | ${seconds}s |`;
@@ -177,10 +212,21 @@ export function main(deps: RunDeps, checks: readonly AuditCheck[] = AUDIT_CHECKS
 export function defaultDeps(): RunDeps {
   return {
     run: (command, args) => {
-      // Inherit stdio so each tool's own output (test counts, coverage table) reaches the log.
-      const result = spawnSync(command, args, { stdio: "inherit" });
-      // status is null when the process couldn't start (e.g. gitleaks not installed).
-      return result.status ?? 127;
+      // Windows: the tools npm installs are `.cmd` shims, which Node won't spawn without a shell.
+      // Every command and argument in AUDIT_CHECKS is a constant in this file, so there's nothing
+      // for a shell to interpolate. POSIX keeps spawning directly (D-051).
+      const shell = process.platform === "win32";
+      for (const candidate of commandCandidates(command)) {
+        // Inherit stdio so each tool's own output (test counts, coverage table) reaches the log.
+        const result = spawnSync(candidate, args, { stdio: "inherit", shell });
+        // status is null when the process couldn't start (e.g. gitleaks not installed).
+        const status = result.status ?? NOT_STARTED;
+        if (status !== NOT_STARTED && status !== WINDOWS_NOT_RECOGNIZED) {
+          return status;
+        }
+      }
+      // Nothing started: report it as not installed rather than as that shell's error code.
+      return NOT_STARTED;
     },
     now: () => performance.now(),
     print: (text) => {

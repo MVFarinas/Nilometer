@@ -9,7 +9,7 @@
  */
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 /** True on Windows. */
 export const IS_WINDOWS = process.platform === "win32";
@@ -48,6 +48,20 @@ export const CAN_SYMLINK = probeSymlinks();
  */
 export function slash(path: string): string {
   return path.replaceAll("\\", "/");
+}
+
+/**
+ * Spells a POSIX-style absolute path the way this platform's `path.resolve` returns it.
+ *
+ * `resolveDataDir` resolves its result (D-050), and on Windows resolving "/flag-data" yields
+ * "C:\\flag-data": the current drive is added. A test comparing against the POSIX spelling would
+ * fail there for a correct value, so expectations go through this instead. On POSIX it changes
+ * nothing.
+ * @param posixPath - An absolute path written with `/`, as the test states it.
+ * @returns The same path resolved for this platform, with `/` separators.
+ */
+export function absolute(posixPath: string): string {
+  return slash(resolve(posixPath));
 }
 
 /**
