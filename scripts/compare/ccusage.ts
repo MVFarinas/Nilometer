@@ -21,7 +21,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { invocation } from "../util/commands.js";
+import { NOT_STARTED, commandFound, invocation } from "../util/commands.js";
 import { openDatabase } from "../../core/db/database.js";
 import { ensureDerived } from "../../core/ingest/derive.js";
 import { ingestLogs } from "../../core/ingest/ingest.js";
@@ -573,7 +573,8 @@ export async function main(fixturesRoot: string, deps: CompareDeps): Promise<num
  * @param command - Executable name.
  * @param args - Arguments.
  * @param env - The complete environment for the child.
- * @returns Exit code (127 if it couldn't start) and captured output.
+ * @returns Exit code (127 if it couldn't start, whether the spawn failed or the command wasn't
+ *   found) and captured output.
  */
 export function runCommand(
   command: string,
@@ -581,6 +582,13 @@ export function runCommand(
   env: Readonly<Record<string, string>>,
 ): Promise<CommandResult> {
   return new Promise((resolve) => {
+    // Under a shell, a command that isn't there still starts the shell, which reports it as exit 1
+    // — the same code a tool that ran and failed uses. Looking it up first keeps "couldn't start"
+    // distinct on every platform (D-051).
+    if (!commandFound(command)) {
+      resolve({ exitCode: NOT_STARTED, stdout: "", stderr: `${command} was not found` });
+      return;
+    }
     // npm installs `npx` as a `.cmd` shim on Windows, which Node won't spawn without a shell (D-051).
     const started = invocation(command, args);
     const child = spawn(started.command, started.args, { env, shell: started.shell });

@@ -447,7 +447,9 @@ describe("runCommand and defaultDeps", () => {
   it("returns 127 when the command can't start", async () => {
     const result = await runCommand("definitely-not-a-command-xyz", [], { PATH: "/nonexistent" });
     expect(result.exitCode).toBe(127);
-    expect(result.stderr).toContain("ENOENT");
+    // POSIX reports the failed spawn itself; on Windows the command is looked up first, because a
+    // shell would report it as exit 1 like any other failure (D-051). Both say it wasn't there.
+    expect(result.stderr).toMatch(/ENOENT|was not found/);
   });
 
   it("provides a fresh empty home, file reading, and console output", () => {
