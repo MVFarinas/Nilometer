@@ -856,3 +856,20 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **A test now asserts the indexes exist**, and that this one is partial. Removing the migration fails it. Nothing in the suite measures time, so without that test a later migration could drop the index and only a person would notice, months later.
   - **Ingest writes are slightly slower**, by one small index. A line is written once and these views are read on every report.
   - **This does not decide the metric's future.** `obs_unattributed_usage` still can't be nonzero on real status line data ([D-044](decisions.md)) and may be relabeled or dropped at the review of a month's use. Making it fast doesn't argue for keeping it; if it goes, this work goes with it.
+
+## D-060: A first run says what to do next, and deleting the data is explicit and itemized (2026-09-18)
+
+- **Status:** accepted. Closes R2.5, the last item before other people use this.
+- **Context:** Two moments were never designed, only inherited — the first five minutes and the last.
+  - **The first run printed forty lines of nothing.** Every section correctly said "no data yet" and none of them said what produces data, that the two sources arrive separately, or that usage percentages need a terminal. A new user read a page of zeros to learn that nothing had happened.
+  - **There was no way to remove the data.** `uninstall` restores the settings file and keeps everything recorded, which is right by default and a dead end for someone who tried the tool and wants it gone. The README didn't say where the data was or how to delete it either.
+- **Options and decisions:**
+  - **The first run:** (a) leave the empty sections; (b) add a line at the top of them; (c) replace them until there is something to report. **Decision: (c).** A first run has no coverage to state, so there is no number the sections are protecting. `--json` is untouched, so anything reading the report programmatically still sees every key.
+  - **Deleting data:** (a) document a manual `rm`; (b) `uninstall --delete-data`. **Decision: (b).** A documented `rm -rf` on a path the user has to assemble is how the wrong directory gets deleted. The flag is opt-in and never implied: plain `uninstall` keeps everything and now names the flag, so it can be found without the README.
+  - **What gets deleted:** (a) the data directory; (b) only the files Nilometer writes, then the directory if nothing else is left. **Decision: (b).** A `--data-dir` can point at a folder holding other things, and deleting a directory because of its name would take those with it ([D-043](decisions.md) already refuses to touch shared folders). What was left behind is named in the output.
+  - **What it prints:** the files removed, how many requests and readings they held, the span those requests covered, and that it can't be undone. The database holds copies of session logs Claude Code deleted under its own 30-day cleanup, so **that output is the only remaining record of what was there.**
+- **Consequences:**
+  - **Both are guarded by tests that were watched to fail**: removing the first-run branch, and removing the "only what Nilometer wrote" filter.
+  - **A real bug came out of writing those tests.** Removing the emptied directory used `rm` without recursion, which refuses a directory; the end-to-end run had missed it because a foreign file was present, so the directory was never removed. It is `rmdir` now, which fails rather than succeeds if anything appeared since the check.
+  - **`summarizeStoredData` returns null rather than throwing** when there is no database, because `--delete-data` runs on installs that never recorded anything.
+  - **The README documents removal** beside privacy, including that only Nilometer's own files go.

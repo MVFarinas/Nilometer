@@ -17,6 +17,7 @@ import { CAN_SYMLINK, HAS_POSIX_MODES } from "../../../setup/platform.js";
 
 import {
   DATA_DIR_FILES,
+  deleteDataFiles,
   describeTightened,
   ensurePrivateDir,
   ensurePrivateFile,
@@ -201,5 +202,45 @@ describe("on a platform without POSIX modes (D-049)", () => {
     expect(ensurePrivateDir(join(created, "reports"), "win32")).toBe(true);
     expect(ensurePrivateFile(join(created, "usage.db"), "win32")).toBe(true);
     expect(existsSync(join(created, "usage.db"))).toBe(true);
+  });
+});
+
+describe("deleteDataFiles", () => {
+  it("removes only what Nilometer wrote, and the directory when nothing else is left (R2.5)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aua-delete-"));
+    for (const name of ["usage.db", "usage.db-wal", "statusline.spool.jsonl", "statusline.sh"]) {
+      writeFileSync(join(dir, name), "x");
+    }
+    mkdirSync(join(dir, "reports"));
+    writeFileSync(join(dir, "reports", "2026-09-18.txt"), "a saved report");
+    const result = deleteDataFiles(dir);
+    expect(result.removed.sort()).toEqual([
+      "reports",
+      "statusline.sh",
+      "statusline.spool.jsonl",
+      "usage.db",
+      "usage.db-wal",
+    ]);
+    expect(result.kept).toEqual([]);
+    expect(result.directoryRemoved).toBe(true);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("leaves a file Nilometer didn't write, and the directory holding it", () => {
+    // A user can point --data-dir at a folder that holds other things; deleting a directory for
+    // its name would take those too (D-043 leaves shared folders alone).
+    const dir = mkdtempSync(join(tmpdir(), "aua-delete-shared-"));
+    writeFileSync(join(dir, "usage.db"), "x");
+    writeFileSync(join(dir, "notes.txt"), "mine");
+    const result = deleteDataFiles(dir);
+    expect(result.removed).toEqual(["usage.db"]);
+    expect(result.kept).toEqual(["notes.txt"]);
+    expect(result.directoryRemoved).toBe(false);
+    expect(existsSync(join(dir, "notes.txt"))).toBe(true);
+  });
+
+  it("reports nothing removed for a directory that isn't there", () => {
+    const missing = join(mkdtempSync(join(tmpdir(), "aua-delete-none-")), "gone");
+    expect(deleteDataFiles(missing)).toEqual({ removed: [], directoryRemoved: false, kept: [] });
   });
 });

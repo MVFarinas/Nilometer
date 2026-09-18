@@ -6,10 +6,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadObserved, loadProjected } from "../../../viewer/queries.js";
 import type { BurnRateRow } from "../../../viewer/queries.js";
 import {
-  LABELS,
-  type ReportInput,
   describeBurnRate,
   displayPath,
+  hasNoData,
+  LABELS,
   plural,
   renderObserved,
   renderProjected,
@@ -18,8 +18,9 @@ import {
   repoKindName,
   reportJson,
   windowName,
+  type ReportInput,
 } from "../../../viewer/render.js";
-import { ingest } from "../core/metrics/helpers.js";
+import { ingest, request } from "../core/metrics/helpers.js";
 import { FIXTURE_TIME_ZONE, buildReportFixture } from "./fixture.js";
 
 describe("small renderers", () => {
@@ -126,6 +127,55 @@ describe("small renderers", () => {
     expect(describeBurnRate({ ...base, limit_reached: 1 }, tz)).toMatch(
       /limit reached at that reading\.$/,
     );
+  });
+});
+
+describe("a first run", () => {
+  it("says what to do next instead of printing a page of empty sections (R2.5)", () => {
+    const db = ingest({});
+    const observed = loadObserved(db);
+    expect(hasNoData(observed)).toBe(true);
+    const text = renderReport({
+      observed,
+      projected: loadProjected(db),
+      timeZone: "UTC",
+      lastIngestAt: null,
+      databasePath: "/home/example/.local/share/nilometer/usage.db",
+      home: "/home/example",
+    });
+    // The header still says where the data is and when it was last read.
+    expect(text).toContain(LABELS.title);
+    expect(text).toContain("~/.local/share/nilometer/usage.db");
+    expect(text).toContain("Nothing has been recorded yet.");
+    // Both sources are named, with the terminal-only caveat that explains an empty report.
+    expect(text).toMatch(/Session logs hold tokens/);
+    expect(text).toMatch(/only\s+while Claude Code runs in a terminal/);
+    expect(text).toContain("nilometer ingest");
+    // The empty sections are gone: they said "no data yet" eight times and nothing else.
+    for (const label of [LABELS.interruptions, LABELS.windows, LABELS.byModel, LABELS.burnRate]) {
+      expect(text).not.toContain(label);
+    }
+  });
+
+  it("prints the full report as soon as either source has a row", () => {
+    // One request and no readings is not a first run: the sections carry real coverage.
+    const db = ingest({
+      "-p/s.jsonl": [
+        request("s1", "u1", null, "2026-09-02T10:00:00Z", { usage: { output_tokens: 5 } }),
+      ],
+    });
+    const observed = loadObserved(db);
+    expect(hasNoData(observed)).toBe(false);
+    const text = renderReport({
+      observed,
+      projected: loadProjected(db),
+      timeZone: "UTC",
+      lastIngestAt: null,
+      databasePath: "/d/usage.db",
+      home: "/home/example",
+    });
+    expect(text).toContain(LABELS.byModel);
+    expect(text).not.toContain("Nothing has been recorded yet.");
   });
 });
 

@@ -233,6 +233,26 @@ nilometer init    # or, without npm link: npm start -- init
 - **The database holds copies of your session logs:** prompts, code, and file paths. That's why the data directory is readable only by your account.
 - **Reports contain spend figures and project names.** Think before sharing one. `nilometer explain` output also names session files and IDs.
 
+### Removing it, and deleting the data
+
+`nilometer uninstall` takes the hook out of `settings.json` and puts back the status line command it
+replaced, backing the file up first. **It keeps your recorded data**, because that data outlives the
+logs it came from.
+
+To remove the data too:
+
+```sh
+nilometer uninstall --delete-data
+```
+
+That deletes the database, the status line spool, the hook's error log, the install record, and any
+saved reports, then prints what it held — how many requests and readings, and the span they covered —
+because **this can't be undone.** Your database holds copies of session logs Claude Code has already
+deleted under its own 30-day cleanup, and nothing else has them.
+
+It removes only the files Nilometer writes. If you pointed `--data-dir` at a folder holding anything
+else, those files stay and are named in the output, and the folder stays with them.
+
 ### Keeping it current
 
 Status line readings are recorded on every terminal turn, whether or not you ingest, so nothing is lost between runs. The one deadline is Claude Code deleting session logs after 30 days by default. **Ingest at least weekly,** or schedule it. With cron, every 6 hours:

@@ -22,6 +22,7 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  rmdirSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -229,4 +230,44 @@ export function installHook(
     throw error;
   }
   return true;
+}
+
+/** What {@link deleteDataFiles} removed. */
+export interface DataDeletion {
+  /** Names removed from the data directory, in the order they were tried. */
+  readonly removed: string[];
+  /** True when the directory itself was removed because nothing else was left in it. */
+  readonly directoryRemoved: boolean;
+  /** Names found in the directory that Nilometer doesn't own, so weren't touched. */
+  readonly kept: string[];
+}
+
+/**
+ * Removes the files Nilometer keeps in a data directory, and the directory if nothing else is left.
+ *
+ * Only the names Nilometer writes are removed ({@link DATA_DIR_FILES}, {@link DATA_DIR_SUBDIRS}).
+ * A user can point `--data-dir` at a folder that holds other things, and deleting a directory
+ * because of what it is called would take those with it (D-043 leaves shared folders alone). What
+ * was left behind is reported rather than removed (R2.5).
+ * @param dataDir - The data directory.
+ * @returns What was removed and what was left.
+ */
+export function deleteDataFiles(dataDir: string): DataDeletion {
+  const removed: string[] = [];
+  if (!existsSync(dataDir)) {
+    return { removed, directoryRemoved: false, kept: [] };
+  }
+  const ours = new Set<string>([...DATA_DIR_FILES, ...DATA_DIR_SUBDIRS]);
+  for (const name of readdirSync(dataDir)) {
+    if (ours.has(name)) {
+      rmSync(join(dataDir, name), { recursive: true, force: true });
+      removed.push(name);
+    }
+  }
+  const kept = readdirSync(dataDir);
+  if (kept.length === 0) {
+    // rmdir, not rm: it fails rather than succeeds if anything appeared since the check above.
+    rmdirSync(dataDir);
+  }
+  return { removed, directoryRemoved: kept.length === 0, kept };
 }

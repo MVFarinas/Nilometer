@@ -22,6 +22,7 @@ import {
   describeInit,
   describePlanPriceList,
   describePlanPriceSet,
+  describeDeletion,
   describeUninstall,
   TERMINAL_ONLY_NOTE,
   report,
@@ -281,6 +282,53 @@ describe("describeInit", () => {
   });
 });
 
+describe("describeDeletion", () => {
+  const deletion = { removed: ["usage.db", "reports"], directoryRemoved: true, kept: [] };
+  const summary = {
+    requests: 6072,
+    readings: 1092,
+    firstRequestUtc: "2026-07-19T09:04:34.255Z",
+    lastRequestUtc: "2026-09-18T07:05:30.238Z",
+  };
+
+  it("names what went, how much it held, and that it can't be undone (R2.5)", () => {
+    const lines = describeDeletion("/d", { deletion, summary });
+    expect(lines[0]).toBe("Deleted the recorded data in /d: usage.db, reports.");
+    expect(lines[1]).toContain("6,072 requests and 1,092 status line readings");
+    expect(lines[1]).toContain("2026-07-19T09:04:34.255Z to 2026-09-18T07:05:30.238Z");
+    expect(lines.join("\n")).toContain("This can't be undone.");
+    expect(lines.join("\n")).toContain("The directory is gone");
+  });
+
+  it("names what it left alone, so a shared folder's contents are accounted for", () => {
+    const lines = describeDeletion("/d", {
+      deletion: { removed: ["usage.db"], directoryRemoved: false, kept: ["notes.txt"] },
+      summary,
+    });
+    expect(lines.join("\n")).toContain(
+      "Left alone, because Nilometer didn't write them: notes.txt.",
+    );
+  });
+
+  it("says so when there was nothing to delete, and copes with no database", () => {
+    expect(
+      describeDeletion("/d", {
+        deletion: { removed: [], directoryRemoved: false, kept: [] },
+        summary: null,
+      }),
+    ).toEqual(["No recorded data was found in /d."]);
+    expect(describeDeletion("/d", { deletion, summary: null }).join("\n")).not.toContain("It held");
+  });
+
+  it("reports an empty database as no requests rather than a broken range", () => {
+    const lines = describeDeletion("/d", {
+      deletion,
+      summary: { requests: 0, readings: 0, firstRequestUtc: null, lastRequestUtc: null },
+    });
+    expect(lines[1]).toContain("no requests were stored");
+  });
+});
+
 describe("describeUninstall", () => {
   const base = { ...PATHS, exactBytes: true, restoredCommand: null };
   const cases: [UninstallOutcome, RegExp][] = [
@@ -332,7 +380,9 @@ describe("describeUninstall", () => {
       backupPath: "/b",
       recordMissing: false,
     });
-    expect(lines).toContain("Recorded data in /d was kept.");
+    expect(lines).toContain(
+      "Recorded data in /d was kept. Run uninstall --delete-data to remove it.",
+    );
   });
 });
 

@@ -9,7 +9,12 @@ import { describe, expect, it } from "vitest";
 import { HAS_POSIX_MODES } from "../../setup/platform.js";
 
 import { runIngestCommand } from "../../../core/ingest/command.js";
-import { NoDatabaseError, loadReport, withReportDatabase } from "../../../viewer/report.js";
+import {
+  NoDatabaseError,
+  loadReport,
+  summarizeStoredData,
+  withReportDatabase,
+} from "../../../viewer/report.js";
 
 /** Repository root. */
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -80,5 +85,37 @@ describe("loadReport", () => {
       "claude-opus-5",
       "claude-sonnet-5",
     ]);
+  });
+});
+
+describe("summarizeStoredData", () => {
+  it("counts what is there, so a deletion can say what it removed (R2.5)", () => {
+    const home = mkdtempSync(join(tmpdir(), "aua-summary-"));
+    const env = { CLAUDE_CONFIG_DIR: join(ROOT, "fixtures", "06-mixed-models") };
+    runIngestCommand({
+      home,
+      env,
+      full: false,
+      packageRoot: ROOT,
+      now: () => new Date("2026-09-13T00:00:00Z"),
+    });
+    const summary = summarizeStoredData({ home, env: {}, packageRoot: ROOT });
+    expect(summary).not.toBeNull();
+    expect(summary?.requests).toBeGreaterThan(0);
+    // No status line hook ran here, so there are requests and no readings.
+    expect(summary?.readings).toBe(0);
+    expect(summary?.firstRequestUtc).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(Date.parse(summary?.lastRequestUtc ?? "")).toBeGreaterThanOrEqual(
+      Date.parse(summary?.firstRequestUtc ?? ""),
+    );
+  });
+
+  it("returns null when there is no database, rather than failing", () => {
+    // `uninstall --delete-data` runs on installs that never recorded anything.
+    const home = mkdtempSync(join(tmpdir(), "aua-summary-none-"));
+    expect(
+      summarizeStoredData({ home, env: {}, packageRoot: ROOT, dataDirOverride: join(home, "d") }),
+    ).toBeNull();
+    expect(existsSync(join(home, "d"))).toBe(false);
   });
 });

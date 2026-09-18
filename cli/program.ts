@@ -12,7 +12,11 @@ import { Command, CommanderError } from "commander";
 
 import { type IngestCommandOutcome, runIngestCommand } from "../core/ingest/command.js";
 import { DiscoveryError } from "../core/ingest/discover.js";
-import { describeTightened } from "../core/install/private-files.js";
+import {
+  type DataDeletion,
+  deleteDataFiles,
+  describeTightened,
+} from "../core/install/private-files.js";
 import { InstallRecordError } from "../core/install/record.js";
 import {
   type PlanDatabaseOptions,
@@ -34,7 +38,14 @@ import {
 } from "../core/install/install.js";
 import { SettingsError } from "../core/settings/settings-file.js";
 import { METRIC_NAMES, UnknownMetricError, explain, renderExplanation } from "../viewer/explain.js";
-import { NoDatabaseError, loadReport, withReportDatabase } from "../viewer/report.js";
+import { formatNumber } from "../viewer/format.js";
+import {
+  NoDatabaseError,
+  type StoredDataSummary,
+  loadReport,
+  summarizeStoredData,
+  withReportDatabase,
+} from "../viewer/report.js";
 import { saveReport } from "../viewer/save.js";
 import { displayPath, renderReport, reportJson } from "../viewer/render.js";
 
@@ -62,6 +73,12 @@ interface LocationFlags {
   readonly settings?: string;
   /** `--data-dir <path>` */
   readonly dataDir?: string;
+}
+
+/** Flags of the `uninstall` command. */
+interface UninstallFlags extends LocationFlags {
+  /** `--delete-data` */
+  readonly deleteData?: boolean;
 }
 
 /** Flags of the `ingest` command. */
@@ -321,17 +338,67 @@ export function describeInit(outcome: InitOutcome): { lines: string[]; exitCode:
   }
 }
 
+/** What `uninstall --delete-data` removed, with what was there first. */
+export interface DataDeleted {
+  /** Result of {@link deleteDataFiles}. */
+  readonly deletion: DataDeletion;
+  /** What the database held, read before it was removed; null when there was none. */
+  readonly summary: StoredDataSummary | null;
+}
+
+/**
+ * Says what `--delete-data` removed, and what it left alone.
+ *
+ * The counts are printed because the deletion can't be undone: the database holds copies of session
+ * logs Claude Code removes after 30 days, so this output is the only remaining record of what was
+ * there (R2.5).
+ * @param dataDir - The data directory.
+ * @param deleted - What was removed, and what the database held first.
+ * @returns Lines for stdout.
+ */
+export function describeDeletion(dataDir: string, deleted: DataDeleted): string[] {
+  const { deletion, summary } = deleted;
+  if (deletion.removed.length === 0) {
+    return [`No recorded data was found in ${dataDir}.`];
+  }
+  const lines = [`Deleted the recorded data in ${dataDir}: ${deletion.removed.join(", ")}.`];
+  if (summary !== null) {
+    const span =
+      summary.firstRequestUtc === null || summary.lastRequestUtc === null
+        ? "no requests were stored"
+        : `requests ran from ${summary.firstRequestUtc} to ${summary.lastRequestUtc} (UTC)`;
+    lines.push(
+      `It held ${formatNumber(summary.requests, "count")} requests and ${formatNumber(summary.readings, "count")} status line readings; ${span}.`,
+      "Session logs older than Claude Code's own 30-day cleanup were only in there. This can't be undone.",
+    );
+  }
+  if (deletion.directoryRemoved) {
+    lines.push("The directory is gone: nothing else was in it.");
+  } else if (deletion.kept.length > 0) {
+    lines.push(`Left alone, because Nilometer didn't write them: ${deletion.kept.join(", ")}.`);
+  }
+  return lines;
+}
+
 /**
  * Turns an `uninstall` outcome into output lines and an exit code.
  * @param outcome - Result of `runUninstall`.
+ * @param deleted - What `--delete-data` removed, or null when the data was kept.
  * @returns Lines for stdout and the process exit code.
  */
-export function describeUninstall(outcome: UninstallOutcome): {
+export function describeUninstall(
+  outcome: UninstallOutcome,
+  deleted: DataDeleted | null = null,
+): {
   lines: string[];
   exitCode: number;
 } {
   const { settingsPath, dataDir, backupPath, recordMissing, restoredCommand } = outcome;
-  const kept = `Recorded data in ${dataDir} was kept.`;
+  // Without --delete-data nothing is removed, and the flag is named so it can be found.
+  const kept =
+    deleted === null
+      ? `Recorded data in ${dataDir} was kept. Run uninstall --delete-data to remove it.`
+      : describeDeletion(dataDir, deleted).join("\n");
   // The command comes from the install record on disk, so show what's going back in (D-050).
   const restored =
     restoredCommand === null ? [] : [`Status line command restored: ${restoredCommand}`];
@@ -627,13 +694,28 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
   program
     .command("uninstall")
     .description(
-      "Remove the hook and restore the status line setting it replaced. Recorded data is kept.",
+      "Remove the hook and restore the status line setting it replaced. Recorded data is kept unless --delete-data is given.",
     )
     .option("--settings <path>", "settings file to change, if no install record names it")
     .option("--data-dir <path>", "data directory holding the install record")
-    .action((flags: LocationFlags) => {
+    .option(
+      "--delete-data",
+      "also delete the recorded data: the database, the status line spool, and saved reports. This can't be undone",
+    )
+    .action((flags: UninstallFlags) => {
       setExitCode(
-        report(deps, () => describeUninstall(runUninstall(toInstallOptions(flags, deps)))),
+        report(deps, () => {
+          const outcome = runUninstall(toInstallOptions(flags, deps));
+          if (flags.deleteData !== true) {
+            return describeUninstall(outcome);
+          }
+          // Read what is there before removing it: afterwards there is nothing left to ask.
+          const summary = summarizeStoredData(toPlanDatabaseOptions(flags, deps));
+          return describeUninstall(outcome, {
+            summary,
+            deletion: deleteDataFiles(outcome.dataDir),
+          });
+        }),
       );
     });
 

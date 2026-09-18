@@ -101,3 +101,49 @@ export function loadReport(
     onTightened,
   );
 }
+
+/** What the data directory holds, read before anything deletes it (R2.5). */
+export interface StoredDataSummary {
+  /** Deduplicated requests. */
+  readonly requests: number;
+  /** Status line readings that decoded. */
+  readonly readings: number;
+  /** Earliest request timestamp, or null when there are none. */
+  readonly firstRequestUtc: string | null;
+  /** Latest request timestamp, or null when there are none. */
+  readonly lastRequestUtc: string | null;
+}
+
+/**
+ * Summarizes what is recorded, so a command that deletes it can say what it removed.
+ *
+ * The same sources `ingest` counts from, so the two agree. Deleting this data is not reversible:
+ * it holds copies of session logs Claude Code removes after 30 days, which is the whole reason
+ * ingestion copies them (R2.5).
+ * @param options - Home, environment, package root, and any `--data-dir` override.
+ * @returns The summary, or null when there is no database to read.
+ * @throws {unknown} Whatever opening or reading the database throws, other than a missing one.
+ */
+export function summarizeStoredData(options: ReportDatabaseOptions): StoredDataSummary | null {
+  try {
+    return withReportDatabase(
+      options,
+      (db) =>
+        db
+          .prepare(
+            `SELECT
+               (SELECT COUNT(*) FROM requests_dedup) AS requests,
+               (SELECT COUNT(*) FROM status_readings WHERE status = 'ok') AS readings,
+               (SELECT MIN(timestamp_utc) FROM requests_dedup) AS firstRequestUtc,
+               (SELECT MAX(timestamp_utc) FROM requests_dedup) AS lastRequestUtc`,
+          )
+          .get() as StoredDataSummary,
+    );
+  } catch (error) {
+    // Nothing recorded yet is not a failure: there is simply nothing to describe.
+    if (error instanceof NoDatabaseError) {
+      return null;
+    }
+    throw error;
+  }
+}

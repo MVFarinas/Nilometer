@@ -513,14 +513,56 @@ export function renderProjected(projected: ProjectedReport, timeZone: string): s
  * @returns The report text, lines joined with newlines.
  */
 export function renderReport(input: ReportInput): string {
-  return [
+  const header = [
     LABELS.title,
     `Times are in ${input.timeZone}. Last ingest: ${input.lastIngestAt === null ? "none yet" : formatInstant(input.lastIngestAt, input.timeZone)}. Database: ${displayPath(input.databasePath, input.home)}`,
     "",
+  ];
+  // A first run has nothing to report; say what produces the numbers instead of printing empty
+  // sections. `--json` is unchanged, so anything reading this programmatically still sees the
+  // same shape (R2.5).
+  if (hasNoData(input.observed)) {
+    return [...header, ...renderFirstRun()].join("\n");
+  }
+  return [
+    ...header,
     ...renderObserved(input.observed, input.timeZone, input.home),
     "",
     ...renderProjected(input.projected, input.timeZone),
   ].join("\n");
+}
+
+/**
+ * Reports whether nothing has been recorded yet: no status line readings and no requests.
+ * @param observed - The observed report.
+ * @returns True when neither source has produced a row.
+ */
+export function hasNoData(observed: ObservedReport): boolean {
+  return observed.windows.length === 0 && observed.byModel.length === 0;
+}
+
+/**
+ * What to do next, shown instead of a page of empty sections on a first run.
+ *
+ * Every section of the report says "no data yet" on its own, which is correct and useless: a new
+ * user reads forty lines to learn that nothing happened, and nothing tells them the two sources
+ * arrive separately or that readings need a terminal. This replaces the sections until there is
+ * something to show (R2.5).
+ * @returns Lines for stdout.
+ */
+export function renderFirstRun(): string[] {
+  return [
+    "Nothing has been recorded yet.",
+    "",
+    "Two sources feed this report, and they arrive separately:",
+    "  Session logs hold tokens, models, and repositories. `init` read whatever was already there,",
+    "    and `nilometer ingest` reads what Claude Code writes from now on.",
+    "  Status line readings hold the plan's usage percentages and its limits. They are written only",
+    "    while Claude Code runs in a terminal; the VS Code extension doesn't run the status line.",
+    "",
+    "Use Claude Code in a terminal, then run `nilometer ingest` and this report again.",
+    "Usage percentages cover the time since the hook was installed; tokens cover every log still on disk.",
+  ];
 }
 
 /**

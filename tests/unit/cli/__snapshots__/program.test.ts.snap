@@ -25,7 +25,8 @@ Commands:
   plan-price                  Enter or list the plan's USD list price, shown
                               beside API list price.
   uninstall [options]         Remove the hook and restore the status line
-                              setting it replaced. Recorded data is kept.
+                              setting it replaced. Recorded data is kept unless
+                              --delete-data is given.
   help [command]              display help for command"
 `;
 
@@ -123,10 +124,12 @@ exports[`runCli > prints stable help for uninstall 1`] = `
 "Usage: nilometer uninstall [options]
 
 Remove the hook and restore the status line setting it replaced. Recorded data
-is kept.
+is kept unless --delete-data is given.
 
 Options:
   --settings <path>  settings file to change, if no install record names it
   --data-dir <path>  data directory holding the install record
+  --delete-data      also delete the recorded data: the database, the status
+                     line spool, and saved reports. This can't be undone
   -h, --help         display help for command"
 `;
