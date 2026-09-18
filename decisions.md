@@ -893,3 +893,20 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Non-ASCII paths are now tested**, which nothing did before — a data directory under `données de test` is deleted and verified.
   - **This cannot be confirmed fixed from the machine that fixed it.** The verification belongs to the Windows machine that found it.
   - **A test can be wrong in a platform-specific way too:** the same pass found an assertion that slashed raw JSON text, where every backslash is escaped, so it only failed on Windows. Compare parsed values, not file text.
+
+## D-062: `--delete-data` reports the deletion in every branch, including the ones that change nothing (2026-09-18)
+
+- **Status:** accepted. Found on the Windows machine while verifying [D-061](decisions.md), and reproduced on macOS: not a platform fault.
+- **Context:** `uninstall --delete-data` deletes the data before `describeUninstall` chooses its wording, and two of that function's four branches returned without ever mentioning it. So:
+  - `uninstall --delete-data` on an install whose hook was already removed printed **"Nothing was changed."** and exited 0, with the data directory gone.
+  - The same after a user replaced `statusLine` by hand printed **"It was left unchanged."**, with the data directory gone.
+  - It also lost the request and reading counts and their span — which D-060 exists to print, because they are the only remaining record once the database holding logs Claude Code already deleted is gone.
+- **This is D-061 pointing the other way.** One said a deletion happened that hadn't; this said nothing happened while it had. Both are the same fault: output written from what the code intended rather than from what occurred.
+- **Options:**
+  - (a) Refuse `--delete-data` when the hook isn't ours to remove. Rejected: someone who already uninstalled and now wants their data gone has a legitimate reason to run it, and refusing sends them to a hand-assembled `rm -rf`, which is exactly what D-060 avoided.
+  - (b) **Report the deletion in every branch.** Chosen.
+- **Decision:** (b). The two branches that leave the settings file alone now append the same deletion summary the others print, and "Nothing was changed" is only said when nothing was — the sentence becomes "the settings file was not changed" once data has gone.
+- **Consequences:**
+  - **Every path that deletes says so, with the counts.** Proven by a test over both branches that fails when the lines are dropped.
+  - **The rule this leaves behind:** a message is assembled from what happened, not from which branch produced it. Both defects came from a branch describing its own intent while another part of the command did something it never mentioned.
+  - **Verification found a second defect by doing the work, not by reading it.** D-061 was fixed and verified, and the verification pass then walked the neighbouring paths and found this. Checking a fix is worth more than checking the code that was changed.

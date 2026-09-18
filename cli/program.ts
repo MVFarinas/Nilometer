@@ -410,6 +410,10 @@ export function describeUninstall(
     deleted === null
       ? `Recorded data in ${dataDir} was kept. Run uninstall --delete-data to remove it.`
       : describeDeletion(dataDir, deleted).join("\n");
+  // What `--delete-data` did, for the branches that change nothing in the settings file. Saying
+  // "nothing was changed" while the data directory has gone is the same fault as D-061, pointing
+  // the other way, and it loses the counts that were the only record of what was in there (D-062).
+  const alsoDeleted = deleted === null ? [] : [kept];
   // The command comes from the install record on disk, so show what's going back in (D-050).
   const restored =
     restoredCommand === null ? [] : [`Status line command restored: ${restoredCommand}`];
@@ -449,7 +453,12 @@ export function describeUninstall(
     case "not-installed":
       return {
         exitCode: 0,
-        lines: [`The hook is not installed in ${settingsPath}. Nothing was changed.`],
+        lines: [
+          deleted === null
+            ? `The hook is not installed in ${settingsPath}. Nothing was changed.`
+            : `The hook is not installed in ${settingsPath}, so the settings file was not changed.`,
+          ...alsoDeleted,
+        ],
       };
     case "replaced-by-user":
       return {
@@ -457,6 +466,7 @@ export function describeUninstall(
         lines: [
           `statusLine in ${settingsPath} is no longer the hook; it was changed after install.`,
           "It was left unchanged.",
+          ...alsoDeleted,
         ],
       };
   }

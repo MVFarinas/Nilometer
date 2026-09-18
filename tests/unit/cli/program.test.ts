@@ -338,6 +338,51 @@ describe("describeInit", () => {
   });
 });
 
+describe("describeUninstall reporting a deletion in every branch", () => {
+  const deleted = {
+    deletion: { removed: ["usage.db"], failed: [], directoryRemoved: true, kept: [] },
+    summary: {
+      requests: 4,
+      readings: 2,
+      firstRequestUtc: "2026-09-01T00:00:00Z",
+      lastRequestUtc: "2026-09-02T00:00:00Z",
+    },
+  };
+
+  it("says the data went even when the settings file was untouched (D-062)", () => {
+    // The mirror of D-061: this used to print "Nothing was changed" while the data directory had
+    // gone, and lost the counts that were the only remaining record of what was in it.
+    for (const action of ["not-installed", "replaced-by-user"] as const) {
+      const outcome = {
+        ...PATHS,
+        action,
+        backupPath: null,
+        exactBytes: false,
+        recordMissing: false,
+        restoredCommand: null,
+        notRemoved: [],
+      };
+      const text = describeUninstall(outcome, deleted).lines.join("\n");
+      expect(text).toContain("Deleted the recorded data in /d");
+      expect(text).toContain("It held 4 requests and 2 status line readings");
+      expect(text).not.toContain("Nothing was changed");
+    }
+  });
+
+  it("still says nothing was changed when no data was deleted", () => {
+    const outcome = {
+      ...PATHS,
+      action: "not-installed" as const,
+      backupPath: null,
+      exactBytes: false,
+      recordMissing: false,
+      restoredCommand: null,
+      notRemoved: [],
+    };
+    expect(describeUninstall(outcome).lines.join("\n")).toContain("Nothing was changed");
+  });
+});
+
 describe("describeDeletion", () => {
   const deletion = {
     removed: ["usage.db", "reports"],
