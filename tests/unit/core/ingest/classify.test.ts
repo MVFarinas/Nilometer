@@ -367,6 +367,10 @@ describe("messageText", () => {
   });
 });
 
+// The strings below are Claude Code's own wording, copied verbatim, middle dot included. They are
+// a RECORD of what it sends, not test data to tidy: the parser matches on "limit" and "resets" and
+// ignores the separator, so editing them leaves every test passing while they describe a message
+// nothing sends. A blanket find-and-replace did exactly that once, and only the diff caught it.
 describe("parseLimitText", () => {
   it.each([
     [
