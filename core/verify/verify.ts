@@ -50,6 +50,8 @@ export interface VerifyResult {
   readonly unpricedModels: readonly string[];
   /** Requests left out because the log they came from is gone from disk (D-002). */
   readonly fromDeletedLogs: number;
+  /** The current UTC day, never compared because both sides are still being written to. */
+  readonly skippedToday: string;
 }
 
 /** Nilometer's own totals, and what had to be left out of them. */
@@ -166,17 +168,21 @@ export function unpricedModels(db: Db): string[] {
  * @param ours - From {@link ourTotals}.
  * @param theirs - From `normalizeCcusage`.
  * @param unpriced - From {@link unpricedModels}.
+ * @param today - The current UTC day, which is never compared; injected for tests.
  * @returns What matched, what didn't, and what could not be compared.
  */
 export function compareTotals(
   ours: OurTotals,
   theirs: TotalsByDayModel,
   unpriced: readonly string[] = [],
+  today: string = new Date().toISOString().slice(0, 10),
 ): VerifyResult {
   const ourTotalsByKey = ours.totals;
   const ourDays = new Set(Object.keys(ourTotalsByKey).map(dayOf));
   const theirDays = new Set(Object.keys(theirs).map(dayOf));
-  const shared = new Set([...ourDays].filter((day) => theirDays.has(day)));
+  // Today is never compared: ingestion is a snapshot, and Claude Code keeps writing after it. The
+  // two sides would be read at different moments, and the difference would be the clock (D-064).
+  const shared = new Set([...ourDays].filter((day) => theirDays.has(day) && day !== today));
 
   /**
    * Keeps only the entries on days both sides can see.
@@ -191,11 +197,12 @@ export function compareTotals(
   return {
     comparedDays: shared.size,
     comparedKeys: new Set([...Object.keys(oursShared), ...Object.keys(theirsShared)]).size,
-    daysOnlyOurs: [...ourDays].filter((day) => !theirDays.has(day)).length,
-    daysOnlyTheirs: [...theirDays].filter((day) => !ourDays.has(day)).length,
+    daysOnlyOurs: [...ourDays].filter((day) => !theirDays.has(day) && day !== today).length,
+    daysOnlyTheirs: [...theirDays].filter((day) => !ourDays.has(day) && day !== today).length,
     differences: diffTotals(oursShared, theirsShared, VERIFIED_FIELDS),
     unpricedModels: [...unpriced],
     fromDeletedLogs: ours.fromDeletedLogs,
+    skippedToday: today,
   };
 }
 

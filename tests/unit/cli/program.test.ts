@@ -348,6 +348,7 @@ describe("describeVerify", () => {
     differences: [],
     unpricedModels: [],
     fromDeletedLogs: 0,
+    skippedToday: "2026-09-18",
   };
 
   it("says everything matched, and exits 0", () => {

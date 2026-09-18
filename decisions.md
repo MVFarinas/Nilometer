@@ -828,7 +828,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 - **Options:**
   - (a) **Date a response by its final snapshot** (when it finished). Chosen.
   - (b) Date it by its first snapshot (when it started). Rejected: see below — the reference implementation does not do this, and adopting it would trade a matching number for a permanent documented difference, for no gain in accuracy.
-- **Decision:** (a), now tested rather than assumed. Fixture `18-streaming-across-midnight` writes one response as two snapshots five seconds apart, straddling UTC midnight, and the ccusage comparison reports **MATCH** on it: the reference implementation counts it on the finishing day too.
+- **Decision:** (a), now tested rather than assumed. Fixture `18-streaming-across-midnight` writes one response as two snapshots five seconds apart, straddling UTC midnight, and the ccusage comparison reports **MATCH** on it: the reference implementation counts it on the finishing day too. **Narrowed by [D-065](decisions.md):** that fixture has growing counts, so the largest-output rule picks the final line on its own. Where every line carries the same counts the rule picks nothing, the two tools disagreed, and the earliest line wins instead.
 - **Consequences:**
   - **The fixture is the guard.** Changing the tie-break in D-001 now moves this fixture's day totals and fails both the loader check and the ccusage comparison, instead of quietly moving a number.
   - **It is defensible on its own terms**, not only by agreement: the final snapshot is the one carrying the response's full output count, so dating a request by it dates it by the line the tokens actually come from.
@@ -939,3 +939,20 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **It uses the network**, by fetching a pinned ccusage through `npx` — the first thing in the installed tool that does. `SECURITY.md` said there was no runtime network access at all; it now names this command, what it reads, and that nothing is uploaded.
   - **Every failure path is testable offline.** The lookup and the spawn are injected, so "npx is missing" and "ccusage failed" are covered without a download, and the spawn plumbing is proven against a local process instead.
   - **It found something on the first real run**, which is the point: a handful of responses attributed to different days than ccusage puts them, conserved exactly across the boundary — the same magnitude missing from one day and present on the next. Nothing lost, an attribution question, and a fixture does not cover it.
+
+## D-065: When the dedup rule cannot choose, the earliest line wins (2026-09-18)
+
+- **Status:** accepted. Corrects a consequence claimed in [D-058](decisions.md), and found by `nilometer verify` on its first real run.
+- **Context:** One API response is written as several lines and the largest `output_tokens` wins ([D-001](decisions.md)). When every line carries the **same** counts, that rule selects nothing, and the tie-breaks behind it ended on `line_number DESC` — the last line. Which line wins normally decides nothing, because the numbers are identical. At a day boundary it decides which day the response counts on.
+  - *Observed on a real log set:* one response written three times across `23:59:57` to `00:00:01`, counted on the later day here and the earlier one by ccusage. It moved 4,680 output tokens and 590,251 cache reads between two days — conserved exactly, so nothing was lost and nothing was double-counted, but two days were wrong.
+  - **D-058 overstated its evidence.** It said the reference implementation "counts it on the finishing day too", proven by a fixture. That fixture has *growing* counts, where the largest-output rule picks the last line on its own and both tools agree. It says nothing about the tied case, which is the only case where the tie-break matters. A fixture proves the shape it contains.
+- **Options:**
+  - (a) Keep the last line. Rejected: the reason D-058 gives for the final snapshot — "the line the tokens actually come from" — is satisfied by every tied line equally, so it picks none of them. The rule was doing unprincipled work.
+  - (b) **The earliest of the tied lines.** Chosen.
+  - (c) Match ccusage. Rejected as a reason, though it is the same answer: agreeing with the reference implementation is corroboration, not a principle.
+- **Decision:** (b), migration 019. Among lines tied on `output_tokens` and sidechain status, the earliest timestamp wins; a line whose timestamp did not parse never wins on that alone. This is the rule this project already states for the same problem: [D-045](decisions.md) collapses duplicate readings and dates each by its response's first line, "when its numbers first existed".
+- **Consequences:**
+  - **Nothing changes where the counts grow.** The largest output still wins before this is reached, so case 18 and every ordinary streamed response are untouched.
+  - **Fixture 19 pins the tied shape**, and the ccusage comparison reports MATCH on it. The independent Python reference implements the same tie-break, so the two agree by construction rather than by import.
+  - **On real logs, this was the last disagreement.** `verify` went from 12 differences to 0 across 33 days.
+  - **What it corrects in D-058:** not the decision, which stands, but the claim that the fixture proved agreement in general. It proved it for one shape.

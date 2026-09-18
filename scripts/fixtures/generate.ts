@@ -548,6 +548,20 @@ export function buildCases(): FixtureCase[] {
         ]),
       },
     },
+    {
+      // One response whose lines all carry the SAME token counts, straddling UTC midnight. Case 18
+      // has growing counts, so "largest output wins" picks the last line on its own; here it picks
+      // nothing and the tie-break decides which day the response lands on (D-065). Observed on a
+      // real log set: three lines, identical counts, 23:59:57 to 00:00:01.
+      id: "19-repeated-snapshot-across-midnight",
+      files: {
+        [sessionPath("projects", "s19")]: toJsonl([
+          assistantLine({ session: "s19", uuid: "u19-a-1", ts: "2026-09-01T23:59:57.000Z", messageId: "msg_19a", requestId: "req_19a", usage: { input: 2, output: 30, cacheRead: 0 } }),
+          assistantLine({ session: "s19", uuid: "u19-a-2", ts: "2026-09-01T23:59:58.000Z", messageId: "msg_19a", requestId: "req_19a", usage: { input: 2, output: 30, cacheRead: 0 } }),
+          assistantLine({ session: "s19", uuid: "u19-a-3", ts: "2026-09-02T00:00:01.000Z", messageId: "msg_19a", requestId: "req_19a", usage: { input: 2, output: 30, cacheRead: 0 } }),
+        ]),
+      },
+    },
   ];
 }
 

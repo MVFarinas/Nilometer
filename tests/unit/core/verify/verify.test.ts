@@ -74,9 +74,12 @@ describe("ccusageArgs", () => {
 
 describe("compareTotals", () => {
   it("reports nothing when both sides agree", () => {
-    const result = compareTotals(ours({ "2026-09-01|m": 10 }), {
-      "2026-09-01|m": { input: 0, output: 10, cache_read: 0, cache_write: 0, cost_usd: 0 },
-    });
+    const result = compareTotals(
+      ours({ "2026-09-01|m": 10 }),
+      { "2026-09-01|m": { input: 0, output: 10, cache_read: 0, cache_write: 0, cost_usd: 0 } },
+      [],
+      "2026-09-30",
+    );
     expect(result.differences).toEqual([]);
     expect(result.comparedDays).toBe(1);
     expect(result.comparedKeys).toBe(1);
@@ -86,10 +89,15 @@ describe("compareTotals", () => {
     // Ingestion keeps logs Claude Code deleted (D-002), so days only this tool has are expected
     // and must not be reported as differences. A day only ccusage has is the opposite: lines
     // this tool did not read.
-    const result = compareTotals(ours({ "2026-09-01|m": 10, "2026-08-01|m": 99 }), {
-      "2026-09-01|m": { input: 0, output: 10, cache_read: 0, cache_write: 0, cost_usd: 0 },
-      "2026-09-02|m": { input: 0, output: 7, cache_read: 0, cache_write: 0, cost_usd: 0 },
-    });
+    const result = compareTotals(
+      ours({ "2026-09-01|m": 10, "2026-08-01|m": 99 }),
+      {
+        "2026-09-01|m": { input: 0, output: 10, cache_read: 0, cache_write: 0, cost_usd: 0 },
+        "2026-09-02|m": { input: 0, output: 7, cache_read: 0, cache_write: 0, cost_usd: 0 },
+      },
+      [],
+      "2026-09-30",
+    );
     expect(result.differences).toEqual([]);
     expect(result.comparedDays).toBe(1);
     expect(result.daysOnlyOurs).toBe(1);
@@ -97,18 +105,24 @@ describe("compareTotals", () => {
   });
 
   it("names the field, and both values, for a real difference", () => {
-    const result = compareTotals(ours({ "2026-09-01|m": 10 }), {
-      "2026-09-01|m": { input: 0, output: 12, cache_read: 0, cache_write: 0, cost_usd: 0 },
-    });
+    const result = compareTotals(
+      ours({ "2026-09-01|m": 10 }),
+      { "2026-09-01|m": { input: 0, output: 12, cache_read: 0, cache_write: 0, cost_usd: 0 } },
+      [],
+      "2026-09-30",
+    );
     expect(result.differences).toEqual([
       { key: "2026-09-01|m", field: "output", ours: 10, theirs: 12 },
     ]);
   });
 
   it("never compares cost, because two price tables are a different question", () => {
-    const result = compareTotals(ours({ "2026-09-01|m": 10 }), {
-      "2026-09-01|m": { input: 0, output: 10, cache_read: 0, cache_write: 0, cost_usd: 999 },
-    });
+    const result = compareTotals(
+      ours({ "2026-09-01|m": 10 }),
+      { "2026-09-01|m": { input: 0, output: 10, cache_read: 0, cache_write: 0, cost_usd: 999 } },
+      [],
+      "2026-09-30",
+    );
     expect(result.differences).toEqual([]);
   });
 });
@@ -151,6 +165,22 @@ describe("ourTotals", () => {
       ],
     });
     expect(unpricedModels(unknown)).toEqual(["claude-not-in-the-price-table"]);
+  });
+});
+
+describe("compareTotals and today", () => {
+  it("never compares the current day, because both sides are still being written", () => {
+    // Ingestion is a snapshot; Claude Code keeps writing after it. On real data this was the whole
+    // of the remaining difference, and it was the clock (D-064).
+    const result = compareTotals(
+      ours({ "2026-09-30|m": 10 }),
+      { "2026-09-30|m": { input: 0, output: 99, cache_read: 0, cache_write: 0, cost_usd: 0 } },
+      [],
+      "2026-09-30",
+    );
+    expect(result.comparedDays).toBe(0);
+    expect(result.differences).toEqual([]);
+    expect(result.skippedToday).toBe("2026-09-30");
   });
 });
 

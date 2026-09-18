@@ -508,8 +508,9 @@ def is_better_winner(
 
     Returns:
         True when the candidate has larger ``output_tokens``; or equal output
-        and is the non-sidechain copy while current is a sidechain; or equal
-        on both and comes later in ``(file, first run, line)`` order.
+        and is the non-sidechain copy while current is a sidechain; or equal on
+        both and carries the earlier timestamp; or equal on all three and comes
+        later in ``(file, first run, line)`` order.
     """
     cand_rec, cand_line = candidate
     cur_rec, cur_line = current
@@ -519,6 +520,16 @@ def is_better_winner(
     if cand_rec["is_sidechain"] != cur_rec["is_sidechain"]:
         # "false before true": the non-sidechain copy wins.
         return not cand_rec["is_sidechain"]
+    # Tied on tokens: the earliest line, when those numbers first existed (D-065).
+    # A line whose timestamp did not parse never wins this on its own.
+    cand_ts = cand_rec.get("timestamp")
+    cur_ts = cur_rec.get("timestamp")
+    if cand_ts != cur_ts:
+        if cur_ts is None:
+            return True
+        if cand_ts is None:
+            return False
+        return cand_ts < cur_ts
     return cand_line.order_key() > cur_line.order_key()
 
 

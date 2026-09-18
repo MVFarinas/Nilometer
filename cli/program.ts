@@ -438,6 +438,9 @@ export function describeVerify(result: VerifyResult): { lines: string[]; exitCod
       ),
     );
   }
+  lines.push(
+    `${result.skippedToday} was not compared: both sides are still being written to today, so a difference there would be the clock.`,
+  );
   if (result.fromDeletedLogs > 0) {
     lines.push(
       `${plural(result.fromDeletedLogs, "request", "requests")} were left out: the logs they came from are gone from disk, so ccusage cannot see them. Keeping them is the point of the database.`,
