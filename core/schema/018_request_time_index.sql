@@ -1,0 +1,21 @@
+-- 018_request_time_index: index request lines by time, so counting the responses between two status
+-- line readings is a range scan rather than a table scan.
+--
+-- window_reading_pairs counts distinct responses in an interval, once per pair. That subquery
+-- filters parsed_lines by class and a timestamp range with no session, and every existing index
+-- leads with session_id, so each of the hundreds of pairs scanned the whole table.
+--
+-- The index is PARTIAL on purpose. A plain index on (class, timestamp_utc) fixed this query but
+-- tempted the planner into using it for the window views, which filter by session and time. Measured
+-- on a real database, as medians of three runs:
+--     view                      no index   full index   partial index
+--     obs_unattributed_usage        9347         1794            1236
+--     obs_lockout_time              2296         3391            2313
+--     obs_sessions_not_resumed      1157         1740            1167
+--     every report view (total)    17281        13633            9285
+-- A partial index can only be used by a query carrying the same WHERE clause, so it serves this
+-- subquery and is invisible to the rest. Every shape returned identical rows; only the time changed.
+--
+-- The cost is one small index and slightly slower inserts during ingest, which writes each line once
+-- and reads these views on every report.
+CREATE INDEX parsed_lines_request_time ON parsed_lines (timestamp_utc) WHERE class = 'request';

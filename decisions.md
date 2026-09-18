@@ -833,3 +833,26 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **The fixture is the guard.** Changing the tie-break in D-001 now moves this fixture's day totals and fails both the loader check and the ccusage comparison, instead of quietly moving a number.
   - **It is defensible on its own terms**, not only by agreement: the final snapshot is the one carrying the response's full output count, so dating a request by it dates it by the line the tokens actually come from.
   - **Choosing (b) later means declaring a delta.** It would move this fixture out of MATCH and into the known-deltas list, which is the honest way to do it, and a reason would have to be better than "it feels earlier".
+
+## D-059: The report reads twice as fast, and the index that does it is partial on purpose (2026-09-18)
+
+- **Status:** accepted. Plan item M7.
+- **Context:** `nilometer report` took about 16.5 seconds on a real database, and one view was 55% of it: `obs_unattributed_usage` spent about 8.9 seconds returning one row per window. The cause is `window_reading_pairs`, which counts the distinct responses between two status line readings with a subquery run once per pair. That subquery filters `parsed_lines` by class and a timestamp range with no session, and every index led with `session_id`, so each of hundreds of pairs scanned the whole table.
+- **What was tried, and measured, as medians of three runs on a real database:**
+
+  | | no index | index on `(class, timestamp_utc)` | partial index |
+  |---|---|---|---|
+  | `obs_unattributed_usage` | 9347 ms | 1794 ms | **1236 ms** |
+  | `obs_lockout_time` | 2296 ms | 3391 ms | 2313 ms |
+  | `obs_sessions_not_resumed` | 1157 ms | 1740 ms | 1167 ms |
+  | every report view | 17281 ms | 13633 ms | **9285 ms** |
+
+- **Two things were wrong on the way here, and both were found by measuring rather than reasoning:**
+  - **The first diagnosis was wrong.** The obvious fault was that `obs_unattributed_usage` asked `window_reading_pairs` four correlated questions per window, so the first fix computed the pairs once and grouped them (migration 017). On its own that made the view **worse** — 9.0 s to 15.8 s — because the outer repetition was never the cost; the per-pair subquery was, and grouping forced it for every pair instead of letting the planner skip it.
+  - **A plain index fixed the wrong thing too.** It cut the slow view to 1.8 s but made eight other views slower by 270–1070 ms each, because the planner started reaching for it in the window views, which filter by session and time. A partial index can only be used by a query carrying the same `WHERE` clause, so it serves this subquery and is invisible to everything else.
+- **Decision:** keep both changes together — the grouped view (017) and the **partial** index `parsed_lines_request_time ON parsed_lines (timestamp_utc) WHERE class = 'request'` (018). The grouped view is a pessimisation alone and nearly doubles the gain once the index exists.
+- **Consequences:**
+  - **Not one number moved.** `report --json` on a real database is byte-identical before and after, and that was checked after every step, not once at the end. End to end the command went from about 16.5 s to about 7.7 s.
+  - **A test now asserts the indexes exist**, and that this one is partial. Removing the migration fails it. Nothing in the suite measures time, so without that test a later migration could drop the index and only a person would notice, months later.
+  - **Ingest writes are slightly slower**, by one small index. A line is written once and these views are read on every report.
+  - **This does not decide the metric's future.** `obs_unattributed_usage` still can't be nonzero on real status line data ([D-044](decisions.md)) and may be relabeled or dropped at the review of a month's use. Making it fast doesn't argue for keeping it; if it goes, this work goes with it.

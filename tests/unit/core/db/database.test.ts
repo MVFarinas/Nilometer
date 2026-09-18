@@ -3,7 +3,8 @@
  */
 import { chmodSync, existsSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { HAS_POSIX_MODES } from "../../../setup/platform.js";
 
@@ -135,6 +136,40 @@ describe("schemaVersion and applyMigrations", () => {
       applied_at: string;
     };
     expect(Date.parse(row.applied_at)).not.toBeNaN();
+  });
+});
+
+describe("the shipped schema", () => {
+  it("keeps the indexes the report's queries depend on (D-059)", () => {
+    // These aren't decoration: without parsed_lines_request_time, counting the responses between
+    // two readings scans the whole table once per pair, and reading one view took nine seconds.
+    // A migration that drops or renames one of these must fail here rather than quietly slow
+    // everything down, since nothing else in the suite measures time.
+    const path = join(mkdtempSync(join(tmpdir(), "aua-db-schema-")), "usage.db");
+    const db = openDatabase(
+      path,
+      join(dirname(fileURLToPath(import.meta.url)), "../../../../core/schema"),
+    );
+    const indexes = (
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL")
+        .all() as {
+        name: string;
+      }[]
+    ).map((row) => row.name);
+    expect(indexes).toContain("parsed_lines_request_time");
+    expect(indexes).toContain("parsed_lines_session_time");
+    expect(indexes).toContain("requests_dedup_key");
+    // Partial, so the planner can't reach for it in the window views, where it made them slower.
+    const sql = (
+      db
+        .prepare("SELECT sql FROM sqlite_master WHERE name = 'parsed_lines_request_time'")
+        .get() as {
+        sql: string;
+      }
+    ).sql;
+    expect(sql).toMatch(/WHERE\s+class\s*=\s*'request'/);
+    db.close();
   });
 });
 
