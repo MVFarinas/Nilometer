@@ -743,3 +743,21 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **The "AS IS" disclaimer earns its place here.** `init` edits a file Claude Code owns and the tool reads session logs; the disclaimer is the only thing standing between a bug and a claim.
   - **Three places state the license** — `LICENSE`, `package.json`, and the README — and they have to stay in step. A change means all three.
   - **Revisit before the first outside contribution is merged**, if it's going to be revisited at all. That is the last moment it stays a three-file edit.
+
+## D-054: The private working copy keeps the personal material; it is not a staging copy of the code (2026-09-18)
+
+- **Status:** accepted. Refines [D-048](#d-048-development-continues-in-the-public-repository-2026-09-17) and replaces the plan to freeze the private working copy.
+- **Context:** D-048 settled where code is developed, but not what becomes of the private working copy afterwards. The plan said to archive it. Two things were then noticed:
+  - **Some material can never be public and never stops being produced:** real-log check results, and personal planning. Archiving the only place they live means they either stop or move somewhere with no history.
+  - **The export's gates would stop running.** A21 and A22 — no references to private documents, no private terms — only ever inspected files the export produced. With nothing exported, the checks that kept personal material out of the public tree simply wouldn't run any more, exactly when commits start going straight there.
+- **Options:**
+  - (a) **Archive the private copy and develop only in public.** Rejected: it loses the place the personal material lives, and the gates with it.
+  - (b) **Develop privately and export every release, so the public repository only ever receives reviewed exports.** Rejected, for D-048's reasons and one more that decides it: the export overwrites the target, so a contribution made in the public repository is destroyed by the next export, or has to be replayed by hand under the wrong author. An export-based repository is hostile to the contributors this one invites.
+  - (c) **Develop in public; the private copy keeps only what can't be public, and the gates move to a pre-push hook on the public clone.** Chosen.
+- **Decision:** (c). The private working copy stops holding a second copy of the code and keeps the personal material, so it stays in use rather than frozen. `scanMain` (`scripts/export/scan.cli.ts`) runs A21 and A22 against a live repository's **tracked** files — only those get pushed — and `release/public-pre-push-scan.sh` runs it as the public clone's `pre-push` hook.
+- **Consequences:**
+  - **The gate runs at the last moment anything can be stopped**, on every push, rather than once per export. Proven by committing a denylist term to the public clone and watching the push be refused; the output named the term's source, never the term.
+  - **It fails closed.** A missing scanner, denylist, database, or folder refuses the push. A gate that passes because it couldn't check is worse than no gate, because it is trusted.
+  - **The hook is local and uncommitted**, like the push guard in private clones, so no machine-specific path is ever committed. It has to be installed per clone, which the script's own header documents.
+  - **One copy of the code.** Contributions land in public and stay there, with their author's name on them.
+  - **The export stays** for as long as the two repositories both exist, and becomes unnecessary once the public one is the only place code lives.
