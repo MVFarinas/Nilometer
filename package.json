@@ -13,7 +13,6 @@
   },
   "homepage": "https://github.com/MVFarinas/Nilometer#readme",
   "private": true,
-  "description": "Reports the observed cost of a Claude subscription: interruptions when the plan is too small, unused headroom when it is too big.",
   "type": "module",
   "bin": {
     "nilometer": "dist/cli/main.cli.js"
@@ -55,10 +54,5 @@
   "dependencies": {
     "better-sqlite3": "^13.0.3",
     "commander": "^15.0.0"
-  },
-  "allowScripts": {
-    "better-sqlite3": false,
-    "esbuild": false,
-    "fsevents": false
   }
 }

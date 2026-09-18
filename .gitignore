@@ -3,16 +3,28 @@ node_modules/
 dist/
 coverage/
 
-# Local databases and spool files created while developing; they hold real usage data.
+# Local databases, spools, logs, and saved reports created while developing; they hold real usage data.
 *.db
 *.db-wal
 *.db-shm
+*.sqlite
+*.sqlite3
 *.spool.jsonl
+hook-errors.log
+*.log
+report_*.txt
+report_*.json
 
 # Machine-local files
 .DS_Store
 .env
 .env.*
+.claude/settings.local.json
+.vscode/
+.idea/
+*.tsbuildinfo
+# npm pack output
+*.tgz
 
 # Python bytecode from running the reference implementation
 __pycache__/
