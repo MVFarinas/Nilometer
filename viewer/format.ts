@@ -157,8 +157,9 @@ export function formatInstant(iso: string | null | undefined, timeZone: string):
  * @param from - First instant covered, or null when there's no data.
  * @param to - Last instant covered, or null.
  * @param timeZone - IANA zone.
- * @returns `no data yet`, `YYYY-MM-DD HH:MM–HH:MM (zone)` within one local day, or
- *   `YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM (zone)`.
+ * @returns `no data yet`, `YYYY-MM-DD HH:MM to HH:MM (zone)` within one local day, or
+ *   `YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM (zone)`. "to" rather than an en dash: the same idea was
+ *   written two ways, and a Windows console on a legacy code page renders the dash as mojibake.
  */
 export function formatCoverage(
   from: string | null | undefined,
@@ -171,7 +172,7 @@ export function formatCoverage(
   const start = localParts(from, timeZone);
   const end = localParts(to, timeZone);
   if (start.date === end.date) {
-    return `${start.date} ${start.time}–${end.time} (${timeZone})`;
+    return `${start.date} ${start.time} to ${end.time} (${timeZone})`;
   }
   return `${start.date} ${start.time} to ${end.date} ${end.time} (${timeZone})`;
 }

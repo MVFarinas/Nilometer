@@ -85,7 +85,7 @@ describe("formatCoverage", () => {
   it("names the zone and collapses a span within one local day", () => {
     expect(
       formatCoverage("2026-09-03T14:00:00.000Z", "2026-09-03T20:15:00.000Z", "America/Chicago"),
-    ).toBe("2026-09-03 09:00–15:15 (America/Chicago)");
+    ).toBe("2026-09-03 09:00 to 15:15 (America/Chicago)");
   });
 
   it("spells out both dates across days and months", () => {
