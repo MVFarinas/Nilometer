@@ -18,7 +18,11 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readFileSync,
   readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 
@@ -37,6 +41,7 @@ export const DATA_DIR_FILES = [
   "hook-errors.log",
   "install-record.json",
   "wrapped-command",
+  "statusline.sh",
 ] as const;
 
 /** Subdirectories of the data directory whose files are all Nilometer's. */
@@ -183,4 +188,45 @@ export function describeTightened(tightened: readonly string[]): string | null {
   }
   const noun = tightened.length === 1 ? "path was" : "paths were";
   return `Made Nilometer's data owner-only: ${tightened.length} ${noun} readable by other accounts on this computer.`;
+}
+
+/**
+ * Installs the hook script into the data directory, replacing an older copy.
+ *
+ * The status line command names this copy, not the one in the package, so upgrading Node or moving
+ * the checkout can't leave the command pointing at nothing (D-056). Written through a temporary
+ * file and a rename, so a hook that is running during an upgrade never reads a half-written script.
+ * @param source - The hook inside the package.
+ * @param destination - Where it goes, inside the data directory.
+ * @param platform - The platform, for tests; defaults to this one.
+ * @returns True when the copy changed, so `init` can say the hook was refreshed.
+ * @throws {Error} If the destination is a symbolic link. Its contents are executed on every reply,
+ *   and `init` only ever writes a regular file there (D-050).
+ */
+export function installHook(
+  source: string,
+  destination: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (existsSync(destination) && lstatSync(destination).isSymbolicLink()) {
+    throw new Error(`${destination} is a symbolic link; refusing to write the hook through it`);
+  }
+  const wanted = readFileSync(source);
+  if (existsSync(destination) && readFileSync(destination).equals(wanted)) {
+    return false;
+  }
+  // Same directory as the destination, so the rename is atomic.
+  const temp = `${destination}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    writeFileSync(temp, wanted, { mode: PRIVATE_FILE_MODE });
+    if (hasPosixModes(platform)) {
+      // writeFile's mode is filtered by the umask; chmod makes it exact.
+      chmodSync(temp, PRIVATE_FILE_MODE);
+    }
+    renameSync(temp, destination);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
+  return true;
 }

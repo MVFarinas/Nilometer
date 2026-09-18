@@ -97,7 +97,7 @@ function expectNoBannedWording(lines: readonly string[]): void {
 }
 
 /** Common fields for outcome fixtures. */
-const PATHS = { settingsPath: "/s/settings.json", dataDir: "/d" };
+const PATHS = { settingsPath: "/s/settings.json", dataDir: "/d", hookRefreshed: false };
 
 describe("toInstallOptions", () => {
   it("maps flags and the three environment variables, calling the clock once", () => {
@@ -229,6 +229,18 @@ describe("describeInit", () => {
       { ...PATHS, action: "updated", backupPath: null, wrappedCommand: null },
       0,
       /Backup of the previous settings: none/,
+    ],
+    [
+      // A pulled version whose hook changed: the command is right, the copy was refreshed (D-056).
+      {
+        ...PATHS,
+        action: "already-installed",
+        backupPath: null,
+        wrappedCommand: null,
+        hookRefreshed: true,
+      },
+      0,
+      /hook script in \/d was updated/,
     ],
     [
       { ...PATHS, action: "already-installed", backupPath: null, wrappedCommand: null },

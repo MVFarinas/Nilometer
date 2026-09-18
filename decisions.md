@@ -775,3 +775,22 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **The per-test `realpathSync` calls stay** and are now redundant for the root, which is harmless: canonicalizing an already-canonical path returns it unchanged.
   - **Not a product defect, but a real product limit.** In use, `cwd` comes from Claude Code and `repo_root` from git. If a `cwd` ever arrived with a short name, the two would disagree and one repository would be recorded as two — the same shape as the `C:`/`c:` duplicate that [D-049](decisions.md) fixed. That one was fixable in a migration because a drive letter's case can be normalized from the string alone; a short name can't, since expanding it needs the directory to still exist, and missing directories stay attributable by path (D-028). It isn't normalized, and nothing has been seen in real data. Recorded here so a duplicate repository row on Windows has a first place to look.
   - **A second Windows machine earns its place.** The PC and the CI runner disagree about user names, temp paths, and symbolic-link permissions, and each has now caught something the other couldn't.
+
+## D-056: `init` installs the hook into the data directory, so no upgrade can move it (2026-09-18)
+
+- **Status:** accepted. Closes R2.2, the item that blocked publishing to a package registry.
+- **Context:** `init` wrote the path of `hooks/statusline.sh` *inside the package* into Claude Code's `statusLine.command`. That path is only as stable as the package's location, and it isn't stable:
+  - **A global install lives under the Node version in use.** On the machine this was found on, `npm root -g` is under `node-versions/v24.21.0/`. Upgrading Node leaves the command naming a file that no longer exists.
+  - **A clone can move.** Observed the same day: switching between two checkouts made `init` print "the hook's location had changed", and it was only corrected because `init` happened to run.
+  - **The failure is silent.** The shell reports "No such file or directory" into a status line nobody reads, exits non-zero, and Claude Code shows nothing unusual. Readings simply stop. A gap in the data that announces itself as nothing is the failure this project exists to prevent.
+- **Options:**
+  - (a) Keep naming the package, and tell people to re-run `init` after every upgrade. Rejected: it makes a silent data gap the user's responsibility, and nothing reminds them.
+  - (b) Resolve the hook through the `nilometer` command at run time. Rejected: it puts Node in the status line's critical path on every reply, where today there's only `sh`.
+  - (c) **Copy the hook into the data directory and name that copy.** Chosen. The data directory is chosen by the user, holds the database and the spool, and never moves on its own.
+- **Decision:** (c). `init` writes `<data dir>/statusline.sh` on every run (`installHook`), and `resolveTargets` builds the command from it. The copy is written to a temporary file and renamed, so a hook running during an upgrade never reads half a script; it is owner-only; and a symbolic link in that place is refused rather than written through, like every other file `init` owns (D-050).
+- **Consequences:**
+  - **Proven, both ways.** With the package deleted outright, the status line command still ran the user's wrapped command and recorded a reading. The command `init` would have written before this change fails with exit 127 on the same setup, recording nothing.
+  - **A stale copy is possible, and is reported.** Pulling a new version leaves the settings command correct but the installed copy old, so `init` compares the two and says when it refreshed one. That's why `init` copies on every run, including when it changes nothing else.
+  - **Existing installs move across by running `init` again**, which updates the command in place and keeps the install record. Nothing needs to be uninstalled first.
+  - **The data directory now holds an executable script**, listed in `DATA_DIR_FILES` so it is made owner-only with everything else. It sits beside `wrapped-command`, which was already executed and already protected.
+  - **Publishing to a registry is no longer blocked by this.** It stays unscheduled for its own reasons (an account, a name that can't be unpublished quietly, and a release workflow).

@@ -294,7 +294,13 @@ export function describeInit(outcome: InitOutcome): { lines: string[]; exitCode:
     case "already-installed":
       return {
         exitCode: 0,
-        lines: [`The hook is already installed in ${settingsPath}. Nothing was changed.`],
+        lines: outcome.hookRefreshed
+          ? [
+              `The hook is already installed in ${settingsPath}.`,
+              // Pulling a new version leaves the settings command right but the installed copy old.
+              `The hook script in ${dataDir} was updated to this version's.`,
+            ]
+          : [`The hook is already installed in ${settingsPath}. Nothing was changed.`],
       };
     case "refused-unsupported":
       return {

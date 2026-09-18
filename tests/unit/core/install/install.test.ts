@@ -2,6 +2,7 @@
  * @file Unit tests for core/install/install.ts, run against temporary home directories.
  */
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -22,12 +23,22 @@ import {
   runInit,
   runUninstall,
 } from "../../../../core/install/install.js";
+import { INSTALLED_HOOK_FILE } from "../../../../core/install/locations.js";
 import { RECORD_FILE, WRAPPED_COMMAND_FILE } from "../../../../core/install/record.js";
 import { SettingsError } from "../../../../core/settings/settings-file.js";
 import { HOOK_MARKER, buildHookCommand } from "../../../../core/settings/statusline.js";
 
 /** This repository's root, which contains hooks/statusline.sh. */
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
+
+/** A copy of the package elsewhere, standing in for a package that moved (D-056). */
+const PACKAGE_ROOT_COPY = (() => {
+  const root = mkdtempSync(join(tmpdir(), "aua-install-pkg-"));
+  mkdirSync(join(root, "hooks"), { recursive: true });
+  cpSync(join(PACKAGE_ROOT, "hooks", "statusline.sh"), join(root, "hooks", "statusline.sh"));
+  writeFileSync(join(root, "package.json"), "{}\n");
+  return root;
+})();
 
 /** A user's own status line, written with unusual formatting that JSON.stringify can't reproduce. */
 const FOREIGN_SETTINGS =
@@ -76,11 +87,15 @@ describe("resolveTargets", () => {
   it("combines default settings path, default data dir, and the hook command", () => {
     const options = freshOptions();
     const dataDir = join(options.home, ".local", "share", "nilometer");
+    // The command names the hook inside the data directory, not the one in the package (D-056).
+    const hookPath = join(dataDir, INSTALLED_HOOK_FILE);
     expect(resolveTargets(options)).toEqual({
       settingsPath: join(options.home, ".claude", "settings.json"),
       dataDir,
-      hookCommand: buildHookCommand(join(PACKAGE_ROOT, "hooks", "statusline.sh"), dataDir),
+      hookPath,
+      hookCommand: buildHookCommand(hookPath, dataDir),
     });
+    expect(slash(hookPath)).not.toContain(slash(PACKAGE_ROOT));
   });
 
   it("honours CLAUDE_CONFIG_DIR and flag overrides", () => {
@@ -106,6 +121,7 @@ describe("runInit", () => {
       dataDir,
       backupPath: null,
       wrappedCommand: null,
+      hookRefreshed: true,
     });
     expect(readFileSync(settingsPath, "utf8")).toBe(
       `${JSON.stringify({ statusLine: { type: "command", command: hookCommand } }, null, 2)}\n`,
@@ -161,17 +177,55 @@ describe("runInit", () => {
     expect(readFileSync(path, "utf8").split(HOOK_MARKER)).toHaveLength(2);
   });
 
-  it("updates the command in place when the hook moved, keeping the original record", () => {
+  it("leaves the command alone when the package moves, which is the point (D-056)", () => {
+    // A global npm install lives under the Node version in use, so an upgrade moves the package.
+    // The command names the copy in the data directory, so it keeps working.
     const options = freshOptions();
     const path = writeSettingsText(options, FOREIGN_SETTINGS);
     runInit(options);
-    const moved = { ...later(options, 1), packageRoot: "/new/place" };
+    const before = readFileSync(path, "utf8");
+    const moved = { ...later(options, 1), packageRoot: PACKAGE_ROOT_COPY };
     const outcome = runInit(moved);
+    expect(outcome.action).toBe("already-installed");
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(slash(readFileSync(path, "utf8"))).toContain(
+      slash(join(resolveTargets(options).dataDir, INSTALLED_HOOK_FILE)),
+    );
+  });
+
+  it("updates a command left by an install that named the package, keeping the record", () => {
+    // Installs made before D-056 point at the package. Running init again moves them across.
+    const options = freshOptions();
+    const path = writeSettingsText(options, FOREIGN_SETTINGS);
+    runInit(options);
+    const { dataDir } = resolveTargets(options);
+    const old = JSON.parse(readFileSync(path, "utf8")) as { statusLine: { command: string } };
+    old.statusLine.command = buildHookCommand(
+      join(PACKAGE_ROOT, "hooks", "statusline.sh"),
+      dataDir,
+    );
+    writeFileSync(path, JSON.stringify(old, null, 2));
+    const outcome = runInit(later(options, 1));
     expect(outcome.action).toBe("updated");
     expect(outcome.backupPath).not.toBeNull();
     expect(outcome.wrappedCommand).toBe("~/bin/status.sh");
     const written = JSON.parse(readFileSync(path, "utf8")) as { statusLine: { command: string } };
-    expect(slash(written.statusLine.command)).toContain("/new/place/hooks/statusline.sh");
+    expect(slash(written.statusLine.command)).toContain(slash(join(dataDir, INSTALLED_HOOK_FILE)));
+  });
+
+  it("refreshes the installed hook when the package's hook changed (D-056)", () => {
+    // Pulling a new version leaves the settings command right but the installed copy old.
+    const options = freshOptions();
+    writeSettingsText(options, FOREIGN_SETTINGS);
+    expect(runInit(options).hookRefreshed).toBe(true);
+    expect(runInit(later(options, 1)).hookRefreshed).toBe(false);
+    const hookPath = join(resolveTargets(options).dataDir, INSTALLED_HOOK_FILE);
+    writeFileSync(hookPath, "# an older version\n");
+    const outcome = runInit(later(options, 2));
+    expect(outcome).toMatchObject({ action: "already-installed", hookRefreshed: true });
+    expect(readFileSync(hookPath, "utf8")).toBe(
+      readFileSync(join(PACKAGE_ROOT, "hooks", "statusline.sh"), "utf8"),
+    );
   });
 
   it("refuses to update when the hook was installed with a different data directory", () => {

@@ -27,7 +27,8 @@ import {
   planInstall,
   planUninstall,
 } from "../settings/statusline.js";
-import { HOOK_RELATIVE_PATH, resolveDataDir } from "./locations.js";
+import { HOOK_RELATIVE_PATH, INSTALLED_HOOK_FILE, resolveDataDir } from "./locations.js";
+import { ensurePrivateDir, installHook } from "./private-files.js";
 import { readInstallRecord, removeInstallRecord, writeInstallRecord } from "./record.js";
 
 /** Layout used when `init` creates a settings file from scratch: what Claude Code writes. */
@@ -51,10 +52,18 @@ export interface InstallOptions {
   readonly packageRoot: string;
   /** Current time, injected for deterministic backup names. */
   readonly now: Date;
+  /** The platform, for tests; defaults to this one. Decides whether file modes are set (D-049). */
+  readonly platform?: NodeJS.Platform;
 }
 
 /** Result of {@link runInit}. */
 export interface InitOutcome {
+  /**
+   * True when this run wrote a new copy of the hook into the data directory: a first install, or a
+   * package whose hook changed since last time (D-056). A stale copy would keep recording with the
+   * previous version's behaviour, so `init` says when it refreshed one.
+   */
+  readonly hookRefreshed: boolean;
   /**
    * What happened:
    * - `installed`: the hook now runs, wrapping any original command
@@ -84,6 +93,7 @@ export function resolveTargets(options: InstallOptions): {
   settingsPath: string;
   dataDir: string;
   hookCommand: string;
+  hookPath: string;
 } {
   const settingsPath = locateSettings({
     home: options.home,
@@ -95,8 +105,11 @@ export function resolveTargets(options: InstallOptions): {
     env: options.env,
     override: options.dataDirOverride,
   });
-  const hookCommand = buildHookCommand(join(options.packageRoot, HOOK_RELATIVE_PATH), dataDir);
-  return { settingsPath, dataDir, hookCommand };
+  // The command names the copy in the data directory, which nothing moves, not the one in the
+  // package, whose path changes with the Node version or the checkout's location (D-056).
+  const hookPath = join(dataDir, INSTALLED_HOOK_FILE);
+  const hookCommand = buildHookCommand(hookPath, dataDir);
+  return { settingsPath, dataDir, hookCommand, hookPath };
 }
 
 /**
@@ -108,11 +121,19 @@ export function resolveTargets(options: InstallOptions): {
  * @throws {import("./record.js").InstallRecordError} If an existing install record is corrupt.
  */
 export function runInit(options: InstallOptions): InitOutcome {
-  const { settingsPath, dataDir, hookCommand } = resolveTargets(options);
+  const { settingsPath, dataDir, hookCommand, hookPath } = resolveTargets(options);
   const read = readSettings(settingsPath);
   const settings = read.kind === "ok" ? read.settings : null;
   const plan = planInstall(settings, hookCommand);
-  const base = { settingsPath, dataDir };
+  // Before the settings can name it, and on every run: a package whose hook changed needs the copy
+  // refreshed, even when the command itself is already correct (D-056).
+  const platform = options.platform ?? process.platform;
+  let hookRefreshed = false;
+  if (plan.action !== "refuse") {
+    ensurePrivateDir(dataDir, platform);
+    hookRefreshed = installHook(join(options.packageRoot, HOOK_RELATIVE_PATH), hookPath, platform);
+  }
+  const base = { settingsPath, dataDir, hookRefreshed };
 
   switch (plan.action) {
     case "none":

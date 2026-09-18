@@ -62,6 +62,16 @@ export function resolveDataDir(options: DataDirOptions): string {
 export const HOOK_RELATIVE_PATH = join("hooks", "statusline.sh");
 
 /**
+ * The hook's name inside the data directory, where `init` installs a copy of it (D-056).
+ *
+ * The status line command has to name a path that nothing moves. A path inside the package moves
+ * whenever the package does: a global npm install lives under the Node version in use, so upgrading
+ * Node leaves the command pointing at a file that no longer exists, and readings stop with no
+ * error. The data directory is chosen by the user and never moves on its own.
+ */
+export const INSTALLED_HOOK_FILE = "statusline.sh";
+
+/**
  * Finds the package root by walking up from a directory until `hooks/statusline.sh` and
  * `package.json` both exist.
  *
