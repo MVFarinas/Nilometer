@@ -247,7 +247,9 @@ export function describeIngest(outcome: IngestCommandOutcome): string[] {
       : `requests stored from ${totals.firstRequestUtc} to ${totals.lastRequestUtc} (UTC)`;
   return [
     `Log roots read: ${outcome.roots.length === 0 ? "none found" : outcome.roots.join(", ")}`,
-    `This run: ${run.files} files, ${run.linesRead} complete lines read, ${run.linesStored} new, ${run.filesRewritten} rewritten files reread${run.spoolRead ? ", status line spool read" : ""}.`,
+    // Logs and the spool are named apart: one log plus the spool read as "2 files" and looked
+    // like a miscount to someone who had a single session log.
+    `This run: ${run.logFiles} session ${run.logFiles === 1 ? "log" : "logs"}${run.spoolRead ? " and the status line spool" : ""}, ${run.linesRead} complete lines read, ${run.linesStored} new, ${run.filesRewritten} rewritten files reread.`,
     `Stored: ${totals.requests} requests (${totals.unkeyedRequests} without IDs), ${totals.limitHits} limit hits, ${totals.otherEvents} other error or retry events; ${span}.`,
     `Status line: ${totals.statusReadings} readings, ${totals.malformedReadings} undecodable spool lines, ${totals.invalidWindows} flagged window values, ${totals.hookErrors} hook append failures.`,
     `Reported for review: ${totals.malformedLines} malformed log lines${run.unreadable === 0 ? "" : `, ${run.unreadable} files or folders that couldn't be read this run (skipped)`}.`,

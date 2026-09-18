@@ -155,6 +155,7 @@ describe("describeIngest", () => {
     run: {
       runId: 1,
       files: 3,
+      logFiles: 2,
       spoolRead: true,
       linesRead: 40,
       linesStored: 30,
@@ -183,7 +184,7 @@ describe("describeIngest", () => {
   it("states every count, the span, and the database path", () => {
     expect(describeIngest(outcome)).toEqual([
       "Log roots read: /h/.claude, /alt",
-      "This run: 3 files, 40 complete lines read, 30 new, 1 rewritten files reread, status line spool read.",
+      "This run: 2 session logs and the status line spool, 40 complete lines read, 30 new, 1 rewritten files reread.",
       "Stored: 12 requests (2 without IDs), 4 limit hits, 5 other error or retry events; requests stored from 2026-09-01T00:00:00.000Z to 2026-09-02T00:00:00.000Z (UTC).",
       "Status line: 7 readings, 8 undecodable spool lines, 9 flagged window values, 11 hook append failures.",
       "Reported for review: 6 malformed log lines.",
@@ -206,6 +207,61 @@ describe("describeIngest", () => {
       "Made Nilometer's data owner-only: 2 paths were readable by other accounts on this computer.",
     );
     expectNoBannedWording(empty);
+  });
+});
+
+describe("describeIngest wording", () => {
+  /**
+   * Builds an ingest outcome with the counts a test cares about.
+   * @param run - Fields to override on the run.
+   * @returns An outcome ready for describeIngest.
+   */
+  function outcomeWith(run: Partial<IngestCommandOutcome["run"]>): IngestCommandOutcome {
+    return {
+      databasePath: "/d/usage.db",
+      roots: ["/h/.claude"],
+      run: {
+        runId: 1,
+        files: 1,
+        logFiles: 1,
+        spoolRead: false,
+        linesRead: 4,
+        linesStored: 4,
+        linesAlreadyStored: 0,
+        filesRewritten: 0,
+        unreadable: 0,
+        ...run,
+      },
+      derived: { lines: 4, rebuilt: false },
+      repositoriesResolved: 0,
+      totals: {
+        requests: 4,
+        unkeyedRequests: 0,
+        limitHits: 0,
+        otherEvents: 0,
+        malformedLines: 0,
+        statusReadings: 0,
+        malformedReadings: 0,
+        invalidWindows: 0,
+        hookErrors: 0,
+        firstRequestUtc: null,
+        lastRequestUtc: null,
+      },
+      permissionsTightened: [],
+    };
+  }
+
+  it("counts session logs apart from the spool, so one log isn't reported as two files", () => {
+    // The count used to include the spool, and "2 files" read as a miscount to a tester who had
+    // a single session log (R2.5).
+    const line = describeIngest(outcomeWith({ files: 2, logFiles: 1, spoolRead: true }))[1];
+    expect(line).toContain("1 session log and the status line spool");
+    expect(line).not.toContain("2 files");
+  });
+
+  it("says nothing about a spool that wasn't there, and pluralises logs", () => {
+    expect(describeIngest(outcomeWith({ files: 3, logFiles: 3 }))[1]).toContain("3 session logs,");
+    expect(describeIngest(outcomeWith({ files: 3, logFiles: 3 }))[1]).not.toContain("spool");
   });
 });
 

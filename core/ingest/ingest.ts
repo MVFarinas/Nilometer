@@ -51,6 +51,11 @@ export interface IngestSummary {
   readonly runId: number;
   /** Files examined, logs and spool together. */
   readonly files: number;
+  /**
+   * Session logs examined, without the status line spool. Reported separately because "2 files"
+   * for one session log and the spool reads as a miscount to someone who has one log (R2.5).
+   */
+  readonly logFiles: number;
   /** Whether a spool file was found and read this run. */
   readonly spoolRead: boolean;
   /** Complete lines read from disk this run. */
@@ -91,6 +96,8 @@ export const SPOOL_FILE = "statusline.spool.jsonl";
 interface RunCounts {
   /** Files examined. */
   files: number;
+  /** Session logs examined, without the spool. */
+  logFiles: number;
   /** Files and folders skipped because they couldn't be read. */
   unreadable: number;
   /** Complete lines read. */
@@ -156,6 +163,9 @@ function ingestFile(db: Db, file: FileRef, run: RunContext): void {
   const path = join(file.root, file.relativePath);
   const current = run.stat(path);
   counts.files += 1;
+  if (file.kind === "log") {
+    counts.logFiles += 1;
+  }
   // One transaction per file: its lines and its new offset commit together, so a crash can
   // never save an offset past lines that weren't stored.
   db.transaction(() => {
@@ -213,6 +223,7 @@ export function ingestLogs(db: Db, options: IngestOptions): IngestSummary {
   const stat = options.stat ?? ((path: string) => statFile(path));
   const runId = startRun(db, options.mode, options.now());
   const counts: RunCounts = {
+    logFiles: 0,
     files: 0,
     unreadable: 0,
     linesRead: 0,
@@ -236,6 +247,7 @@ export function ingestLogs(db: Db, options: IngestOptions): IngestSummary {
   return {
     runId,
     files: counts.files,
+    logFiles: counts.logFiles,
     spoolRead,
     linesRead: counts.linesRead,
     linesStored: counts.linesStored,
