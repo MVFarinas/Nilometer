@@ -188,7 +188,10 @@ describe("runInit", () => {
     const outcome = runInit(moved);
     expect(outcome.action).toBe("already-installed");
     expect(readFileSync(path, "utf8")).toBe(before);
-    expect(slash(readFileSync(path, "utf8"))).toContain(
+    // Parse before comparing: in the raw file every backslash is JSON-escaped, so slashing the
+    // text turns "\\" into "//" and the match fails on Windows only (found on the PC).
+    const after = JSON.parse(readFileSync(path, "utf8")) as { statusLine: { command: string } };
+    expect(slash(after.statusLine.command)).toContain(
       slash(join(resolveTargets(options).dataDir, INSTALLED_HOOK_FILE)),
     );
   });

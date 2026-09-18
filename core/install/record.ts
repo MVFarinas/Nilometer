@@ -8,10 +8,10 @@
  * - `wrapped-command`: the original command as plain text, the only thing the shell hook reads.
  *   It exists only when there was an original command.
  */
-import { existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ensurePrivateDir, tightenMode } from "./private-files.js";
+import { ensurePrivateDir, removePath, tightenMode } from "./private-files.js";
 import { writeFileAtomic } from "../settings/settings-file.js";
 import { type StatusLineEntry, isCommandEntry } from "../settings/statusline.js";
 
@@ -64,7 +64,7 @@ export function writeInstallRecord(dataDir: string, record: InstallRecord): void
   const wrappedPath = join(dataDir, WRAPPED_COMMAND_FILE);
   if (record.original === null) {
     // A stale file from an earlier install would make the hook run a command that's gone.
-    rmSync(wrappedPath, { force: true });
+    removePath(wrappedPath);
   } else {
     writeFileAtomic(wrappedPath, record.original.command);
   }
@@ -118,6 +118,7 @@ export function readInstallRecord(dataDir: string): InstallRecord | null {
  * @param dataDir - The tool's data directory.
  */
 export function removeInstallRecord(dataDir: string): void {
-  rmSync(join(dataDir, RECORD_FILE), { force: true });
-  rmSync(join(dataDir, WRAPPED_COMMAND_FILE), { force: true });
+  // removePath, not rmSync: rmSync silently removes nothing on a non-ASCII Windows path (D-061).
+  removePath(join(dataDir, RECORD_FILE));
+  removePath(join(dataDir, WRAPPED_COMMAND_FILE));
 }

@@ -339,7 +339,12 @@ describe("describeInit", () => {
 });
 
 describe("describeDeletion", () => {
-  const deletion = { removed: ["usage.db", "reports"], directoryRemoved: true, kept: [] };
+  const deletion = {
+    removed: ["usage.db", "reports"],
+    failed: [],
+    directoryRemoved: true,
+    kept: [],
+  };
   const summary = {
     requests: 6072,
     readings: 1092,
@@ -358,7 +363,7 @@ describe("describeDeletion", () => {
 
   it("names what it left alone, so a shared folder's contents are accounted for", () => {
     const lines = describeDeletion("/d", {
-      deletion: { removed: ["usage.db"], directoryRemoved: false, kept: ["notes.txt"] },
+      deletion: { removed: ["usage.db"], failed: [], directoryRemoved: false, kept: ["notes.txt"] },
       summary,
     });
     expect(lines.join("\n")).toContain(
@@ -369,7 +374,7 @@ describe("describeDeletion", () => {
   it("says so when there was nothing to delete, and copes with no database", () => {
     expect(
       describeDeletion("/d", {
-        deletion: { removed: [], directoryRemoved: false, kept: [] },
+        deletion: { removed: [], failed: [], directoryRemoved: false, kept: [] },
         summary: null,
       }),
     ).toEqual(["No recorded data was found in /d."]);
@@ -386,7 +391,7 @@ describe("describeDeletion", () => {
 });
 
 describe("describeUninstall", () => {
-  const base = { ...PATHS, exactBytes: true, restoredCommand: null };
+  const base = { ...PATHS, exactBytes: true, restoredCommand: null, notRemoved: [] };
   const cases: [UninstallOutcome, RegExp][] = [
     [
       { ...base, action: "restored", backupPath: "/b", recordMissing: false },

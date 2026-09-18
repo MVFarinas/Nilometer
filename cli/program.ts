@@ -38,7 +38,6 @@ import {
 } from "../core/install/install.js";
 import { SettingsError } from "../core/settings/settings-file.js";
 import { METRIC_NAMES, UnknownMetricError, explain, renderExplanation } from "../viewer/explain.js";
-import { formatNumber } from "../viewer/format.js";
 import {
   NoDatabaseError,
   type StoredDataSummary,
@@ -47,7 +46,7 @@ import {
   withReportDatabase,
 } from "../viewer/report.js";
 import { saveReport } from "../viewer/save.js";
-import { displayPath, renderReport, reportJson } from "../viewer/render.js";
+import { displayPath, plural, renderReport, reportJson } from "../viewer/render.js";
 
 /** Everything the program needs from its environment, injected so tests never touch real homes. */
 export interface CliDeps {
@@ -360,18 +359,28 @@ export interface DataDeleted {
  */
 export function describeDeletion(dataDir: string, deleted: DataDeleted): string[] {
   const { deletion, summary } = deleted;
-  if (deletion.removed.length === 0) {
+  if (deletion.removed.length === 0 && deletion.failed.length === 0) {
     return [`No recorded data was found in ${dataDir}.`];
   }
-  const lines = [`Deleted the recorded data in ${dataDir}: ${deletion.removed.join(", ")}.`];
+  const lines =
+    deletion.removed.length === 0
+      ? [`Nothing in ${dataDir} could be deleted.`]
+      : [`Deleted the recorded data in ${dataDir}: ${deletion.removed.join(", ")}.`];
   if (summary !== null) {
     const span =
       summary.firstRequestUtc === null || summary.lastRequestUtc === null
         ? "no requests were stored"
         : `requests ran from ${summary.firstRequestUtc} to ${summary.lastRequestUtc} (UTC)`;
     lines.push(
-      `It held ${formatNumber(summary.requests, "count")} requests and ${formatNumber(summary.readings, "count")} status line readings; ${span}.`,
+      `It held ${plural(summary.requests, "request", "requests")} and ${plural(summary.readings, "status line reading", "status line readings")}; ${span}.`,
       "Session logs older than Claude Code's own 30-day cleanup were only in there. This can't be undone.",
+    );
+  }
+  if (deletion.failed.length > 0) {
+    // The defect this exists for: files were reported as deleted while still on disk (D-061).
+    lines.push(
+      `Still there, though Nilometer wrote them and tried to remove them: ${deletion.failed.join(", ")}.`,
+      "Remove those by hand, and please report it: nothing above claims they are gone.",
     );
   }
   if (deletion.directoryRemoved) {
@@ -404,6 +413,14 @@ export function describeUninstall(
   // The command comes from the install record on disk, so show what's going back in (D-050).
   const restored =
     restoredCommand === null ? [] : [`Status line command restored: ${restoredCommand}`];
+  // A removal that didn't happen is reported and fails, never reported as done (D-061).
+  const notRemoved =
+    outcome.notRemoved.length === 0
+      ? []
+      : [
+          `Could not remove ${outcome.notRemoved.join(", ")}: still there after trying.`,
+          "The hook may still be registered there, and would keep recording. Remove it by hand.",
+        ];
   switch (outcome.action) {
     case "restored":
       return {
@@ -419,9 +436,12 @@ export function describeUninstall(
       };
     case "removed-settings-file":
       return {
-        exitCode: 0,
+        exitCode: outcome.notRemoved.length === 0 ? 0 : 1,
         lines: [
-          `Removed ${settingsPath}: init had created it and it held nothing else.`,
+          outcome.notRemoved.length === 0
+            ? `Removed ${settingsPath}: init had created it and it held nothing else.`
+            : `${settingsPath} was created by init and holds nothing else, but could not be removed.`,
+          ...notRemoved,
           `Backup of the removed file: ${backupPath ?? "none"}`,
           kept,
         ],
@@ -713,10 +733,10 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
           }
           // Read what is there before removing it: afterwards there is nothing left to ask.
           const summary = summarizeStoredData(toPlanDatabaseOptions(flags, deps));
-          return describeUninstall(outcome, {
-            summary,
-            deletion: deleteDataFiles(outcome.dataDir),
-          });
+          const deletion = deleteDataFiles(outcome.dataDir);
+          const described = describeUninstall(outcome, { summary, deletion });
+          // A file Nilometer wrote and could not remove is a failure, whatever else went right.
+          return deletion.failed.length === 0 ? described : { ...described, exitCode: 1 };
         }),
       );
     });

@@ -17,12 +17,12 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
+import { removePath } from "../install/private-files.js";
 import { expandHome } from "../util/paths.js";
 
 /** Why a settings file couldn't be used. */
@@ -231,7 +231,7 @@ export interface AtomicFs {
   readonly writeFileSync: (path: string, data: string, options: { mode: number }) => void;
   /** Renames a file, replacing the destination. */
   readonly renameSync: (from: string, to: string) => void;
-  /** Removes a file if it exists. */
+  /** Removes a file if it exists, tolerating its absence. */
   readonly rmSync: (path: string, options: { force: boolean }) => void;
   /** Returns a file's permission bits, or `null` if it doesn't exist. */
   readonly modeOf: (path: string) => number | null;
@@ -249,8 +249,10 @@ export const NODE_ATOMIC_FS: AtomicFs = {
   renameSync: (from, to) => {
     renameSync(from, to);
   },
-  rmSync: (path, options) => {
-    rmSync(path, options);
+  rmSync: (path) => {
+    // removePath, not rmSync: rmSync silently removes nothing on a non-ASCII Windows path, which
+    // would leave this temp file beside the settings file after a failed write (D-061).
+    removePath(path);
   },
   modeOf: (path) => (existsSync(path) ? statSync(path).mode & 0o777 : null),
   chmodSync: (path, mode) => {

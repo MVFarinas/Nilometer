@@ -873,3 +873,23 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **A real bug came out of writing those tests.** Removing the emptied directory used `rm` without recursion, which refuses a directory; the end-to-end run had missed it because a foreign file was present, so the directory was never removed. It is `rmdir` now, which fails rather than succeeds if anything appeared since the check.
   - **`summarizeStoredData` returns null rather than throwing** when there is no database, because `--delete-data` runs on installs that never recorded anything.
   - **The README documents removal** beside privacy, including that only Nilometer's own files go.
+
+## D-061: A removal is reported from the filesystem, not from the call returning (2026-09-18)
+
+- **Status:** accepted. Found on a Windows machine during the public repository's first verification pass.
+- **Context:** `uninstall --delete-data` printed that it had deleted four files, then printed the same four files under "left alone", and all four were still on disk. The self-contradiction was the clue: the code appended each name to `removed` as soon as `rmSync` returned, then listed whatever `readdirSync` still found.
+  - **The cause is below Nilometer.** On Windows, `fs.rmSync` on a single path removes nothing when any component of that path holds a non-ASCII character. It throws nothing, and `force: true` hides that it did nothing. Reproduced with no Nilometer code involved on Node 24.12, win32; **not reproducible on macOS Node 24.21**, so a newer Node may fix it. `unlinkSync`, `rmdirSync`, and `writeFileSync` + `renameSync` all work on those same paths.
+  - **Who it reaches:** anyone on Windows whose account name isn't ASCII, because the data directory defaults under the home directory. The same call sat in three more places:
+    - `uninstall` reported *"Removed settings.json: init had created it"* while the file survived **with the hook still registered**, so the hook kept running and kept recording after a reported uninstall. That is the worst of them: a tool that says it is gone and isn't.
+    - the install record and wrapped command survived `uninstall`.
+    - a failed settings write would leave its temporary file behind.
+- **Options:**
+  - (a) Swap `rmSync` for `unlinkSync` and `rmdirSync`, which work on the affected paths. Necessary, and not sufficient: it fixes one diagnosed platform bug and leaves the next one silent.
+  - (b) **Remove, then check the filesystem, and report what survived.** Chosen, with (a) inside it.
+- **Decision:** (b). `removePath` walks a tree apart with `unlinkSync` and `rmdirSync`, swallows whatever the call throws, and returns `!existsSync(path)` — the answer comes from the disk, not from the API. Every caller reports only what is confirmed gone: `deleteDataFiles` splits `removed` from `failed`, `uninstall` carries `notRemoved` and **exits 1** when a file it meant to remove is still there.
+- **Consequences:**
+  - **The claim is now falsifiable, and false claims cost an exit code.** "Deleted" means checked. A file Nilometer wrote, tried to remove, and could not, is printed as still there, with a line saying nothing above claims it is gone.
+  - **The guard is proven where it can be.** The Windows fault cannot be reproduced on macOS, so a test forces the same shape with a read-only parent directory: the unlink fails, the file survives, and the report has to say so. Reverting the check to `return true` fails that test. Without it, nothing on a POSIX machine exercised the failed path at all.
+  - **Non-ASCII paths are now tested**, which nothing did before — a data directory under `données de test` is deleted and verified.
+  - **This cannot be confirmed fixed from the machine that fixed it.** The verification belongs to the Windows machine that found it.
+  - **A test can be wrong in a platform-specific way too:** the same pass found an assertion that slashed raw JSON text, where every backslash is escaped, so it only failed on Windows. Compare parsed values, not file text.

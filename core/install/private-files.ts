@@ -23,6 +23,7 @@ import {
   renameSync,
   rmSync,
   rmdirSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -232,10 +233,42 @@ export function installHook(
   return true;
 }
 
+/**
+ * Removes a file or directory tree, then checks that it is gone.
+ *
+ * Not `rmSync`: on Windows it silently removes nothing when any part of the path holds a non-ASCII
+ * character, and `force: true` hides that it did nothing (observed on Node 24.12, win32; not
+ * reproducible on macOS Node 24.21). `unlinkSync` and `rmdirSync` work on those same paths, so the
+ * tree is walked and taken apart with them. The check afterwards is the part that matters: a
+ * deletion this code cannot verify is reported as a survivor, never as a success (D-061).
+ * @param path - The file or directory to remove.
+ * @returns True when nothing is at the path afterwards.
+ */
+export function removePath(path: string): boolean {
+  try {
+    if (!existsSync(path)) {
+      return true;
+    }
+    if (lstatSync(path).isDirectory()) {
+      for (const name of readdirSync(path)) {
+        removePath(join(path, name));
+      }
+      rmdirSync(path);
+    } else {
+      unlinkSync(path);
+    }
+  } catch {
+    // Whatever went wrong, the answer is the same question: is it still there?
+  }
+  return !existsSync(path);
+}
+
 /** What {@link deleteDataFiles} removed. */
 export interface DataDeletion {
-  /** Names removed from the data directory, in the order they were tried. */
+  /** Names confirmed gone from the data directory. */
   readonly removed: string[];
+  /** Names Nilometer wrote that it tried to remove and are still there (D-061). */
+  readonly failed: string[];
   /** True when the directory itself was removed because nothing else was left in it. */
   readonly directoryRemoved: boolean;
   /** Names found in the directory that Nilometer doesn't own, so weren't touched. */
@@ -245,7 +278,8 @@ export interface DataDeletion {
 /**
  * Removes the files Nilometer keeps in a data directory, and the directory if nothing else is left.
  *
- * Only the names Nilometer writes are removed ({@link DATA_DIR_FILES}, {@link DATA_DIR_SUBDIRS}).
+ * Only the names Nilometer writes are removed ({@link DATA_DIR_FILES}, {@link DATA_DIR_SUBDIRS}),
+ * and only what is confirmed gone is reported as removed.
  * A user can point `--data-dir` at a folder that holds other things, and deleting a directory
  * because of what it is called would take those with it (D-043 leaves shared folders alone). What
  * was left behind is reported rather than removed (R2.5).
@@ -254,20 +288,19 @@ export interface DataDeletion {
  */
 export function deleteDataFiles(dataDir: string): DataDeletion {
   const removed: string[] = [];
+  const failed: string[] = [];
   if (!existsSync(dataDir)) {
-    return { removed, directoryRemoved: false, kept: [] };
+    return { removed, failed, directoryRemoved: false, kept: [] };
   }
   const ours = new Set<string>([...DATA_DIR_FILES, ...DATA_DIR_SUBDIRS]);
   for (const name of readdirSync(dataDir)) {
     if (ours.has(name)) {
-      rmSync(join(dataDir, name), { recursive: true, force: true });
-      removed.push(name);
+      // Only what is confirmed gone counts as removed: claiming otherwise is the defect (D-061).
+      (removePath(join(dataDir, name)) ? removed : failed).push(name);
     }
   }
-  const kept = readdirSync(dataDir);
-  if (kept.length === 0) {
-    // rmdir, not rm: it fails rather than succeeds if anything appeared since the check above.
-    rmdirSync(dataDir);
-  }
-  return { removed, directoryRemoved: kept.length === 0, kept };
+  const left = readdirSync(dataDir);
+  const kept = left.filter((name) => !failed.includes(name));
+  const directoryRemoved = left.length === 0 && removePath(dataDir);
+  return { removed, failed, directoryRemoved, kept };
 }

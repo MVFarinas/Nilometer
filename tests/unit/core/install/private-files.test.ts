@@ -22,6 +22,7 @@ import {
   ensurePrivateDir,
   ensurePrivateFile,
   hasPosixModes,
+  removePath,
   securePrivateDataDir,
   tightenMode,
 } from "../../../../core/install/private-files.js";
@@ -239,8 +240,99 @@ describe("deleteDataFiles", () => {
     expect(existsSync(join(dir, "notes.txt"))).toBe(true);
   });
 
+  it("deletes, and reports, on a path with non-ASCII characters (D-061)", () => {
+    // On Windows, rmSync silently removes nothing when any part of the path is non-ASCII, and
+    // force: true hides it — so uninstall reported deleting files that were still on disk. Nothing
+    // covered a path like this before. The assertion is the filesystem, not the return value.
+    const dir = join(mkdtempSync(join(tmpdir(), "aua-delete-accent-")), "données de test", "aura");
+    mkdirSync(dir, { recursive: true });
+    for (const name of ["usage.db", "statusline.spool.jsonl", "install-record.json"]) {
+      writeFileSync(join(dir, name), "x");
+    }
+    mkdirSync(join(dir, "reports"));
+    writeFileSync(join(dir, "reports", "2026-09-18.txt"), "a saved report");
+
+    const result = deleteDataFiles(dir);
+    expect(result.failed).toEqual([]);
+    expect(result.removed.sort()).toEqual([
+      "install-record.json",
+      "reports",
+      "statusline.spool.jsonl",
+      "usage.db",
+    ]);
+    expect(result.directoryRemoved).toBe(true);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it.skipIf(!HAS_POSIX_MODES)(
+    "reports a file it could not remove as still there, not as deleted (D-061)",
+    () => {
+      // The Windows defect can't be reproduced here, so the same shape is forced with a read-only
+      // parent: the unlink fails, the file survives, and the report has to say so. Without this,
+      // nothing on a POSIX machine exercises the failed path at all.
+      const dir = mkdtempSync(join(tmpdir(), "aua-delete-readonly-"));
+      writeFileSync(join(dir, "usage.db"), "x");
+      writeFileSync(join(dir, "hook-errors.log"), "y");
+      chmodSync(dir, 0o500);
+      try {
+        const result = deleteDataFiles(dir);
+        expect(result.removed).toEqual([]);
+        expect(result.failed.sort()).toEqual(["hook-errors.log", "usage.db"]);
+        expect(result.directoryRemoved).toBe(false);
+        expect(existsSync(join(dir, "usage.db"))).toBe(true);
+      } finally {
+        chmodSync(dir, 0o700);
+      }
+    },
+  );
+
+  it("never reports a file as removed while it is still there (D-061)", () => {
+    // The shape of the defect, forced: whatever the platform does, what is on disk decides.
+    const dir = mkdtempSync(join(tmpdir(), "aua-delete-claim-"));
+    writeFileSync(join(dir, "usage.db"), "x");
+    const result = deleteDataFiles(dir);
+    for (const name of result.removed) {
+      expect(existsSync(join(dir, name))).toBe(false);
+    }
+    for (const name of result.failed) {
+      expect(existsSync(join(dir, name))).toBe(true);
+    }
+  });
+
   it("reports nothing removed for a directory that isn't there", () => {
     const missing = join(mkdtempSync(join(tmpdir(), "aua-delete-none-")), "gone");
-    expect(deleteDataFiles(missing)).toEqual({ removed: [], directoryRemoved: false, kept: [] });
+    expect(deleteDataFiles(missing)).toEqual({
+      removed: [],
+      failed: [],
+      directoryRemoved: false,
+      kept: [],
+    });
+  });
+});
+
+describe("removePath", () => {
+  it("removes a file, a tree, and says so; a missing path is already gone", () => {
+    const root = mkdtempSync(join(tmpdir(), "aua-removepath-"));
+    const file = join(root, "a.txt");
+    writeFileSync(file, "x");
+    expect(removePath(file)).toBe(true);
+    expect(existsSync(file)).toBe(false);
+
+    const tree = join(root, "deep", "er");
+    mkdirSync(tree, { recursive: true });
+    writeFileSync(join(tree, "b.txt"), "y");
+    expect(removePath(join(root, "deep"))).toBe(true);
+    expect(existsSync(join(root, "deep"))).toBe(false);
+
+    // Nothing there is the answer the caller wants, not an error.
+    expect(removePath(join(root, "never-existed"))).toBe(true);
+  });
+
+  it("answers from the filesystem, not from whether the call threw", () => {
+    // The Windows defect it exists for throws nothing and removes nothing (D-061).
+    const root = mkdtempSync(join(tmpdir(), "aua-removepath-check-"));
+    const file = join(root, "c.txt");
+    writeFileSync(file, "z");
+    expect(removePath(file)).toBe(!existsSync(file));
   });
 });

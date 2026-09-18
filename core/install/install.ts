@@ -8,7 +8,7 @@
  * Both operations return a plain outcome object. Wording for the user belongs to the CLI layer,
  * so outcomes can be tested without asserting on prose.
  */
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
@@ -28,7 +28,7 @@ import {
   planUninstall,
 } from "../settings/statusline.js";
 import { HOOK_RELATIVE_PATH, INSTALLED_HOOK_FILE, resolveDataDir } from "./locations.js";
-import { ensurePrivateDir, installHook } from "./private-files.js";
+import { ensurePrivateDir, installHook, removePath } from "./private-files.js";
 import { readInstallRecord, removeInstallRecord, writeInstallRecord } from "./record.js";
 
 /** Layout used when `init` creates a settings file from scratch: what Claude Code writes. */
@@ -211,6 +211,11 @@ export interface UninstallOutcome {
   /** True when no install record was found, so an original command couldn't be restored. */
   readonly recordMissing: boolean;
   /**
+   * Paths this run was supposed to remove and could not. Empty on every normal run. A removal that
+   * silently fails would otherwise be reported as a success, and on Windows it can (D-061).
+   */
+  readonly notRemoved: readonly string[];
+  /**
    * The status line command being restored from the install record, or null when there was none.
    * Printed so the user sees what `uninstall` puts back, since it comes from a file on disk (D-050).
    */
@@ -253,6 +258,7 @@ export function runUninstall(options: InstallOptions): UninstallOutcome {
     dataDir,
     recordMissing: record === null,
     restoredCommand: record?.original?.command ?? null,
+    notRemoved: [] as string[],
   };
 
   if (plan.action === "none" || read.kind !== "ok") {
@@ -263,9 +269,17 @@ export function runUninstall(options: InstallOptions): UninstallOutcome {
   const backupPath = backupSettings(settingsPath, options.now);
   // init created this file and nothing else was added since: the faithful undo is no file at all.
   if (record !== null && !record.settingsExisted && Object.keys(plan.settings).length === 0) {
-    rmSync(settingsPath);
+    // Verified, not assumed: a removal that silently does nothing would leave the hook registered
+    // while `uninstall` reported success, and it would keep recording (D-061).
+    const gone = removePath(settingsPath);
     removeInstallRecord(dataDir);
-    return { ...base, action: "removed-settings-file", backupPath, exactBytes: true };
+    return {
+      ...base,
+      action: "removed-settings-file",
+      backupPath,
+      exactBytes: true,
+      notRemoved: gone ? [] : [settingsPath],
+    };
   }
   // If the result equals the pre-install file, write its exact bytes: a re-serialization could
   // differ in whitespace the JSON parser discarded.
