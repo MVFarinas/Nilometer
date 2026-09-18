@@ -7,6 +7,8 @@
  */
 import { spawnSync } from "node:child_process";
 
+import { NOT_STARTED, WINDOWS_NOT_RECOGNIZED, commandFound, invocation } from "../util/commands.js";
+
 /** One command the audit runs. */
 export interface AuditCheck {
   /** Plan ID, e.g. `A1`. Sub-checks of one plan row share a prefix (`A10a`, `A10b`). */
@@ -99,17 +101,6 @@ export const AUDIT_CHECKS: readonly AuditCheck[] = [
   // The hook is shell (D-018), so shellcheck stands in for tsc and eslint there.
   { id: "A11", name: "Shell hook lint", command: "shellcheck", args: ["hooks/statusline.sh"] },
 ];
-
-/** Exit code reported when a check's command isn't installed, or couldn't be started. */
-export const NOT_STARTED = 127;
-
-/**
- * `cmd.exe`'s "is not recognized as an internal or external command" code.
- *
- * Windows ships a `python3` stub that exits with this instead of running Python, so a check that
- * gets it hasn't really run and the next candidate is tried (D-051).
- */
-const WINDOWS_NOT_RECOGNIZED = 9009;
 
 /**
  * Lists the executables to try for one check's command, in order.
@@ -212,13 +203,18 @@ export function main(deps: RunDeps, checks: readonly AuditCheck[] = AUDIT_CHECKS
 export function defaultDeps(): RunDeps {
   return {
     run: (command, args) => {
-      // Windows: the tools npm installs are `.cmd` shims, which Node won't spawn without a shell.
-      // Every command and argument in AUDIT_CHECKS is a constant in this file, so there's nothing
-      // for a shell to interpolate. POSIX keeps spawning directly (D-051).
-      const shell = process.platform === "win32";
       for (const candidate of commandCandidates(command)) {
+        // A shell reports a command it can't find as exit 1, which would read as a check that ran
+        // and found something, so look the command up first (D-051).
+        if (!commandFound(candidate)) {
+          continue;
+        }
+        const started = invocation(candidate, args);
         // Inherit stdio so each tool's own output (test counts, coverage table) reaches the log.
-        const result = spawnSync(candidate, args, { stdio: "inherit", shell });
+        const result = spawnSync(started.command, started.args, {
+          stdio: "inherit",
+          shell: started.shell,
+        });
         // status is null when the process couldn't start (e.g. gitleaks not installed).
         const status = result.status ?? NOT_STARTED;
         if (status !== NOT_STARTED && status !== WINDOWS_NOT_RECOGNIZED) {

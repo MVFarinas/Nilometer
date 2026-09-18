@@ -21,6 +21,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { invocation } from "../util/commands.js";
 import { openDatabase } from "../../core/db/database.js";
 import { ensureDerived } from "../../core/ingest/derive.js";
 import { ingestLogs } from "../../core/ingest/ingest.js";
@@ -580,7 +581,9 @@ export function runCommand(
   env: Readonly<Record<string, string>>,
 ): Promise<CommandResult> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { env });
+    // npm installs `npx` as a `.cmd` shim on Windows, which Node won't spawn without a shell (D-051).
+    const started = invocation(command, args);
+    const child = spawn(started.command, started.args, { env, shell: started.shell });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => {

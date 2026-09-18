@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AUDIT_CHECKS,
-  NOT_STARTED,
   commandCandidates,
   defaultDeps,
   formatSummary,
@@ -15,6 +14,7 @@ import {
   type CommandRunner,
   type RunDeps,
 } from "../../../../scripts/audit/run.js";
+import { NOT_STARTED } from "../../../../scripts/util/commands.js";
 
 /** Two checks used across tests; the commands are never actually executed. */
 const CHECKS: readonly AuditCheck[] = [
