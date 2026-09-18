@@ -382,7 +382,7 @@ desktop client. With the schema settled and the queries already written in SQL, 
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). Why that one, and what was rejected: [D-053](decisions.md).
 
 ---
 

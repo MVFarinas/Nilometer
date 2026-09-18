@@ -723,3 +723,23 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Windows still proves the code works there**, which is what that machine is for: 864 tests, 832 run, 0 failed.
   - **CI already agreed with this:** the Windows job runs `npx vitest run`, without coverage. This makes the local audit match what CI does.
   - **A full audit on Windows also needs gitleaks and shellcheck**, which aren't installed there; those three checks report `FAIL (not installed)`. The complete audit is the Linux CI run and a macOS run, and that is now written down rather than assumed.
+
+## D-053: MIT, with the copyright in the maintainer's legal name (2026-09-18)
+
+- **Status:** accepted. Written down on 2026-09-18, after the choice had already been made and shipped (`LICENSE`, `package.json`, and the README's license line), because a decision this cheap to change now and expensive to change later shouldn't live only in a file header.
+- **Context:** The public repository needs a license before it's public: without one, nobody may legally use, copy, or modify the code, whatever the README invites them to do. Three facts shaped the choice:
+  - **The point of publishing is that other people run it.** The tool answers a question about a subscription someone already pays for; a license that makes it awkward to adopt defeats that.
+  - **Nothing in the runtime forces a license.** The whole shipped dependency closure is three packages — `better-sqlite3`, `node-addon-api`, and `commander` — and all three are MIT (checked 2026-09-18). No copyleft anywhere, so every option below was genuinely open.
+  - **There is one copyright holder and no outside contributors yet.** Relicensing today means editing three files. After other people's commits are merged it needs every contributor's agreement, or a contributor licence agreement set up in advance.
+- **Options:**
+  - (a) **MIT.** Chosen.
+  - (b) **Apache-2.0.** Rejected: its additions over MIT are an explicit patent grant and a requirement to state changes. There are no patents here and no corporate contributors to defend against, so it buys length rather than protection for a project this size.
+  - (c) **GPL-3.0.** Rejected: copyleft would stop a closed fork, but it also rules the tool out at many workplaces, which is where a subscription's headroom question actually gets asked. The cost falls on the people meant to use it.
+  - (d) **AGPL-3.0.** Rejected for (c)'s reasons and because its distinguishing clause covers use over a network. Nothing here is hosted: the tool reads local files and writes to a local database.
+  - (e) **Source-available (PolyForm, BUSL).** Rejected: it isn't open source, it conflicts with the norms of the package registry the roadmap points at, and it deters the contributions that a tool depending on an undocumented log format needs.
+- **Decision:** (a), chosen by the maintainer, with the copyright notice in a legal name rather than a platform username. A copyright notice identifies a person who can hold copyright; an account name can be renamed or transferred, and the notice would then point at nothing.
+- **Consequences:**
+  - **Anyone may ship a closed-source or commercial derivative**, provided the notice travels with it. That is the accepted price of (a), not an oversight.
+  - **The "AS IS" disclaimer earns its place here.** `init` edits a file Claude Code owns and the tool reads session logs; the disclaimer is the only thing standing between a bug and a claim.
+  - **Three places state the license** — `LICENSE`, `package.json`, and the README — and they have to stay in step. A change means all three.
+  - **Revisit before the first outside contribution is merged**, if it's going to be revisited at all. That is the last moment it stays a three-file edit.
