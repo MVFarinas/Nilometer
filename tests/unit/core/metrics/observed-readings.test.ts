@@ -208,7 +208,7 @@ describe("observed readings (D-044)", () => {
       g.events.map((e) => e.description),
     );
     expect(descriptions).toEqual([
-      "highest reading: 6% · session q · observed at capture (no request found in the logs)",
+      "highest reading: 6% | session q | observed at capture (no request found in the logs)",
     ]);
     const headroom = explain(db, "headroom").groups.flatMap((g) => g.events);
     expect(headroom[0]?.at).toBe("2026-09-03T10:00:02.000Z");
@@ -218,7 +218,7 @@ describe("observed readings (D-044)", () => {
       reading("10:00:01", 5),
     ]);
     expect(explain(one, "headroom").groups[0]?.events[0]?.description).toBe(
-      "last reading before the reset: 5% · session r · observed at the session's request before capture 2026-09-03T10:00:01.000Z",
+      "last reading before the reset: 5% | session r | observed at the session's request before capture 2026-09-03T10:00:01.000Z",
     );
   });
 });

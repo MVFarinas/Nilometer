@@ -75,7 +75,7 @@ describe("explain on the report fixture", () => {
     expect(hits[1]?.location).toMatch(/^projects\/-work-tool\/sc\.jsonl:2 \(byte \d+\)$/);
     expect(explain(db, "not-resumed").groups[0]?.events.map((e) => e.description)).toEqual([
       // Its reset text names a date, which D-023 leaves unresolved.
-      "session sc · reset unknown · no later request in the session",
+      "session sc | reset unknown | no later request in the session",
     ]);
     expect(
       explain(db, "unattributed").groups.flatMap((g) => g.events.map((e) => e.contributions[0])),
@@ -90,7 +90,7 @@ describe("explain on the report fixture", () => {
     const lines = renderExplanation(explain(db, "by-model"), FIXTURE_TIME_ZONE, "", 0);
     expect(lines[0]).toBe("Explain: Claude Code tokens by model (observed)");
     expect(lines[1]).toBe("Times are in America/Chicago.");
-    expect(lines).toContain("  Output tokens: report shows 3,400 · from the event below: 3,400");
+    expect(lines).toContain("  Output tokens: report shows 3,400 | from the event below: 3,400");
     expect(lines).toContain("    1 more events not listed; --all lists every event");
     const projected = renderExplanation(explain(db, "burn-rate"), FIXTURE_TIME_ZONE, "", 5);
     expect(projected[0]).toBe("Explain: Burn rate (projected: an estimate, not an observation)");
@@ -108,7 +108,7 @@ describe("explain on the report fixture", () => {
       groups: [{ ...group, measures: [{ ...group.measures[0]!, reported: 5 }] }],
     };
     expect(renderExplanation(broken, "UTC", "", 5)).toContain(
-      "  Interruptions: report shows 5 · from the 2 events below: 2 · these don't match",
+      "  Interruptions: report shows 5 | from the 2 events below: 2 | these don't match",
     );
     const unknownVsZero = {
       ...explanation,
@@ -138,7 +138,7 @@ describe("explain edge cases", () => {
       "No data for this metric yet.",
     ]);
     expect(renderExplanation(explain(db, "limit-hits"), "UTC", "", 5)).toContain(
-      "  Interruptions: report shows 0 · from the 0 events below: 0",
+      "  Interruptions: report shows 0 | from the 0 events below: 0",
     );
   });
 

@@ -910,3 +910,17 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Every path that deletes says so, with the counts.** Proven by a test over both branches that fails when the lines are dropped.
   - **The rule this leaves behind:** a message is assembled from what happened, not from which branch produced it. Both defects came from a branch describing its own intent while another part of the command did something it never mentioned.
   - **Verification found a second defect by doing the work, not by reading it.** D-061 was fixed and verified, and the verification pass then walked the neighbouring paths and found this. Checking a fix is worth more than checking the code that was changed.
+
+## D-063: Everything the viewer prints is ASCII, and a test keeps it that way (2026-09-18)
+
+- **Status:** accepted. Both beta testers are on Windows, which decided it.
+- **Context:** A Windows console on a legacy code page decodes UTF-8 as CP437 or CP850, so the output's own punctuation arrived as mojibake. Observed on a supported platform: a coverage line read `02:27ΓÇô02:29`, and the middle dot used as a field separator throughout the report and `explain` garbles the same way. It is not a font, and it is not the user's setting to fix: the program chose characters its supported platform cannot render by default.
+- **Options:**
+  - (a) Keep the typography and tell Windows users to run `chcp 65001`. Rejected: that is handing the user a problem the tool created, in a README they read once, to fix output they see every day.
+  - (b) Detect the console and degrade. Rejected: a second rendering path to test, on a platform already carrying the most platform-specific code.
+  - (c) **Stay inside ASCII.** Chosen. `·` becomes `|` and the same-day coverage dash becomes `to`, which also made two adjacent lines say the same thing the same way.
+- **Decision:** (c), with a test rather than a habit: `tests/wording/ascii-output.test.ts` renders the report, its JSON, and every `explain` view over an empty database and the report fixture, and fails on any character above U+007F. The test checks itself first, asserting it can see a middle dot and an en dash before it asserts there are none.
+- **Consequences:**
+  - **Only Nilometer's own wording is covered.** Repository names, model names and file paths come from the user's logs and may hold anything; the fixtures this renders over are ASCII, so a non-ASCII character in that output is the tool's own. `printable` still passes user text through unchanged, and a test asserts it.
+  - **Claude Code's text is not ours to change.** Its limit message contains a middle dot, and the parser tests carry it verbatim. A blanket replace across the tests hit those too and was reverted: the same character means different things on either side of the boundary, and only the side this project writes is in scope.
+  - **The guard is why this is a decision and not a tidy-up.** Without it the next ornamental character arrives with the next feature, and the person who finds it is on Windows.

@@ -9,15 +9,15 @@ OBSERVED
 Interruptions
   Covers: session logs 2026-08-20 10:00 to 2026-09-02 15:00 (America/Chicago); status line 2026-09-02 09:00 to 14:00 (America/Chicago)
   Rate-limit interruptions: 2
-    5-hour window: 1 · weekly window: 1 · window unknown: 0
-    From the session logs: 2 · seen only in the status line: 0
+    5-hour window: 1 | weekly window: 1 | window unknown: 0
+    From the session logs: 2 | seen only in the status line: 0
   Mid-task interruptions (the stopped request was answering a tool result): 1
-    At the start of a turn: 1 · position unknown: 0
+    At the start of a turn: 1 | position unknown: 0
   Elapsed lockout time (limit hit to reset, overlapping hits counted once): 1 h 59 m across 1 lockout
     Hits with an unknown reset time, not included: 1
     2026-09-01 09:00 to 2026-09-01 11:00: 1 h 59 m, 1 hit; reset to next Claude Code request: 30 m 5 s
   Sessions with no further request after a limit hit: 1 of 2 sessions with a hit
-    Reset came after the logs end: 0 · reset time unknown: 1
+    Reset came after the logs end: 0 | reset time unknown: 1
     A session that continued after its reset may have been resumed automatically; these counts are requests, not who made them.
 
 Usage windows

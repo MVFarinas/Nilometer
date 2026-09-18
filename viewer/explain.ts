@@ -135,7 +135,7 @@ function hitEvent(row: HitRow): ExplainEvent {
   const window = row.window === null ? "window unknown" : `${windowName(row.window)} window`;
   return {
     at: row.hit_at_utc,
-    description: `${source} · ${window} · position ${row.position.replace("_", " ")} · session ${row.session_id ?? "unknown"}`,
+    description: `${source} | ${window} | position ${row.position.replace("_", " ")} | session ${row.session_id ?? "unknown"}`,
     location: formatLocation(row),
     contributions: [1],
   };
@@ -198,7 +198,7 @@ function tokenGroup(
     })),
     events: requests.map((row) => ({
       at: row.timestamp_utc,
-      description: `request ${row.dedup_key ?? "without an ID"} · ${row.model}`,
+      description: `request ${row.dedup_key ?? "without an ID"} | ${row.model}`,
       location: formatLocation(row),
       contributions: [
         1,
@@ -246,7 +246,7 @@ function readingEvents(db: Db, instance: InstanceRow, what: string): ExplainEven
     {
       at: row.observed_at_utc,
       // D-044: the value was observed at the session's last API response; the capture may be later.
-      description: `${what}: ${formatNumber(row.used_percentage, "percent")} · session ${row.session_id ?? "unknown"} · ${
+      description: `${what}: ${formatNumber(row.used_percentage, "percent")} | session ${row.session_id ?? "unknown"} | ${
         row.observed_via === "last_request"
           ? `observed at the session's request before capture ${row.captured_at_utc}`
           : "observed at capture (no request found in the logs)"
@@ -363,7 +363,7 @@ const BUILDERS = {
           ],
           events: intervals.map((interval) => ({
             at: interval.locked_from_utc,
-            description: `locked until ${interval.locked_until_utc} · ${interval.hits === 1 ? "1 hit" : `${interval.hits} hits`}`,
+            description: `locked until ${interval.locked_until_utc} | ${interval.hits === 1 ? "1 hit" : `${interval.hits} hits`}`,
             location: (hits.all(interval.interval_number) as Located[])
               .map(formatLocation)
               .join(", "),
@@ -401,7 +401,7 @@ const BUILDERS = {
           })[]
         ).map((row) => ({
           at: row.last_hit_at_utc,
-          description: `session ${row.session_id} · reset ${row.reset_at_utc ?? "unknown"} · no later request in the session`,
+          description: `session ${row.session_id} | reset ${row.reset_at_utc ?? "unknown"} | no later request in the session`,
           location: formatLocation(row),
           contributions: [1],
         })),
@@ -521,7 +521,7 @@ const BUILDERS = {
         const repository = summary["repository"] as unknown as string | null;
         const kind = summary["repo_kind"] as unknown as string;
         return tokenGroup(
-          `${repository ?? "unknown (no working directory)"} · ${repoKindName(kind)}`,
+          `${repository ?? "unknown (no working directory)"} | ${repoKindName(kind)}`,
           summary,
           requests.all(repository, kind) as UsageRow[],
         );
@@ -601,7 +601,7 @@ const BUILDERS = {
           })[]
         ).map((row) => ({
           at: row.timestamp_utc,
-          description: `request ${row.dedup_key ?? "without an ID"} · ${row.model} · ${
+          description: `request ${row.dedup_key ?? "without an ID"} | ${row.model} | ${
             row.unpriced_reason === null
               ? formatNumber(row.total_usd, "usd")
               : `unpriced (${row.unpriced_reason.replaceAll("_", " ")})`
@@ -674,7 +674,7 @@ export function renderExplanation(
           : Math.abs(measure.reported - fromEvents) <=
             1e-9 * Math.max(1, Math.abs(measure.reported));
       lines.push(
-        `  ${measure.label}: report shows ${formatNumber(measure.reported, measure.kind)} · from the ${group.events.length === 1 ? "event" : `${formatNumber(group.events.length, "count")} events`} below: ${formatNumber(fromEvents, measure.kind)}${agrees ? "" : " · these don't match"}`,
+        `  ${measure.label}: report shows ${formatNumber(measure.reported, measure.kind)} | from the ${group.events.length === 1 ? "event" : `${formatNumber(group.events.length, "count")} events`} below: ${formatNumber(fromEvents, measure.kind)}${agrees ? "" : " | these don't match"}`,
       );
     });
     for (const event of group.events.slice(0, limit)) {
