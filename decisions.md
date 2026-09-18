@@ -819,3 +819,17 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **`node:sqlite` is now a measured option, not a guess.** If someone can't install the native module, or if publishing to a registry makes prebuilt binaries a support burden, the port is known to produce identical results and the work is known to be contained.
   - **Revisit when there's a reason**, not on a schedule: a platform without a prebuilt binary, or a Node release that breaks the module.
   - **The spike found something else.** Reading every report view takes about 16 seconds on a real database, and `obs_unattributed_usage` is about 55% of that while returning one row per window. That is a separate problem from the driver, and the faster driver is the one already in use.
+
+## D-058: A response is dated by its final streaming snapshot, and a fixture now pins that (2026-09-18)
+
+- **Status:** accepted. Writes down behaviour that was already there but never chosen on purpose.
+- **Context:** One API response is written as several cumulative snapshots. Deduplication keeps the one with the largest `output_tokens` ([D-001](decisions.md)), which is the last snapshot written, so a request carries **that** line's timestamp — the moment the response finished, not the moment it started. Nothing said so, and nothing tested it: case 07 covers day boundaries but gives every response a single line, so no fixture exercised a response whose snapshots fall on either side of midnight. The choice was an accident of a tie-break made for a different reason.
+- **What it actually moves:** the gap between a response's first and last snapshot is a few seconds — a median of about 3.4 s and at most a few minutes on a real log set — so the two choices differ only for a response that straddles a boundary. Across a real log set, one response crossed a UTC day boundary and seven crossed a clock hour. It changes a day's totals, and which five-hour window a request is attributed to, for that handful.
+- **Options:**
+  - (a) **Date a response by its final snapshot** (when it finished). Chosen.
+  - (b) Date it by its first snapshot (when it started). Rejected: see below — the reference implementation does not do this, and adopting it would trade a matching number for a permanent documented difference, for no gain in accuracy.
+- **Decision:** (a), now tested rather than assumed. Fixture `18-streaming-across-midnight` writes one response as two snapshots five seconds apart, straddling UTC midnight, and the ccusage comparison reports **MATCH** on it: the reference implementation counts it on the finishing day too.
+- **Consequences:**
+  - **The fixture is the guard.** Changing the tie-break in D-001 now moves this fixture's day totals and fails both the loader check and the ccusage comparison, instead of quietly moving a number.
+  - **It is defensible on its own terms**, not only by agreement: the final snapshot is the one carrying the response's full output count, so dating a request by it dates it by the line the tokens actually come from.
+  - **Choosing (b) later means declaring a delta.** It would move this fixture out of MATCH and into the known-deltas list, which is the honest way to do it, and a reason would have to be better than "it feels earlier".

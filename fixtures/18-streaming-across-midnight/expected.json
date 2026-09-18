@@ -1,0 +1,68 @@
+{
+  "final": {
+    "requests": [
+      {
+        "dedup_key": "s18/m/msg_18a",
+        "file": "projects/-fixture-demo/s18.jsonl",
+        "line": 2,
+        "session_id": "s18",
+        "message_id": "msg_18a",
+        "request_id": "req_18a",
+        "model": "claude-sonnet-5",
+        "timestamp": "2026-09-02T00:00:03.000Z",
+        "is_sidechain": false,
+        "cwd": "/fixture/demo",
+        "input_tokens": 5,
+        "output_tokens": 25,
+        "cache_read_tokens": 0,
+        "cache_write_5m_tokens": 0,
+        "cache_write_1h_tokens": 0,
+        "cache_write_unsplit_tokens": null
+      }
+    ],
+    "totals_by_model": {
+      "claude-sonnet-5": {
+        "requests": 1,
+        "input_tokens": 5,
+        "output_tokens": 25,
+        "cache_read_tokens": 0,
+        "cache_write_5m_tokens": 0,
+        "cache_write_1h_tokens": 0,
+        "cache_write_unsplit_tokens": 0
+      }
+    },
+    "totals_by_day_utc": {
+      "2026-09-02": {
+        "claude-sonnet-5": {
+          "requests": 1,
+          "input_tokens": 5,
+          "output_tokens": 25,
+          "cache_read_tokens": 0,
+          "cache_write_5m_tokens": 0,
+          "cache_write_1h_tokens": 0,
+          "cache_write_unsplit_tokens": 0
+        }
+      }
+    },
+    "events": [],
+    "report": {
+      "lines": {
+        "malformed": 0,
+        "limit_hit": 0,
+        "api_error": 0,
+        "synthetic_other": 0,
+        "request": 2,
+        "retry_notice": 0,
+        "ignored_type": 0
+      },
+      "malformed": [],
+      "ignored_types": {},
+      "unkeyed_requests": 0,
+      "unknown_error_values": {},
+      "missing_fields": [],
+      "unparsed_timestamps": [],
+      "non_message_iterations": [],
+      "retry_rate_limits_present": 0
+    }
+  }
+}

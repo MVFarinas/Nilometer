@@ -536,6 +536,18 @@ export function buildCases(): FixtureCase[] {
         ]),
       },
     },
+    {
+      // One response written as two cumulative snapshots that straddle UTC midnight. Which day it
+      // counts on depends on which snapshot dates it, and nothing else in the fixtures covers that
+      // (D-058). The winner by output tokens is the second line, so the request is dated 09-02.
+      id: "18-streaming-across-midnight",
+      files: {
+        [sessionPath("projects", "s18")]: toJsonl([
+          assistantLine({ session: "s18", uuid: "u18-a-1", ts: "2026-09-01T23:59:58.000Z", messageId: "msg_18a", requestId: "req_18a", usage: { input: 5, output: 10, cacheRead: 0 } }),
+          assistantLine({ session: "s18", uuid: "u18-a-2", ts: "2026-09-02T00:00:03.000Z", messageId: "msg_18a", requestId: "req_18a", usage: { input: 5, output: 25, cacheRead: 0 } }),
+        ]),
+      },
+    },
   ];
 }
 
