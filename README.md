@@ -330,13 +330,53 @@ What these tools got wrong is recorded in [`decisions.md`](decisions.md), so it 
 
 ## Roadmap
 
-**v1: the one screen.** Status line collector, session log ingestion with backfill, SQLite store, repository and model attribution, the observed metrics, burn-rate and API-equivalent-cost projections. *Built and audited 2026-09-13, and in daily use since.*
+Nothing here is a commitment to a date. Each item needs its own decision record and an audit before
+it ships, and some of these will be answered with "no" — the scope stays retrospective, one screen,
+no daemon.
 
-**Considered and on hold (2026-09-13):** live usage in the status bar, a `watch` view, a tray app, and multi-device sync. The scope stays retrospective until real use shows what to change ([D-031](decisions.md)).
+**v1: the one screen.** Status line collector, session log ingestion with backfill, SQLite store,
+repository and model attribution, the observed metrics, burn-rate and API-equivalent-cost
+projections. *Built and audited 2026-09-13, and in daily use since.* Windows followed on 2026-09-17
+([D-049](decisions.md)), and a security and privacy review on 2026-09-18 ([D-050](decisions.md)).
 
-**v2: Tauri, if and only if the tray icon justifies it.** The one feature a CLI genuinely cannot offer is a menu-bar item showing live 5-hour usage. That, and nothing else, is the case for a desktop client. With the schema settled and the queries already written in SQL, porting to `rusqlite` is mechanical.
+**Next:**
 
-**Later, if real use calls for it:** publishing to npm, time-of-day interruption patterns, notifications, and repository aliases, so a renamed project's old and new paths count as one.
+- **Logs and status line readings counted separately in the ingest summary.** "This run: 2 files"
+  counts the spool of status line readings as one of the files, which reads as a miscount when you
+  have a single session log.
+- **Install without cloning.** Installing means cloning this repository today. Publishing to npm is
+  planned, not scheduled; the data directory, database schema, and hook marker stay compatible
+  either way, so an existing install keeps its history.
+- **Repository aliases**, so a project that was renamed or moved counts as one instead of two.
+  Nothing in the logs links an old path to a new one ([D-028](decisions.md)), so the alias has to
+  come from you.
+- **Linux beyond CI.** The test suite passes on Linux in CI, but nobody has yet run the hook on a
+  Linux desktop for a week and compared the result.
+- **A limit hit on another account.** Every interruption number — the count, the elapsed lockout
+  time, the reset wording — was built from session logs and one subscription that has not hit a
+  limit yet. What those metrics need next is evidence from a plan that hits limits regularly, not
+  more code. If you run into limits and try this, the ingest summary counts and the report headings
+  are the useful thing to share; the reports themselves are yours and stay local.
+
+**Under review once v1 has a month of real use:**
+
+- **Whether the unattributed-usage metric earns its place.** On real status line data it can't be
+  nonzero, because every fresh reading follows a request in its own session
+  ([D-044](decisions.md)). It may be relabeled, or dropped.
+- **Time-of-day interruption patterns**, and **notifications** — both only if a month of real
+  readings shows they'd answer something the one screen doesn't.
+- **How the database grows** over a year of daily use, and whether it needs a size ceiling or
+  pruning. Nothing is deleted today, on purpose: session logs Claude Code has since removed survive
+  only in it.
+
+**Considered and on hold (2026-09-13):** live usage in the status bar, a `watch` view, a tray app,
+and multi-device sync. The scope stays retrospective until real use shows what to change
+([D-031](decisions.md)).
+
+**v2: Tauri, if and only if the tray icon justifies it.** The one feature a CLI genuinely cannot
+offer is a menu-bar item showing live 5-hour usage. That, and nothing else, is the case for a
+desktop client. With the schema settled and the queries already written in SQL, porting to
+`rusqlite` is mechanical.
 
 ---
 
