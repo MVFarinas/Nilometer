@@ -233,6 +233,29 @@ nilometer init    # or, without npm link: npm start -- init
 - **The database holds copies of your session logs:** prompts, code, and file paths. That's why the data directory is readable only by your account.
 - **Reports contain spend figures and project names.** Think before sharing one. `nilometer explain` output also names session files and IDs.
 
+### Checking the numbers against another tool
+
+[ccusage](https://github.com/ryoppippi/ccusage) reads the same session logs and is the reference this
+project checks its cost math against. The audit runs that comparison over committed fixtures; this
+runs it over **your** logs:
+
+```sh
+nilometer verify
+```
+
+It prints how many days were compared and any day, model and field where the two disagree — and
+nothing else. No paths, no repository names, no session ids, no prompt text, so the result can be
+sent to someone without sending your data.
+
+Two things it will tell you about rather than call a difference. Requests whose log Claude Code has
+since deleted are counted and left out, because ccusage reads the files that are there now and this
+tool keeps what it read ([D-002](decisions.md)). And only token counts are compared, not cost: cost
+depends on both tools' price tables agreeing, which is a separate question from whether the logs
+were read the same way.
+
+**This is the one command that uses the network.** It fetches a pinned ccusage through `npx`.
+Nothing is uploaded, and nothing it downloads is used by the rest of the tool.
+
 ### Removing it, and deleting the data
 
 `nilometer uninstall` takes the hook out of `settings.json` and puts back the status line command it

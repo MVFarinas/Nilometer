@@ -23,6 +23,7 @@ import {
   describePlanPriceList,
   describePlanPriceSet,
   describeDeletion,
+  describeVerify,
   describeUninstall,
   TERMINAL_ONLY_NOTE,
   report,
@@ -335,6 +336,68 @@ describe("describeInit", () => {
     // D-029: said at install, so an empty usage window after VS Code-only work isn't a surprise.
     expect(lines).toContain(TERMINAL_ONLY_NOTE);
     expect(TERMINAL_ONLY_NOTE).toMatch(/terminal.*VS Code extension doesn't run the status line/);
+  });
+});
+
+describe("describeVerify", () => {
+  const clean = {
+    comparedDays: 12,
+    comparedKeys: 20,
+    daysOnlyOurs: 0,
+    daysOnlyTheirs: 0,
+    differences: [],
+    unpricedModels: [],
+    fromDeletedLogs: 0,
+  };
+
+  it("says everything matched, and exits 0", () => {
+    const { lines, exitCode } = describeVerify(clean);
+    expect(lines[0]).toContain("Compared 12 days against ccusage");
+    expect(lines.join("\n")).toContain("Every one matched");
+    expect(exitCode).toBe(0);
+  });
+
+  it("names the day, model, field and both values for a difference, and exits 1", () => {
+    const { lines, exitCode } = describeVerify({
+      ...clean,
+      differences: [{ key: "2026-09-13|claude-opus-5", field: "output", ours: 10, theirs: 12 }],
+    });
+    expect(lines.join("\n")).toContain(
+      "2026-09-13  claude-opus-5  output: this tool 10, ccusage 12",
+    );
+    expect(exitCode).toBe(1);
+  });
+
+  it("explains the days it could not compare, without failing on ours", () => {
+    // Days only this tool has are the design working (D-002); days only ccusage has are not.
+    const kept = describeVerify({ ...clean, daysOnlyOurs: 3, fromDeletedLogs: 40 });
+    expect(kept.lines.join("\n")).toMatch(/3 days only this tool has/);
+    expect(kept.lines.join("\n")).toMatch(/40 requests were left out/);
+    expect(kept.exitCode).toBe(0);
+    const missed = describeVerify({ ...clean, daysOnlyTheirs: 2 });
+    expect(missed.lines.join("\n")).toMatch(/2 days only ccusage reported/);
+    expect(missed.exitCode).toBe(1);
+  });
+
+  it("fails when nothing could be compared, rather than reporting success", () => {
+    expect(describeVerify({ ...clean, comparedDays: 0, comparedKeys: 0 }).exitCode).toBe(1);
+  });
+
+  it("prints nothing a prompt, path, repository or session could be in (D-064)", () => {
+    // This output exists to be sent to someone else. Days, model names, field names and token
+    // counts are the whole vocabulary; anything else would make it unsendable.
+    const { lines } = describeVerify({
+      ...clean,
+      daysOnlyOurs: 1,
+      daysOnlyTheirs: 1,
+      fromDeletedLogs: 5,
+      unpricedModels: ["some-model-1"],
+      differences: [{ key: "2026-09-13|claude-opus-5", field: "cache_read", ours: 1, theirs: 2 }],
+    });
+    const text = lines.join("\n");
+    for (const shape of [/\//, /\\/, /~/, /\.jsonl/, /[0-9a-f]{8}-[0-9a-f]{4}/]) {
+      expect(text).not.toMatch(shape);
+    }
   });
 });
 
@@ -744,6 +807,50 @@ describe("runCli", () => {
     expect(runCli(["plan-price", "set", "2026-09", "200"], deps)).toBe(1);
     expect(err.join("\n")).toMatch(/required option '--name <plan>'/);
     expect(out).toEqual([]);
+  });
+
+  it("verifies against ccusage without reaching the network", () => {
+    // The runner is injected, so this exercises the whole command — database read, comparison,
+    // wording, exit code — with no npx and no download (D-064).
+    const { deps, out } = testDeps();
+    mkdirSync(join(deps.home, ".claude", "projects", "-fixture-demo"), { recursive: true });
+    writeFileSync(
+      join(deps.home, ".claude", "projects", "-fixture-demo", "s.jsonl"),
+      readFileSync(join(PACKAGE_ROOT, "fixtures/06-mixed-models/projects/-fixture-demo/s06.jsonl")),
+    );
+    expect(runCli(["ingest"], deps)).toBe(0);
+    out.length = 0;
+
+    // ccusage seeing nothing at all: every day is one this tool has and it cannot.
+    const empty = { ...deps, runCcusage: () => JSON.stringify({ daily: [] }) };
+    expect(runCli(["verify"], empty)).toBe(1);
+    expect(out.join("\n")).toMatch(/No day could be compared/);
+
+    out.length = 0;
+    const wrong = {
+      ...deps,
+      runCcusage: () =>
+        JSON.stringify({
+          daily: [
+            {
+              date: "2026-09-01",
+              modelBreakdowns: [
+                {
+                  modelName: "claude-opus-5",
+                  inputTokens: 1,
+                  outputTokens: 999,
+                  cacheReadTokens: 0,
+                  cacheCreationTokens: 0,
+                  cost: 0,
+                },
+              ],
+            },
+          ],
+        }),
+    };
+    expect(runCli(["verify"], wrong)).toBe(1);
+    expect(out.join("\n")).toMatch(/difference/);
+    expect(out.join("\n")).toContain("claude-opus-5");
   });
 
   it("reports on the database after ingest, as a table or as JSON, and refuses before any ingest", () => {

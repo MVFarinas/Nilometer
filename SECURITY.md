@@ -18,10 +18,17 @@ Only the latest release gets fixes.
 - **Changes to Claude Code's settings:** `init` and `uninstall` edit `settings.json`. Anything that clobbers a user's settings, runs an unexpected command, or mishandles a backup is in scope.
 - **The status line hook:** it runs after every Claude Code reply. Anything that lets it write outside the data directory or change what the status bar shows is in scope.
 
-Nilometer makes no network requests at runtime: not when the hook runs, not during `ingest`, and not
-when a report is built. A report that it does is in scope too.
+Nilometer makes no network requests while it collects or reports: not when the hook runs, not during
+`ingest`, and not when a report is built. A report that it does is in scope too.
 
-One development command is the exception, and it is never part of running the tool:
-`npm run compare:ccusage` fetches a pinned version of [ccusage](https://github.com/ryoppippi/ccusage)
-through `npx` and compares its cost figures against Nilometer's on the committed fixtures. It is an
-audit check, it reads only those fixtures, and nothing it downloads is used by the installed tool.
+Two commands reach the network, both by fetching a pinned
+[ccusage](https://github.com/ryoppippi/ccusage) through `npx`, and neither runs unless you run it:
+
+- **`nilometer verify`** compares this tool's token totals against ccusage on your own logs, and
+  prints a verdict and any differing days. It reads your logs and your database locally and sends
+  nothing anywhere. Its output is deliberately free of paths, repository names, session ids and
+  prompt text, so it can be shared without sharing your data.
+- **`npm run compare:ccusage`** is the same comparison over the committed fixtures, as an audit
+  check. It reads only those fixtures.
+
+Nothing either one downloads is used by the installed tool.

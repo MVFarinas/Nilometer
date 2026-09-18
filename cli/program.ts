@@ -37,7 +37,14 @@ import {
   runUninstall,
 } from "../core/install/install.js";
 import { SettingsError } from "../core/settings/settings-file.js";
+import {
+  CCUSAGE_VERSION,
+  type VerifyResult,
+  runCcusage,
+  runVerify,
+} from "../core/verify/verify.js";
 import { METRIC_NAMES, UnknownMetricError, explain, renderExplanation } from "../viewer/explain.js";
+import { formatNumber } from "../viewer/format.js";
 import {
   NoDatabaseError,
   type StoredDataSummary,
@@ -62,6 +69,11 @@ export interface CliDeps {
   readonly print: (line: string) => void;
   /** Writes a line to stderr. */
   readonly printError: (line: string) => void;
+  /**
+   * Runs ccusage for `verify`; defaults to the real one, which uses the network. Overridden in
+   * tests so the command can be exercised without npx (D-064).
+   */
+  readonly runCcusage?: () => string;
   /** IANA zone the report shows times in: the machine's zone (D-007). */
   readonly timeZone: string;
 }
@@ -73,6 +85,9 @@ interface LocationFlags {
   /** `--data-dir <path>` */
   readonly dataDir?: string;
 }
+
+/** The ccusage release `verify` compares against; pinned so two runs compare the same way. */
+const CCUSAGE_PIN = CCUSAGE_VERSION;
 
 /** Flags of the `uninstall` command. */
 interface UninstallFlags extends LocationFlags {
@@ -389,6 +404,65 @@ export function describeDeletion(dataDir: string, deleted: DataDeleted): string[
     lines.push(`Left alone, because Nilometer didn't write them: ${deletion.kept.join(", ")}.`);
   }
   return lines;
+}
+
+/**
+ * Turns a `verify` result into output lines and an exit code.
+ *
+ * Every line here is safe to send to someone else: days, model names, field names and token counts,
+ * and nothing that a path, a repository name, a session id, or a prompt could be in (D-064).
+ * @param result - What the comparison found.
+ * @returns Lines for stdout and the process exit code.
+ */
+export function describeVerify(result: VerifyResult): { lines: string[]; exitCode: number } {
+  const lines = [
+    `Compared ${plural(result.comparedDays, "day", "days")} against ccusage ${CCUSAGE_PIN}, token counts only.`,
+  ];
+  if (result.comparedDays === 0) {
+    lines.push(
+      "No day could be compared: ccusage and this database have no day in common.",
+      "Run `nilometer ingest` first, and check that Claude Code has written logs.",
+    );
+    return { lines, exitCode: 1 };
+  }
+  if (result.differences.length === 0) {
+    lines.push(
+      `Every one matched, across ${plural(result.comparedKeys, "day and model", "day-and-model pairs")}.`,
+    );
+  } else {
+    lines.push(
+      `${plural(result.differences.length, "difference", "differences")} found:`,
+      ...result.differences.map(
+        (d) =>
+          `  ${d.key.replace("|", "  ")}  ${d.field}: this tool ${formatNumber(d.ours, "count")}, ccusage ${formatNumber(d.theirs, "count")}`,
+      ),
+    );
+  }
+  if (result.fromDeletedLogs > 0) {
+    lines.push(
+      `${plural(result.fromDeletedLogs, "request", "requests")} were left out: the logs they came from are gone from disk, so ccusage cannot see them. Keeping them is the point of the database.`,
+    );
+  }
+  if (result.daysOnlyOurs > 0) {
+    lines.push(
+      `${plural(result.daysOnlyOurs, "day", "days")} only this tool has, and could not be compared: its logs are gone from disk, and the database keeps them on purpose.`,
+    );
+  }
+  if (result.daysOnlyTheirs > 0) {
+    lines.push(
+      `${plural(result.daysOnlyTheirs, "day", "days")} only ccusage reported. That is worth reporting: it means log lines this tool did not read.`,
+    );
+  }
+  if (result.unpricedModels.length > 0) {
+    lines.push(
+      `Models with no price row here, which a token comparison doesn't depend on: ${result.unpricedModels.join(", ")}.`,
+    );
+  }
+  // A day ccusage sees and this tool doesn't is a reading fault; the rest is reported, not failed.
+  return {
+    lines,
+    exitCode: result.differences.length === 0 && result.daysOnlyTheirs === 0 ? 0 : 1,
+  };
 }
 
 /**
@@ -720,6 +794,22 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
           noteTightened(deps, tightened);
           return { exitCode: 0, lines: describePlanPriceList(result) };
         }),
+      );
+    });
+
+  program
+    .command("verify")
+    .description(
+      "Compare this tool's token totals against ccusage, on your own logs. Prints a verdict and any differing days, never a path, repository name, or prompt. Downloads ccusage through npx, so it needs the network.",
+    )
+    .option("--data-dir <path>", "data directory holding the database")
+    .action((flags: LocationFlags) => {
+      setExitCode(
+        report(deps, () =>
+          withReportDatabase(toPlanDatabaseOptions(flags, deps), (db) =>
+            describeVerify(runVerify({ db, runCcusage: deps.runCcusage ?? runCcusage })),
+          ),
+        ),
       );
     });
 

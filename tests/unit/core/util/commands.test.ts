@@ -1,5 +1,5 @@
 /**
- * @file Unit tests for scripts/util/commands.ts, starting programs on every platform (D-051).
+ * @file Unit tests for core/util/commands.ts, starting programs on every platform (D-051).
  *
  * The Windows behaviour is the point of this module and can't be exercised on macOS or Linux, so
  * the platform and the lookups are injected and the Windows cases are asserted by their results:
@@ -14,7 +14,7 @@ import {
   invocation,
   quoteForCmd,
   windowsCommandLine,
-} from "../../../../scripts/util/commands.js";
+} from "../../../../core/util/commands.js";
 
 describe("quoteForCmd", () => {
   it("quotes only what cmd.exe would otherwise split or interpret", () => {

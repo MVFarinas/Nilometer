@@ -21,8 +21,27 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { NOT_STARTED, commandFound, invocation } from "../util/commands.js";
+import { NOT_STARTED, commandFound, invocation } from "../../core/util/commands.js";
 import { openDatabase } from "../../core/db/database.js";
+// The comparison rules are shipped code now, shared with `nilometer verify` (D-064).
+export {
+  FIELDS,
+  type CcusageDaily,
+  type Field,
+  type Totals,
+  type TotalsByDayModel,
+  diffTotals,
+  normalizeCcusage,
+  sameValue,
+} from "../../core/verify/compare.js";
+import {
+  type CcusageDaily,
+  type Field,
+  type TotalsByDayModel,
+  diffTotals,
+  normalizeCcusage,
+  sameValue,
+} from "../../core/verify/compare.js";
 import { ensureDerived } from "../../core/ingest/derive.js";
 import { ingestLogs } from "../../core/ingest/ingest.js";
 import { loadPriceTable, syncPrices } from "../../core/pricing/prices.js";
@@ -30,18 +49,6 @@ import { stageState, statesOf } from "../fidelity/loader-check.js";
 
 /** Pinned ccusage version (D-011). Upgrading means re-reviewing every known delta. */
 export const CCUSAGE_VERSION = "20.0.20";
-
-/** Fields compared between ccusage and our results: four token totals and the USD cost. */
-export const FIELDS = ["input", "output", "cache_read", "cache_write", "cost_usd"] as const;
-
-/** One compared field. */
-export type Field = (typeof FIELDS)[number];
-
-/** Token totals and cost for one day and model. */
-export type Totals = Record<Field, number>;
-
-/** Totals keyed by `"<YYYY-MM-DD>|<model>"`. */
-export type TotalsByDayModel = Record<string, Totals>;
 
 /** One fixture state to compare. */
 export interface FixtureState {
@@ -196,47 +203,6 @@ export function ccusageArgs(): string[] {
   ];
 }
 
-/** Shape of the parts of ccusage's daily JSON this module reads. */
-interface CcusageDaily {
-  /** One entry per day. */
-  readonly daily: readonly {
-    /** `YYYY-MM-DD` in the requested timezone. */
-    readonly date: string;
-    /** Per-model token totals for the day. */
-    readonly modelBreakdowns: readonly {
-      readonly modelName: string;
-      readonly inputTokens: number;
-      readonly outputTokens: number;
-      readonly cacheReadTokens: number;
-      readonly cacheCreationTokens: number;
-      /** USD cost at ccusage's embedded (offline) prices. */
-      readonly cost: number;
-    }[];
-  }[];
-}
-
-/**
- * Normalizes ccusage daily JSON to per-day, per-model totals.
- * @param json - Parsed output of `ccusage claude daily --json --breakdown`.
- * @returns Totals keyed by `"<day>|<model>"`.
- */
-export function normalizeCcusage(json: CcusageDaily): TotalsByDayModel {
-  const result: TotalsByDayModel = {};
-  for (const day of json.daily) {
-    for (const model of day.modelBreakdowns) {
-      result[`${day.date}|${model.modelName}`] = {
-        input: model.inputTokens,
-        output: model.outputTokens,
-        cache_read: model.cacheReadTokens,
-        // ccusage reports one cache-write total; its JSON has no 5m/1h split (skill § Comparing).
-        cache_write: model.cacheCreationTokens,
-        cost_usd: model.cost,
-      };
-    }
-  }
-  return result;
-}
-
 /** Shape of one state object in `expected.json` that this module reads. */
 interface ExpectedState {
   /** Per-day, per-model totals as documented in fixtures/README.md. */
@@ -286,43 +252,6 @@ export function normalizeExpected(
     }
   }
   return result;
-}
-
-/**
- * Compares two values of a field: token counts exactly, costs within floating-point noise.
- * @param field - The field compared.
- * @param a - One value.
- * @param b - The other value.
- * @returns True when the values are equal for that field.
- */
-export function sameValue(field: Field, a: number, b: number): boolean {
-  if (field !== "cost_usd") {
-    return a === b;
-  }
-  // Summing binary floats in a different order differs in the 17th digit; a millionth of a cent doesn't.
-  return Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
-}
-
-/**
- * Lists every field that differs between two totals maps.
- * @param ours - Expected totals.
- * @param theirs - ccusage totals.
- * @returns Differences sorted by key, then field order.
- */
-export function diffTotals(ours: TotalsByDayModel, theirs: TotalsByDayModel): Difference[] {
-  const differences: Difference[] = [];
-  const keys = [...new Set([...Object.keys(ours), ...Object.keys(theirs)])].sort();
-  for (const key of keys) {
-    for (const field of FIELDS) {
-      // A day/model missing on one side compares as zero, so it shows up as a difference.
-      const oursValue = ours[key]?.[field] ?? 0;
-      const theirsValue = theirs[key]?.[field] ?? 0;
-      if (!sameValue(field, oursValue, theirsValue)) {
-        differences.push({ key, field, ours: oursValue, theirs: theirsValue });
-      }
-    }
-  }
-  return differences;
 }
 
 /** Classification of one state's differences. */

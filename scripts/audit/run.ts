@@ -7,7 +7,12 @@
  */
 import { spawnSync } from "node:child_process";
 
-import { NOT_STARTED, WINDOWS_NOT_RECOGNIZED, commandFound, invocation } from "../util/commands.js";
+import {
+  NOT_STARTED,
+  WINDOWS_NOT_RECOGNIZED,
+  commandFound,
+  invocation,
+} from "../../core/util/commands.js";
 
 /** One command the audit runs. */
 export interface AuditCheck {

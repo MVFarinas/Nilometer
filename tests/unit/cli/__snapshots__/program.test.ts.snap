@@ -24,6 +24,11 @@ Commands:
                               by-model, by-repo, burn-rate, api-list-price.
   plan-price                  Enter or list the plan's USD list price, shown
                               beside API list price.
+  verify [options]            Compare this tool's token totals against ccusage,
+                              on your own logs. Prints a verdict and any
+                              differing days, never a path, repository name, or
+                              prompt. Downloads ccusage through npx, so it needs
+                              the network.
   uninstall [options]         Remove the hook and restore the status line
                               setting it replaced. Recorded data is kept unless
                               --delete-data is given.
