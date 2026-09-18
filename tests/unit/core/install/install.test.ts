@@ -219,6 +219,26 @@ describe("runUninstall", () => {
     expect(existsSync(join(dataDir, WRAPPED_COMMAND_FILE))).toBe(false);
   });
 
+  it("restores the user's command when uninstall is run without the install's --data-dir (D-050)", () => {
+    // `init --data-dir X` then a plain `uninstall`: the record isn't in the default directory, and
+    // deleting the statusLine entry instead of restoring it would lose the user's own command.
+    const options = freshOptions();
+    const path = writeSettingsText(options, FOREIGN_SETTINGS);
+    const dataDir = join(mkdtempSync(join(tmpdir(), "aua-install-elsewhere-")), "data");
+    runInit({ ...options, dataDirOverride: dataDir });
+    const outcome = runUninstall(later(options, 1));
+    expect(outcome).toMatchObject({
+      action: "restored",
+      exactBytes: true,
+      recordMissing: false,
+      // The report names where the data actually is, not the default it was asked about.
+      dataDir,
+      restoredCommand: "~/bin/status.sh",
+    });
+    expect(readFileSync(path, "utf8")).toBe(FOREIGN_SETTINGS);
+    expect(existsSync(join(dataDir, RECORD_FILE))).toBe(false);
+  });
+
   it("removes a settings file that init created when nothing else was added", () => {
     const options = freshOptions();
     runInit(options);

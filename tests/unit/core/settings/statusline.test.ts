@@ -13,6 +13,7 @@ import {
   type StatusLineEntry,
   buildHookCommand,
   classifyStatusLine,
+  dataDirFromHookCommand,
   isCommandEntry,
   planInstall,
   planUninstall,
@@ -48,6 +49,15 @@ describe("buildHookCommand", () => {
     );
   });
 
+  it("refuses relative paths, which the hook would resolve against the wrong folder (D-050)", () => {
+    expect(() => buildHookCommand("hooks/statusline.sh", "/home/example/data")).toThrow(
+      "absolute paths",
+    );
+    expect(() => buildHookCommand("/opt/aua/hooks/statusline.sh", "mydata")).toThrow(
+      "absolute paths",
+    );
+  });
+
   it("produces a command that passes awkward paths to the script intact", () => {
     const dir = mkdtempSync(join(tmpdir(), "aua it's here "));
     const script = join(dir, "print-args.sh");
@@ -57,6 +67,22 @@ describe("buildHookCommand", () => {
       encoding: "utf8",
     });
     expect(result.stdout).toBe(`${dataDir}|`);
+  });
+});
+
+describe("dataDirFromHookCommand", () => {
+  it("reads back what buildHookCommand wrote, however the path is spelled (D-050)", () => {
+    // uninstall depends on this to find the install record when it isn't given --data-dir.
+    for (const dir of ["/data", "/a b/it's here", "/x'y", "/tmp/dir with  spaces"]) {
+      expect(dataDirFromHookCommand(buildHookCommand("/repo/hooks/statusline.sh", dir))).toBe(dir);
+    }
+  });
+
+  it("returns null for a command that isn't ours or can't be parsed", () => {
+    expect(dataDirFromHookCommand("~/bin/status.sh")).toBeNull();
+    // Our marker, but not the shape init writes.
+    expect(dataDirFromHookCommand(`my-script ${HOOK_MARKER}`)).toBeNull();
+    expect(dataDirFromHookCommand(`/bin/sh '/only/one/word' ${HOOK_MARKER}`)).toBeNull();
   });
 });
 

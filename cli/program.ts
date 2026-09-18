@@ -233,7 +233,7 @@ export function describeIngest(outcome: IngestCommandOutcome): string[] {
     `This run: ${run.files} files, ${run.linesRead} complete lines read, ${run.linesStored} new, ${run.filesRewritten} rewritten files reread${run.spoolRead ? ", status line spool read" : ""}.`,
     `Stored: ${totals.requests} requests (${totals.unkeyedRequests} without IDs), ${totals.limitHits} limit hits, ${totals.otherEvents} other error or retry events; ${span}.`,
     `Status line: ${totals.statusReadings} readings, ${totals.malformedReadings} undecodable spool lines, ${totals.invalidWindows} flagged window values, ${totals.hookErrors} hook append failures.`,
-    `Reported for review: ${totals.malformedLines} malformed log lines.`,
+    `Reported for review: ${totals.malformedLines} malformed log lines${run.unreadable === 0 ? "" : `, ${run.unreadable} files or folders that couldn't be read this run (skipped)`}.`,
     ...optionalLine(describeTightened(outcome.permissionsTightened)),
     `Database: ${outcome.databasePath}`,
   ];
@@ -324,8 +324,11 @@ export function describeUninstall(outcome: UninstallOutcome): {
   lines: string[];
   exitCode: number;
 } {
-  const { settingsPath, dataDir, backupPath, recordMissing } = outcome;
+  const { settingsPath, dataDir, backupPath, recordMissing, restoredCommand } = outcome;
   const kept = `Recorded data in ${dataDir} was kept.`;
+  // The command comes from the install record on disk, so show what's going back in (D-050).
+  const restored =
+    restoredCommand === null ? [] : [`Status line command restored: ${restoredCommand}`];
   switch (outcome.action) {
     case "restored":
       return {
@@ -334,6 +337,7 @@ export function describeUninstall(outcome: UninstallOutcome): {
           recordMissing
             ? `Removed the hook from ${settingsPath}. No install record was found, so no earlier status line could be restored.`
             : `Removed the hook from ${settingsPath} and restored the earlier status line setting.`,
+          ...restored,
           `Backup of the settings before this change: ${backupPath ?? "none"}`,
           kept,
         ],

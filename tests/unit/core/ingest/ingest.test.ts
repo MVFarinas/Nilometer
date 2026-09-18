@@ -6,6 +6,7 @@
  * the same stored lines.
  */
 import {
+  type Dirent,
   copyFileSync,
   cpSync,
   mkdirSync,
@@ -21,6 +22,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { type Db, openDatabase } from "../../../../core/db/database.js";
 import { fingerprintTables } from "../../../../core/db/fingerprint.js";
+import { discoverLogFiles } from "../../../../core/ingest/discover.js";
 import {
   ingestLogs,
   normalizeWindowsRelativePaths,
@@ -237,6 +239,65 @@ describe("ingestLogs", () => {
     ]);
   });
 
+  it("skips a file that can't be read, counts it, and finishes the run (D-050)", () => {
+    // A session log can vanish between discovery and open: Claude Code deletes them after 30 days.
+    stage(join(FIXTURES, "14-worktree-cwd"), root, "replace");
+    let calls = 0;
+    /**
+     * Stats normally for the first file, then reports the file as gone.
+     * @param path - File path.
+     * @returns The real stat for the first call.
+     * @throws {NodeJS.ErrnoException} ENOENT on every call after the first.
+     */
+    const vanishing = (path: string): ReturnType<typeof statFile> => {
+      calls += 1;
+      if (calls > 1) {
+        const error: NodeJS.ErrnoException = new Error("ENOENT: no such file or directory");
+        error.code = "ENOENT";
+        throw error;
+      }
+      return statFile(path);
+    };
+    const summary = ingestLogs(db, { roots: [root], mode: "incremental", now, stat: vanishing });
+    // Fixture 14 has three session logs: the first is read, the other two report as gone.
+    expect(summary).toMatchObject({ unreadable: 2, linesStored: 1, files: 1 });
+    expect(db.prepare("SELECT finished_at FROM ingest_runs").get()).not.toEqual({
+      finished_at: null,
+    });
+  });
+
+  it("counts a folder it can't list and still reads the rest (D-050)", () => {
+    // A project folder can be unreadable (permissions) or deleted mid-walk; one folder shouldn't
+    // cost the whole run. Injected rather than chmod'd, so the test runs on Windows too.
+    stage(join(FIXTURES, "14-worktree-cwd"), root, "replace");
+    const unreadable: string[] = [];
+    /**
+     * Lists normally, except the fixture's project folder, which can't be read.
+     * @param path - Directory path.
+     * @returns The real entries for every other directory.
+     * @throws {NodeJS.ErrnoException} EACCES for the fixture's project folder.
+     */
+    const listDir = (path: string): Dirent[] => {
+      if (path.endsWith("-fixture-demo")) {
+        const error: NodeJS.ErrnoException = new Error("EACCES: permission denied");
+        error.code = "EACCES";
+        throw error;
+      }
+      return readdirSync(path, { withFileTypes: true });
+    };
+    // discoverLogFiles reports the folder it skipped.
+    expect(discoverLogFiles(root, listDir, (path) => unreadable.push(path))).toEqual([]);
+    expect(unreadable).toHaveLength(1);
+    // Without a callback it still skips the folder rather than throwing.
+    expect(discoverLogFiles(root, listDir)).toEqual([]);
+    // A whole run counts it and finishes: no files read, one folder skipped.
+    const summary = ingestLogs(db, { roots: [root], mode: "incremental", now, listDir });
+    expect(summary).toMatchObject({ unreadable: 1, files: 0, linesStored: 0 });
+    expect(db.prepare("SELECT finished_at FROM ingest_runs").get()).not.toEqual({
+      finished_at: null,
+    });
+  });
+
   it("keeps files finished before an error and leaves the run unfinished", () => {
     stage(join(FIXTURES, "14-worktree-cwd"), root, "replace");
     let calls = 0;
@@ -244,18 +305,19 @@ describe("ingestLogs", () => {
      * Stats normally for the first file, then fails.
      * @param path - File path.
      * @returns The real stat for the first call.
-     * @throws {Error} EACCES on every call after the first.
+     * @throws {Error} An error with no `code` on every call after the first: not a filesystem
+     *   error, so ingest treats it as a bug and lets it through (D-050).
      */
     const flakyStat = (path: string): ReturnType<typeof statFile> => {
       calls += 1;
       if (calls > 1) {
-        throw new Error("EACCES");
+        throw new Error("a bug, not a filesystem error");
       }
       return statFile(path);
     };
     expect(() =>
       ingestLogs(db, { roots: [root], mode: "incremental", now, stat: flakyStat }),
-    ).toThrow("EACCES");
+    ).toThrow("a bug, not a filesystem error");
     expect(db.prepare("SELECT COUNT(*) AS n FROM raw_lines").get()).toEqual({ n: 1 });
     expect(db.prepare("SELECT finished_at FROM ingest_runs").get()).toEqual({ finished_at: null });
   });

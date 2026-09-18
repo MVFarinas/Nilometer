@@ -6,6 +6,8 @@
  * description of what changed. Reading and writing files is `settings-file.ts`'s job, so every
  * decision can be tested without touching a disk.
  */
+import { isAbsolute } from "node:path";
+
 import type { SettingsObject } from "./settings-file.js";
 
 /**
@@ -45,8 +47,37 @@ export function shellQuote(value: string): string {
 }
 
 /**
+ * Reads the data directory out of a command {@link buildHookCommand} produced.
+ *
+ * `uninstall` needs the install record, which lives in the data directory, to put the user's own
+ * status line back. When it's run without the `--data-dir` the install used, the only other place
+ * that path is written down is the command being removed, so read it from there (D-050). Without
+ * this, an uninstall that can't find the record deletes the `statusLine` entry instead of
+ * restoring it.
+ * @param command - A `statusLine.command` value.
+ * @returns The data directory, or `null` if the command isn't one of ours or can't be parsed.
+ * @example
+ * dataDirFromHookCommand("/bin/sh '/repo/hooks/statusline.sh' '/data' # nilometer-hook"); // "/data"
+ */
+export function dataDirFromHookCommand(command: string): string | null {
+  if (!command.includes(HOOK_MARKER)) {
+    return null;
+  }
+  // Two single-quoted words, the hook path then the data directory, as buildHookCommand writes
+  // them: `''` can't appear inside one, because shellQuote escapes an embedded quote as `'\''`.
+  const match = /^\/bin\/sh '((?:[^']|'\\'')*)' '((?:[^']|'\\'')*)' /.exec(command);
+  const quoted = match?.[2];
+  if (quoted === undefined) {
+    return null;
+  }
+  return quoted.replaceAll(`'\\''`, "'");
+}
+
+/**
  * Builds the exact `statusLine.command` string that runs our hook.
  * @param hookPath - Absolute path to `hooks/statusline.sh`.
+ * @throws {Error} If either path is relative: the hook would resolve it against whatever directory
+ *   Claude Code runs in, which the user doesn't control (D-050).
  * @param dataDir - Absolute path to the tool's data directory.
  * @returns A shell command running the hook under `/bin/sh`, ending in {@link HOOK_MARKER}.
  * @example
@@ -54,6 +85,11 @@ export function shellQuote(value: string): string {
  * // "/bin/sh '/opt/aua/hooks/statusline.sh' '/home/example/.local/share/nilometer' # nilometer-hook"
  */
 export function buildHookCommand(hookPath: string, dataDir: string): string {
+  for (const path of [hookPath, dataDir]) {
+    if (!isAbsolute(path)) {
+      throw new Error(`the status line command needs absolute paths; got ${path}`);
+    }
+  }
   // Running through /bin/sh explicitly means the script needn't be executable after a git checkout.
   return `/bin/sh ${shellQuote(hookPath)} ${shellQuote(dataDir)} ${HOOK_MARKER}`;
 }

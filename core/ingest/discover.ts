@@ -110,12 +110,15 @@ export type ListDir = (path: string) => Dirent[];
  * Lists every `.jsonl` file under a root's `projects/` directory.
  * @param root - A root from {@link resolveRoots}.
  * @param listDir - Directory listing; defaults to the real filesystem.
+ * @param onUnreadable - Called with the path of a folder that can't be listed (deleted mid-run, or
+ *   permission denied). The folder is skipped instead of failing the run (D-050).
  * @returns Paths relative to the root (starting `projects/`), joined with `/` on every platform and
  *   sorted by UTF-8 bytes.
  */
 export function discoverLogFiles(
   root: string,
   listDir: ListDir = (path) => readdirSync(path, { withFileTypes: true }),
+  onUnreadable: (path: string) => void = () => undefined,
 ): string[] {
   const found: string[] = [];
   /**
@@ -123,7 +126,14 @@ export function discoverLogFiles(
    * @param relative - Directory path relative to the root.
    */
   const walk = (relative: string): void => {
-    for (const entry of listDir(join(root, relative))) {
+    let entries: Dirent[];
+    try {
+      entries = listDir(join(root, relative));
+    } catch {
+      onUnreadable(join(root, relative));
+      return;
+    }
+    for (const entry of entries) {
       // "/" on every platform, so stored paths, fixtures, and explain's locations match on Windows (D-049).
       const child = `${relative}/${entry.name}`;
       if (entry.isDirectory()) {

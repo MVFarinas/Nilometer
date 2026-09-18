@@ -1,7 +1,7 @@
 /**
  * @file Unit tests for core/install/locations.ts.
  */
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { slash } from "../../../setup/platform.js";
@@ -44,6 +44,22 @@ describe("resolveDataDir", () => {
         }),
       ),
     ).toBe("/home/example/aua");
+  });
+
+  it("makes a relative --data-dir or NILOMETER_HOME absolute (D-050)", () => {
+    // init writes this path into the status line command, and the hook would otherwise resolve it
+    // against whatever project Claude Code runs in.
+    const fromFlag = resolveDataDir({ home: HOME, env: {}, override: "mydata" });
+    const fromEnv = resolveDataDir({ home: HOME, env: { NILOMETER_HOME: "../mydata" } });
+    for (const path of [fromFlag, fromEnv]) {
+      expect(isAbsolute(path)).toBe(true);
+    }
+    expect(fromFlag).toBe(resolve(process.cwd(), "mydata"));
+    expect(fromEnv).toBe(resolve(process.cwd(), "../mydata"));
+    // An absolute value is untouched, and "~" still expands.
+    expect(slash(resolveDataDir({ home: HOME, env: {}, override: "~/aua" }))).toBe(
+      "/home/example/aua",
+    );
   });
 
   it("prefers the --data-dir flag over everything", () => {

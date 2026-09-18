@@ -13,6 +13,26 @@ export type ValueKind =
 /** Text shown for a value that isn't known. */
 export const UNKNOWN = "unknown";
 
+/**
+ * Makes a value from the logs safe to print in a terminal (D-050).
+ *
+ * Model names, repository paths, session IDs, and file names come from data an attacker can
+ * influence: a directory or branch name, or a line injected into a session log. Printed raw, a
+ * newline forges an extra table row, and an escape sequence can recolor, move, or erase what the
+ * user is reading. Control characters are written as escapes instead, so the text stays visible and
+ * one cell stays one line. Column widths are measured after this, so alignment holds.
+ * @param value - Text from the database.
+ * @returns The same text with C0 and C1 control characters written as escapes.
+ */
+export function printable(value: string): string {
+  const named: Record<string, string> = { "\n": "\\n", "\r": "\\r", "\t": "\\t", "\u001b": "\\e" };
+  return value.replace(
+    // eslint-disable-next-line no-control-regex -- matching control characters is the point.
+    /[\u0000-\u001f\u007f-\u009f]/g,
+    (char) => named[char] ?? `\\x${char.charCodeAt(0).toString(16).padStart(2, "0")}`,
+  );
+}
+
 /** Integer formatter with thousands separators, independent of the machine's locale. */
 const INTEGER = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 

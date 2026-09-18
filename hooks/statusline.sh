@@ -36,8 +36,15 @@ data_dir=${1:-}
 
 # Read the original command before touching stdin. $(cat) strips trailing newlines, harmless for a
 # shell command string (unlike the payload).
+#
+# A symlink here is refused (D-050): this file's contents are executed, so following a link would run
+# a command from a file Nilometer doesn't own. `init` only ever writes a regular file.
 wrapped=""
-if [ -n "$data_dir" ] && [ -f "$data_dir/wrapped-command" ]; then
+if [ -n "$data_dir" ] && [ -L "$data_dir/wrapped-command" ]; then
+  if [ ! -L "$data_dir/hook-errors.log" ]; then
+    { printf '%s wrapped-command-symlink-refused\n' "$(date +%s)" >>"$data_dir/hook-errors.log"; } 2>/dev/null
+  fi
+elif [ -n "$data_dir" ] && [ -f "$data_dir/wrapped-command" ]; then
   wrapped=$(cat "$data_dir/wrapped-command" 2>/dev/null) || wrapped=""
 fi
 

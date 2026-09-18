@@ -282,6 +282,27 @@ describe("never fails", () => {
     },
   );
 
+  it.skipIf(!CAN_SYMLINK)(
+    "refuses a symlinked wrapped-command instead of executing it (D-050)",
+    () => {
+      // The file's contents are executed, so a link could run a command Nilometer never wrote.
+      const dataDir = makeDataDir();
+      const elsewhere = join(freshDir(), "not-ours.sh");
+      writeFileSync(elsewhere, "printf hijacked");
+      symlinkSync(elsewhere, join(dataDir, "wrapped-command"));
+      const run = runHook(PAYLOAD, { dataDir });
+      // The default output, not the linked command's.
+      expect(run.stdout.toString()).toBe("Sonnet 5\n");
+      expect(run.exitCode).toBe(0);
+      expect(run.stderr.length).toBe(0);
+      expect(readFileSync(join(dataDir, "hook-errors.log"), "utf8")).toMatch(
+        /^\d+ wrapped-command-symlink-refused\n$/,
+      );
+      // The payload is still recorded.
+      expect(readSpool(dataDir)).toHaveLength(1);
+    },
+  );
+
   it.skipIf(!CAN_SYMLINK)("never writes its error log through a symlink either", () => {
     const dataDir = makeDataDir();
     const elsewhere = join(freshDir(), "other.log");

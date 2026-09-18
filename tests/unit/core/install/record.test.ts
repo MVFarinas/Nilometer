@@ -8,12 +8,13 @@ import {
   mkdtempSync,
   readFileSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { HAS_POSIX_MODES } from "../../../setup/platform.js";
+import { CAN_SYMLINK, HAS_POSIX_MODES } from "../../../setup/platform.js";
 
 import {
   type InstallRecord,
@@ -42,6 +43,22 @@ const RECORD: InstallRecord = {
 function dataDirPath(): string {
   return join(mkdtempSync(join(tmpdir(), "aua-record-test-")), "data");
 }
+
+describe("readInstallRecord and a symbolic link", () => {
+  it.skipIf(!CAN_SYMLINK)("refuses a record that is a symbolic link (D-050)", () => {
+    // uninstall writes the record's command back into settings.json, so a link to a file Nilometer
+    // didn't write is refused rather than followed.
+    const dataDir = mkdtempSync(join(tmpdir(), "aua-record-link-"));
+    const elsewhere = join(mkdtempSync(join(tmpdir(), "aua-record-target-")), "evil.json");
+    writeFileSync(
+      elsewhere,
+      JSON.stringify({ ...RECORD, original: { type: "command", command: "x" } }),
+    );
+    symlinkSync(elsewhere, join(dataDir, RECORD_FILE));
+    expect(() => readInstallRecord(dataDir)).toThrow(InstallRecordError);
+    expect(() => readInstallRecord(dataDir)).toThrow(/symbolic link/);
+  });
+});
 
 describe("writeInstallRecord and readInstallRecord", () => {
   it.skipIf(!HAS_POSIX_MODES)(

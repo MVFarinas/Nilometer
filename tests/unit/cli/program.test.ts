@@ -159,6 +159,7 @@ describe("describeIngest", () => {
       linesStored: 30,
       linesAlreadyStored: 10,
       filesRewritten: 1,
+      unreadable: 0,
     },
     derived: { lines: 30, rebuilt: false },
     repositoriesResolved: 2,
@@ -269,11 +270,22 @@ describe("describeInit", () => {
 });
 
 describe("describeUninstall", () => {
-  const base = { ...PATHS, exactBytes: true };
+  const base = { ...PATHS, exactBytes: true, restoredCommand: null };
   const cases: [UninstallOutcome, RegExp][] = [
     [
       { ...base, action: "restored", backupPath: "/b", recordMissing: false },
       /restored the earlier status line/,
+    ],
+    [
+      // The command comes from a file on disk, so uninstall names it (D-050).
+      {
+        ...base,
+        action: "restored",
+        backupPath: "/b",
+        recordMissing: false,
+        restoredCommand: "~/bin/my-status.sh",
+      },
+      /Status line command restored: ~\/bin\/my-status\.sh/,
     ],
     [
       { ...base, action: "restored", backupPath: null, recordMissing: true },

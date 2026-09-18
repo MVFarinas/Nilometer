@@ -4,16 +4,18 @@
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { HAS_POSIX_MODES, slash } from "../../../setup/platform.js";
+import { CAN_SYMLINK, HAS_POSIX_MODES, slash } from "../../../setup/platform.js";
 
 import {
   type AtomicFs,
@@ -195,6 +197,36 @@ describe("serializeSettings", () => {
   });
 });
 
+describe("readSettings and a symbolic link", () => {
+  it.skipIf(!CAN_SYMLINK)("refuses a link to a file that doesn't exist (D-050)", () => {
+    // Treating it as "no settings file" would make `init` create the link's target, wherever
+    // on the machine that points.
+    const path = join(freshDir(), "settings.json");
+    symlinkSync(join(freshDir(), "not-there.json"), path);
+    const thrown = (() => {
+      try {
+        readSettings(path);
+        return null;
+      } catch (error) {
+        return error as SettingsError;
+      }
+    })();
+    expect(thrown).toBeInstanceOf(SettingsError);
+    expect(thrown?.code).toBe("dangling-link");
+    expect(thrown?.message).toContain("refusing to create its target");
+  });
+
+  it.skipIf(!CAN_SYMLINK)("follows a link to a settings file that exists", () => {
+    const target = join(freshDir(), "tracked.json");
+    writeFileSync(target, '{"a": 1}');
+    const path = join(freshDir(), "settings.json");
+    symlinkSync(target, path);
+    const read = readSettings(path);
+    expect(read.kind).toBe("ok");
+    expect(read.kind === "ok" && read.settings).toEqual({ a: 1 });
+  });
+});
+
 describe("writeFileAtomic", () => {
   it("writes the complete contents and leaves no temp file", () => {
     const dir = freshDir();
@@ -227,6 +259,25 @@ describe("writeFileAtomic", () => {
     writeFileAtomic(path, '{"a": 1}');
     expect(statSync(path).mode & 0o777).toBe(0o644);
   });
+
+  it.skipIf(!CAN_SYMLINK)(
+    "writes through a symlinked settings file, keeping the link (D-050)",
+    () => {
+      // A dotfiles repository links ~/.claude/settings.json to a file it tracks. A plain rename
+      // would replace the link with a regular file and detach the user's setup.
+      const dir = freshDir();
+      const target = join(freshDir(), "tracked-settings.json");
+      writeFileSync(target, "original");
+      const path = join(dir, "settings.json");
+      symlinkSync(target, path);
+      writeFileAtomic(path, "replacement");
+      expect(lstatSync(path).isSymbolicLink()).toBe(true);
+      expect(readFileSync(target, "utf8")).toBe("replacement");
+      // The temp file went next to the target, and nothing was left behind in either directory.
+      expect(readdirSync(dir)).toEqual(["settings.json"]);
+      expect(readdirSync(join(target, ".."))).toEqual(["tracked-settings.json"]);
+    },
+  );
 
   it("leaves the original intact and removes the temp file when the rename fails", () => {
     const dir = freshDir();

@@ -8,7 +8,7 @@
  * same `_events` views the metrics are built on; this module only lists and adds them.
  */
 import type { Db } from "../core/db/database.js";
-import { type ValueKind, formatInstant, formatNumber } from "./format.js";
+import { type ValueKind, formatInstant, formatNumber, printable } from "./format.js";
 import { displayPath, repoKindName, windowName } from "./render.js";
 
 /** One event behind a number. */
@@ -663,7 +663,9 @@ export function renderExplanation(
     const title = group.title.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, (iso) =>
       formatInstant(iso, timeZone),
     );
-    lines.push("", displayPath(title, home));
+    // Titles, descriptions, and locations carry repository paths, model names, session IDs, and
+    // file names from the logs, so escape control characters before printing them (D-050).
+    lines.push("", printable(displayPath(title, home)));
     group.measures.forEach((measure, index) => {
       const fromEvents = resum(group, index);
       const agrees =
@@ -677,7 +679,7 @@ export function renderExplanation(
     });
     for (const event of group.events.slice(0, limit)) {
       lines.push(
-        `    ${formatInstant(event.at, timeZone)}  ${event.description}  ${event.location}`,
+        `    ${formatInstant(event.at, timeZone)}  ${printable(event.description)}  ${printable(event.location)}`,
       );
     }
     if (group.events.length > limit) {

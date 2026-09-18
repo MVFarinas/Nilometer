@@ -8,7 +8,7 @@
  * - `wrapped-command`: the original command as plain text, the only thing the shell hook reads.
  *   It exists only when there was an original command.
  */
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { ensurePrivateDir, tightenMode } from "./private-files.js";
@@ -83,6 +83,11 @@ export function readInstallRecord(dataDir: string): InstallRecord | null {
   const path = join(dataDir, RECORD_FILE);
   if (!existsSync(path)) {
     return null;
+  }
+  // The record decides what `uninstall` writes back into settings.json, so a link to a file
+  // Nilometer didn't write is refused rather than followed (D-050).
+  if (lstatSync(path).isSymbolicLink()) {
+    throw new InstallRecordError(path, "a symbolic link, not the file init wrote");
   }
   let parsed: unknown;
   try {

@@ -13,7 +13,9 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -24,7 +26,7 @@ import { basename, dirname, join } from "node:path";
 import { expandHome } from "../util/paths.js";
 
 /** Why a settings file couldn't be used. */
-export type SettingsErrorCode = "invalid-json" | "not-an-object" | "empty";
+export type SettingsErrorCode = "invalid-json" | "not-an-object" | "empty" | "dangling-link";
 
 /** A settings file that exists but can't be safely edited. The file is never modified. */
 export class SettingsError extends Error {
@@ -121,12 +123,36 @@ export function detectFormat(raw: string): SettingsFormat {
 }
 
 /**
+ * Reports whether a path is a symbolic link, without following it.
+ * @param path - Path to inspect.
+ * @returns True if the path itself is a symbolic link.
+ */
+function isLink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    // No such path, or its parent can't be read: not a link this code has to handle.
+    return false;
+  }
+}
+
+/**
  * Reads and parses a settings file without modifying it.
  * @param path - Path to the settings file.
  * @returns `missing` if the file doesn't exist, otherwise the parsed settings with raw text.
  * @throws {SettingsError} If the file is empty, isn't valid JSON, or isn't a JSON object.
  */
 export function readSettings(path: string): SettingsRead {
+  // A symbolic link to a file that isn't there yet would otherwise look like "no settings file",
+  // and `init` would create whatever the link points at, which may be any path on the machine
+  // (D-050). A link to an existing file is followed: that's how a dotfiles repository is set up.
+  if (!existsSync(path) && isLink(path)) {
+    throw new SettingsError(
+      "dangling-link",
+      path,
+      `${path} is a symbolic link to a file that doesn't exist; refusing to create its target`,
+    );
+  }
   if (!existsSync(path)) {
     return { kind: "missing", path };
   }
@@ -211,6 +237,8 @@ export interface AtomicFs {
   readonly modeOf: (path: string) => number | null;
   /** Sets a file's permission bits. */
   readonly chmodSync: (path: string, mode: number) => void;
+  /** Returns what a symbolic link points at, or the path itself when it isn't one. */
+  readonly resolveLink: (path: string) => string;
 }
 
 /** The real filesystem implementation of {@link AtomicFs}. */
@@ -228,6 +256,7 @@ export const NODE_ATOMIC_FS: AtomicFs = {
   chmodSync: (path, mode) => {
     chmodSync(path, mode);
   },
+  resolveLink: (path) => (isLink(path) ? realpathSync(path) : path),
 };
 
 /**
@@ -242,15 +271,21 @@ export const NODE_ATOMIC_FS: AtomicFs = {
  *   original file is untouched unless the rename itself succeeded.
  */
 export function writeFileAtomic(path: string, text: string, fs: AtomicFs = NODE_ATOMIC_FS): void {
+  // A rename replaces a symbolic link with a regular file, which would quietly detach a settings
+  // file that a dotfiles repository links to. Write to what the link points at instead (D-050).
+  const destination = fs.resolveLink(path);
   // Same directory as the destination: rename across filesystems isn't atomic.
-  const temp = join(dirname(path), `.${basename(path)}.tmp-${process.pid}-${Date.now()}`);
+  const temp = join(
+    dirname(destination),
+    `.${basename(destination)}.tmp-${process.pid}-${Date.now()}`,
+  );
   // An existing file keeps its mode; a new one is owner-only, since settings can hold secrets (D-043).
-  const mode = fs.modeOf(path) ?? 0o600;
+  const mode = fs.modeOf(destination) ?? 0o600;
   try {
     fs.writeFileSync(temp, text, { mode });
     // writeFile's mode is filtered by the umask; chmod makes the result match the original exactly.
     fs.chmodSync(temp, mode);
-    fs.renameSync(temp, path);
+    fs.renameSync(temp, destination);
   } catch (error) {
     fs.rmSync(temp, { force: true });
     throw error;

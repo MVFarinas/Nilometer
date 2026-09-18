@@ -169,6 +169,40 @@ describe("explain edge cases", () => {
     }
   });
 
+  it("escapes control characters in titles, descriptions, and locations (D-050)", () => {
+    // Group titles are repository paths and model names, and descriptions carry session IDs and
+    // file names, all of which come from the logs rather than from Nilometer.
+    const esc = String.fromCharCode(27);
+    const lines = renderExplanation(
+      {
+        metric: "by-repo",
+        title: "t",
+        section: "observed",
+        groups: [
+          {
+            title: ["/work/app", "Interruptions: 99"].join("\n"),
+            measures: [{ label: "Tokens", kind: "tokens", reported: 1 }],
+            events: [
+              {
+                at: null,
+                description: `${esc}[2Kclaude-opus-5`,
+                location: ["p/s.jsonl:1", "x"].join("\r"),
+                contributions: [1],
+              },
+            ],
+          },
+        ],
+      },
+      "UTC",
+      "",
+      5,
+    ).join("\n");
+    expect(lines).not.toContain(esc);
+    expect(lines).toContain("/work/app\\nInterruptions: 99");
+    expect(lines).toContain("\\e[2Kclaude-opus-5");
+    expect(lines).toContain("p/s.jsonl:1\\rx");
+  });
+
   it("formats locations and treats all-null sums per measure", () => {
     expect(formatLocation({ relative_path: null, line_number: null, byte_offset: null })).toBe(
       "unknown location",

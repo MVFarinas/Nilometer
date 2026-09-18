@@ -9,7 +9,7 @@ import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Db } from "../db/database.js";
-import { discoverLogFiles } from "./discover.js";
+import { type ListDir, discoverLogFiles } from "./discover.js";
 import { DEFAULT_CHUNK_SIZE, type FileStat, readCompleteLines, readStart } from "./reader.js";
 import {
   type IngestMode,
@@ -34,6 +34,8 @@ export interface IngestOptions {
   readonly chunkSize?: number;
   /** File stat, injectable for tests; defaults to the real filesystem. */
   readonly stat?: (path: string) => FileStat;
+  /** Directory listing, injectable for tests; defaults to the real filesystem. */
+  readonly listDir?: ListDir;
   /**
    * Data directory holding the hook's spool (`statusline.spool.jsonl`). When given and the spool
    * exists, it is read in the same run as the logs (D-008).
@@ -59,6 +61,12 @@ export interface IngestSummary {
   readonly linesAlreadyStored: number;
   /** Files whose rewrite was detected and which were reread from the start. */
   readonly filesRewritten: number;
+  /**
+   * Files and folders this run couldn't read: deleted between discovery and open, or permission
+   * denied. They're skipped and counted, never fatal (D-050). Claude Code deletes session logs
+   * after 30 days, so a file can vanish mid-run with no attacker involved.
+   */
+  readonly unreadable: number;
 }
 
 /**
@@ -83,6 +91,8 @@ export const SPOOL_FILE = "statusline.spool.jsonl";
 interface RunCounts {
   /** Files examined. */
   files: number;
+  /** Files and folders skipped because they couldn't be read. */
+  unreadable: number;
   /** Complete lines read. */
   linesRead: number;
   /** Lines stored for the first time. */
@@ -202,17 +212,25 @@ export function ingestLogs(db: Db, options: IngestOptions): IngestSummary {
   normalizeWindowsRelativePaths(db, options.platform ?? process.platform);
   const stat = options.stat ?? ((path: string) => statFile(path));
   const runId = startRun(db, options.mode, options.now());
-  const counts: RunCounts = { files: 0, linesRead: 0, linesStored: 0, filesRewritten: 0 };
+  const counts: RunCounts = {
+    files: 0,
+    unreadable: 0,
+    linesRead: 0,
+    linesStored: 0,
+    filesRewritten: 0,
+  };
   const run = { runId, options, stat, counts };
   for (const root of options.roots) {
-    for (const relativePath of discoverLogFiles(root)) {
-      ingestFile(db, { kind: "log", root, relativePath }, run);
+    for (const relativePath of discoverLogFiles(root, options.listDir, () => {
+      counts.unreadable += 1;
+    })) {
+      readFileOrCount(db, { kind: "log", root, relativePath }, run);
     }
   }
   const spoolRead =
     options.spoolDir !== undefined && existsSync(join(options.spoolDir, SPOOL_FILE));
   if (spoolRead) {
-    ingestFile(db, { kind: "spool", root: options.spoolDir, relativePath: SPOOL_FILE }, run);
+    readFileOrCount(db, { kind: "spool", root: options.spoolDir, relativePath: SPOOL_FILE }, run);
   }
   finishRun(db, runId, options.now());
   return {
@@ -223,5 +241,28 @@ export function ingestLogs(db: Db, options: IngestOptions): IngestSummary {
     linesStored: counts.linesStored,
     linesAlreadyStored: counts.linesRead - counts.linesStored,
     filesRewritten: counts.filesRewritten,
+    unreadable: counts.unreadable,
   };
+}
+
+/**
+ * Ingests one file, counting it as unreadable instead of failing the run (D-050).
+ *
+ * A session log can be deleted between discovery and open (Claude Code removes them after 30 days),
+ * or be unreadable. Either would otherwise abort the run with a stack trace, leaving the run
+ * unfinished and, during `init`, landing after settings.json was already changed.
+ * @param db - Open, migrated database.
+ * @param file - Kind, root, and path below the root.
+ * @param run - The current run's context.
+ * @throws {unknown} Anything that isn't a filesystem error, since that would be a bug.
+ */
+function readFileOrCount(db: Db, file: FileRef, run: RunContext): void {
+  try {
+    ingestFile(db, file, run);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === undefined) {
+      throw error;
+    }
+    run.counts.unreadable += 1;
+  }
 }

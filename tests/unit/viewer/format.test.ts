@@ -9,7 +9,23 @@ import {
   formatDuration,
   formatInstant,
   formatNumber,
+  printable,
 } from "../../../viewer/format.js";
+
+describe("printable", () => {
+  it("writes control characters as escapes and leaves ordinary text alone (D-050)", () => {
+    const esc = String.fromCharCode(27);
+    const bel = String.fromCharCode(7);
+    expect(printable("claude-opus-5")).toBe("claude-opus-5");
+    expect(printable(["a", "b"].join("\n"))).toBe("a\\nb");
+    expect(printable(["a", "b"].join("\r"))).toBe("a\\rb");
+    expect(printable(["a", "b"].join("\t"))).toBe("a\\tb");
+    expect(printable(`${esc}[2K`)).toBe("\\e[2K");
+    expect(printable(`x${bel}`)).toBe("x\\x07");
+    // Non-ASCII text is not a control character and stays as written.
+    expect(printable("Fariñas · 日本")).toBe("Fariñas · 日本");
+  });
+});
 
 describe("formatNumber", () => {
   it.each([

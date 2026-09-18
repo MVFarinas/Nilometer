@@ -41,6 +41,27 @@ describe("small renderers", () => {
     ]);
   });
 
+  it("escapes control characters in cells, keeping one row per row (D-050)", () => {
+    // A repository or model name can carry a newline or an escape sequence from a directory name,
+    // a branch name, or an injected log line.
+    const esc = String.fromCharCode(27);
+    const lines = renderTable(
+      ["Model", "Value"],
+      [
+        [["model", "FAKE TOTAL"].join("\n"), "1"],
+        [`${esc}[31mred`, "2"],
+      ],
+      ["left", "right"],
+    );
+    // Header, rule, and exactly one line per row.
+    expect(lines).toHaveLength(4);
+    expect(lines.join("\n")).not.toContain(esc);
+    expect(lines[2]).toContain("model\\nFAKE TOTAL");
+    expect(lines[3]).toContain("\\e[31mred");
+    // The rule is as wide as the escaped text, so the table still lines up.
+    expect(lines[1]?.trim().split("  ")[0]?.length).toBe("model\\nFAKE TOTAL".length);
+  });
+
   it("names windows, repository kinds, plurals, and home paths", () => {
     expect([windowName("five_hour"), windowName("seven_day"), windowName("spend_limit")]).toEqual([
       "5-hour",

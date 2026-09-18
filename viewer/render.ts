@@ -6,7 +6,14 @@
  * label lives in {@link LABELS}, which the JSON output carries too, so the banned-phrase test (A9)
  * reads every label once. Numbers are rounded only through viewer/format.ts.
  */
-import { UNKNOWN, type ValueKind, formatCoverage, formatInstant, formatNumber } from "./format.js";
+import {
+  UNKNOWN,
+  type ValueKind,
+  formatCoverage,
+  formatInstant,
+  formatNumber,
+  printable,
+} from "./format.js";
 import type {
   ApiListPriceRow,
   BurnRateRow,
@@ -98,15 +105,17 @@ type Align = "left" | "right";
 /**
  * Lays out rows as a text table with a header and a rule.
  * @param headers - Column names.
- * @param rows - Cell text per row.
+ * @param rawRows - Cell text per row; control characters in them are escaped (D-050).
  * @param align - Alignment per column; numbers are right-aligned.
  * @returns Lines, each indented by two spaces.
  */
 export function renderTable(
   headers: readonly string[],
-  rows: readonly (readonly string[])[],
+  rawRows: readonly (readonly string[])[],
   align: readonly Align[],
 ): string[] {
+  // Cells hold model names and repository paths from the logs, so escape before measuring (D-050).
+  const rows = rawRows.map((row) => row.map(printable));
   const widths = headers.map((header, column) =>
     Math.max(header.length, ...rows.map((row) => (row[column] ?? "").length)),
   );

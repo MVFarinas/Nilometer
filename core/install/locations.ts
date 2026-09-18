@@ -6,7 +6,7 @@
  * and the install record; later phases add the database there.
  */
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { expandHome } from "../util/paths.js";
 
@@ -38,14 +38,17 @@ export const DATA_DIR_NAME = "nilometer";
  * then `~/.local/share/nilometer`. XDG's default is used on macOS too, so every platform
  * has one documented location instead of a per-OS guess.
  * @param options - Home directory, environment, and flag override.
- * @returns The data directory path (it may not exist yet).
+ * @returns An absolute data directory path (it may not exist yet).
  */
 export function resolveDataDir(options: DataDirOptions): string {
   const explicit = [options.override, options.env.NILOMETER_HOME].find(
     (value): value is string => value !== undefined && value !== "",
   );
   if (explicit !== undefined) {
-    return expandHome(explicit, options.home);
+    // Always absolute (D-050): `init` writes this path into the status line command, and the hook
+    // resolves a relative one against whatever project Claude Code runs in. A folder committed to a
+    // repository could then supply the wrapped command the hook executes.
+    return resolve(expandHome(explicit, options.home));
   }
   const xdg = options.env.XDG_DATA_HOME;
   // XDG says relative values are invalid and must be ignored.

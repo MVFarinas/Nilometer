@@ -20,7 +20,13 @@ import {
   serializeSettings,
   writeFileAtomic,
 } from "../settings/settings-file.js";
-import { buildHookCommand, planInstall, planUninstall } from "../settings/statusline.js";
+import {
+  buildHookCommand,
+  dataDirFromHookCommand,
+  isCommandEntry,
+  planInstall,
+  planUninstall,
+} from "../settings/statusline.js";
 import { HOOK_RELATIVE_PATH, resolveDataDir } from "./locations.js";
 import { readInstallRecord, removeInstallRecord, writeInstallRecord } from "./record.js";
 
@@ -183,6 +189,11 @@ export interface UninstallOutcome {
   readonly exactBytes: boolean;
   /** True when no install record was found, so an original command couldn't be restored. */
   readonly recordMissing: boolean;
+  /**
+   * The status line command being restored from the install record, or null when there was none.
+   * Printed so the user sees what `uninstall` puts back, since it comes from a file on disk (D-050).
+   */
+  readonly restoredCommand: string | null;
 }
 
 /**
@@ -196,14 +207,32 @@ export interface UninstallOutcome {
  */
 export function runUninstall(options: InstallOptions): UninstallOutcome {
   const targets = resolveTargets(options);
-  const dataDir = targets.dataDir;
-  const record = readInstallRecord(dataDir);
+  let dataDir = targets.dataDir;
+  let record = readInstallRecord(dataDir);
   // The record knows which file was changed, even if flags or environment differ today.
   const settingsPath = record?.settingsPath ?? targets.settingsPath;
   const read = readSettings(settingsPath);
+  if (record === null && read.kind === "ok") {
+    // `init --data-dir X` followed by a plain `uninstall` looks for the record in the default
+    // directory and doesn't find it. Without the record, the plan below would delete the user's
+    // own status line instead of restoring it, so recover the directory from the command that's
+    // about to be removed — the one other place `init` wrote that path down (D-050).
+    const entry = read.settings["statusLine"];
+    const installedAt = isCommandEntry(entry) ? dataDirFromHookCommand(entry.command) : null;
+    const recovered = installedAt === null ? null : readInstallRecord(installedAt);
+    if (installedAt !== null && recovered !== null) {
+      record = recovered;
+      dataDir = installedAt;
+    }
+  }
   const settings = read.kind === "ok" ? read.settings : null;
   const plan = planUninstall(settings, record?.original ?? null);
-  const base = { settingsPath, dataDir, recordMissing: record === null };
+  const base = {
+    settingsPath,
+    dataDir,
+    recordMissing: record === null,
+    restoredCommand: record?.original?.command ?? null,
+  };
 
   if (plan.action === "none" || read.kind !== "ok") {
     const action = plan.action === "none" ? plan.reason : "not-installed";
