@@ -342,7 +342,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 - **Consequences:**
   - Migration 007 adds `service_tier` and `inference_geo` to derived requests; parser version 3.
   - Viewer output (Phase 7) must show `verified_on` next to any cost that includes requests dated before it.
-  - Only model IDs seen in logs or verifiable on the overview page get rows (as of 2026-09-13: Fable 5.1 and 5, Opus 5, 4.8, 4.7, 4.6, Sonnet 5 and 4.6, Haiku 4.5 by alias and dated ID). Anything else is reported as `no_price_row`.
+  - Only model IDs seen in logs or verifiable on the overview page get rows (as of 2026-09-13: Fable 5.1 and 5, Opus 5, 4.8, 4.7, 4.6, Sonnet 5 and 4.6, Haiku 4.5 by alias and dated ID). Anything else is reported as `no_price_row`. **Extended 2026-09-24:** every model on the pricing page now has a row, whether or not it has appeared in a log, so no one running a listed model sees `no_price_row` for it. Added that day: Opus 5.5, then Opus 4.5, 4.1 and 4, Sonnet 4.5 and 4, Haiku 3.5, and Mythos 5 and 5.1, by alias and dated ID where both exist. Haiku 3, Sonnet 3.7 and 3.5, and Opus 3 aren't on the page and stay unpriced.
 
 ## D-021: "Mid-task" is decided by what the stopped request was answering (2026-09-13)
 

@@ -267,16 +267,14 @@ describe("request_costs: rules without fixtures", () => {
         line("long-sonnet", "claude-sonnet-4-5", { input_tokens: 250000 }),
       ],
     );
-    // Compared in whole micro-dollars, all models at once, so one failure names every mismatch.
+    // All models in one comparison, so a failure names every mismatched model, each to 12 places.
     const got = expected.map(([model]) => {
       const row = cost(db, `sx/m/m-${model}`);
-      return [
-        model,
-        row.unpriced_reason,
-        row.total_usd === null ? null : Math.round(row.total_usd * 1e6),
-      ];
+      return [model, row.unpriced_reason, row.total_usd];
     });
-    expect(got).toEqual(expected.map(([model, usd]) => [model, null, Math.round(usd * 1e6)]));
+    expect(got).toEqual(
+      expected.map(([model, usd]): unknown[] => [model, null, expect.closeTo(usd, 12) as unknown]),
+    );
     expect(cost(db, "sx/m/long-sonnet").unpriced_reason).toBe("long_context_rate_unverified");
   });
 
