@@ -28,6 +28,32 @@
       "verified_on": "2026-09-13"
     },
     {
+      "model_id": "claude-mythos-5-1",
+      "effective_from": "0000-01-01",
+      "input": 10,
+      "output": 50,
+      "cache_write_5m": 12.5,
+      "cache_write_1h": 20,
+      "cache_read": 0.25,
+      "fast": null,
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
+    },
+    {
+      "model_id": "claude-mythos-5",
+      "effective_from": "0000-01-01",
+      "input": 10,
+      "output": 50,
+      "cache_write_5m": 12.5,
+      "cache_write_1h": 20,
+      "cache_read": 1,
+      "fast": null,
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
+    },
+    {
       "model_id": "claude-opus-5-5",
       "effective_from": "0000-01-01",
       "input": 4,
@@ -111,6 +137,84 @@
       "verified_on": "2026-09-13"
     },
     {
+      "model_id": "claude-opus-4-5",
+      "effective_from": "0000-01-01",
+      "input": 5,
+      "output": 25,
+      "cache_write_5m": 6.25,
+      "cache_write_1h": 10,
+      "cache_read": 0.5,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
+    },
+    {
+      "model_id": "claude-opus-4-5-20251101",
+      "effective_from": "0000-01-01",
+      "input": 5,
+      "output": 25,
+      "cache_write_5m": 6.25,
+      "cache_write_1h": 10,
+      "cache_read": 0.5,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
+    },
+    {
+      "model_id": "claude-opus-4-1",
+      "effective_from": "0000-01-01",
+      "input": 15,
+      "output": 75,
+      "cache_write_5m": 18.75,
+      "cache_write_1h": 30,
+      "cache_read": 1.5,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
+    },
+    {
+      "model_id": "claude-opus-4-1-20250805",
+      "effective_from": "0000-01-01",
+      "input": 15,
+      "output": 75,
+      "cache_write_5m": 18.75,
+      "cache_write_1h": 30,
+      "cache_read": 1.5,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
+    },
+    {
+      "model_id": "claude-opus-4-0",
+      "effective_from": "0000-01-01",
+      "input": 15,
+      "output": 75,
+      "cache_write_5m": 18.75,
+      "cache_write_1h": 30,
+      "cache_read": 1.5,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
+    },
+    {
+      "model_id": "claude-opus-4-20250514",
+      "effective_from": "0000-01-01",
+      "input": 15,
+      "output": 75,
+      "cache_write_5m": 18.75,
+      "cache_write_1h": 30,
+      "cache_read": 1.5,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
+    },
+    {
       "model_id": "claude-sonnet-5",
       "effective_from": "0000-01-01",
       "input": 2,
@@ -137,6 +241,58 @@
       "verified_on": "2026-09-13"
     },
     {
+      "model_id": "claude-sonnet-4-5",
+      "effective_from": "0000-01-01",
+      "input": 3,
+      "output": 15,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6,
+      "cache_read": 0.3,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
+    },
+    {
+      "model_id": "claude-sonnet-4-5-20250929",
+      "effective_from": "0000-01-01",
+      "input": 3,
+      "output": 15,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6,
+      "cache_read": 0.3,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
+    },
+    {
+      "model_id": "claude-sonnet-4-0",
+      "effective_from": "0000-01-01",
+      "input": 3,
+      "output": 15,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6,
+      "cache_read": 0.3,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
+    },
+    {
+      "model_id": "claude-sonnet-4-20250514",
+      "effective_from": "0000-01-01",
+      "input": 3,
+      "output": 15,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6,
+      "cache_read": 0.3,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
+    },
+    {
       "model_id": "claude-haiku-4-5-20251001",
       "effective_from": "0000-01-01",
       "input": 1,
@@ -161,6 +317,19 @@
       "standard_rate_max_input_tokens": 200000,
       "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
       "verified_on": "2026-09-13"
+    },
+    {
+      "model_id": "claude-3-5-haiku-20241022",
+      "effective_from": "0000-01-01",
+      "input": 0.8,
+      "output": 4,
+      "cache_write_5m": 1,
+      "cache_write_1h": 1.6,
+      "cache_read": 0.08,
+      "fast": null,
+      "standard_rate_max_input_tokens": 200000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-09-24"
     }
   ]
 }

@@ -228,6 +228,58 @@ describe("request_costs: rules without fixtures", () => {
     expect(cost(db, "sx/m/opus55-fast").total_usd).toBeCloseTo(0.00356, 12);
   });
 
+  it("prices every older and limited-access model at its own rates, by alias and by snapshot ID", () => {
+    // Rates read from the pricing page on 2026-09-24. Every request is 1000 input, 200 output,
+    // 10000 cache read, 400 five-minute and 500 one-hour cache-write tokens, so each family's
+    // expected cost below is tokens × USD per million tokens, summed by hand (µ$).
+    const usage = {
+      input_tokens: 1000,
+      output_tokens: 200,
+      cache_read_input_tokens: 10000,
+      cache_creation: { ephemeral_5m_input_tokens: 400, ephemeral_1h_input_tokens: 500 },
+    };
+    // Opus 4.5 ($5 / $25 / $6.25 / $10 / $0.50): 5000 + 5000 + 5000 + 2500 + 5000 = 22500.
+    // Opus 4.1 and 4 ($15 / $75 / $18.75 / $30 / $1.50): 15000 + 15000 + 15000 + 7500 + 15000 = 67500.
+    // Sonnet 4.5 and 4 ($3 / $15 / $3.75 / $6 / $0.30): 3000 + 3000 + 3000 + 1500 + 3000 = 13500.
+    // Haiku 3.5 ($0.80 / $4 / $1 / $1.60 / $0.08): 800 + 800 + 800 + 400 + 800 = 3600.
+    // Mythos 5 ($10 / $50 / $12.50 / $20 / $1): 10000 + 10000 + 10000 + 5000 + 10000 = 45000.
+    // Mythos 5.1 (same, but cache reads $0.25): 10000 + 10000 + 2500 + 5000 + 10000 = 37500.
+    const expected: [string, number][] = [
+      ["claude-opus-4-5", 0.0225],
+      ["claude-opus-4-5-20251101", 0.0225],
+      ["claude-opus-4-1", 0.0675],
+      ["claude-opus-4-1-20250805", 0.0675],
+      ["claude-opus-4-0", 0.0675],
+      ["claude-opus-4-20250514", 0.0675],
+      ["claude-sonnet-4-5", 0.0135],
+      ["claude-sonnet-4-5-20250929", 0.0135],
+      ["claude-sonnet-4-0", 0.0135],
+      ["claude-sonnet-4-20250514", 0.0135],
+      ["claude-3-5-haiku-20241022", 0.0036],
+      ["claude-mythos-5", 0.045],
+      ["claude-mythos-5-1", 0.0375],
+    ];
+    const db = ingest(
+      [],
+      [
+        ...expected.map(([model]) => line(`m-${model}`, model, usage)),
+        // Above 200000 total input these models' rates are not verified, so it stays unpriced.
+        line("long-sonnet", "claude-sonnet-4-5", { input_tokens: 250000 }),
+      ],
+    );
+    // Compared in whole micro-dollars, all models at once, so one failure names every mismatch.
+    const got = expected.map(([model]) => {
+      const row = cost(db, `sx/m/m-${model}`);
+      return [
+        model,
+        row.unpriced_reason,
+        row.total_usd === null ? null : Math.round(row.total_usd * 1e6),
+      ];
+    });
+    expect(got).toEqual(expected.map(([model, usd]) => [model, null, Math.round(usd * 1e6)]));
+    expect(cost(db, "sx/m/long-sonnet").unpriced_reason).toBe("long_context_rate_unverified");
+  });
+
   it("applies 1.1× to every token type for US-only inference", () => {
     const db = ingest(
       [],
