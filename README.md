@@ -193,7 +193,7 @@ docs/      development standards, the audit, and the build history.
 
 Install from a clone: Nilometer isn't published to npm yet. There's no GUI, installer, or auto-updater. Configuration was always the hard part, not packaging, and a desktop app writes to `settings.json` no better than a CLI does.
 
-**Requirements:** Node.js 24 (the version in `.nvmrc`), git, and Claude Code signed in with a Pro or Max subscription. Running `npm run audit` also needs Python 3, gitleaks, and shellcheck.
+**Requirements:** Node.js 24 (the version in `.nvmrc`), git, and Claude Code signed in with a Pro or Max subscription. On Windows, also Git for Windows. **If you don't have these yet, or aren't sure, start with [`docs/requirements.md`](docs/requirements.md)**: how to check each one and how to install it, including how to get Node.js 24 and not a newer one. Nilometer stops with a message on a Node.js older than 24, and warns on a newer one ([D-066](decisions.md)). Running `npm run audit` also needs Python 3, gitleaks, and shellcheck.
 
 On Node 24 before 24.15, `npm ci` prints `EBADENGINE` warnings for three lint plugins that ask for a newer Node. They're development dependencies, they don't affect Nilometer, and the install still succeeds.
 

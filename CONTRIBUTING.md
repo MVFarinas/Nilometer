@@ -11,7 +11,7 @@ Thanks for looking at Nilometer. It's small and opinionated about measurement, s
 
 ## Setup
 
-Node.js 24 (the version in `.nvmrc`) and git. On Windows, use Git for Windows and run commands in Git Bash.
+Node.js 24 (the version in `.nvmrc`) and git. On Windows, use Git for Windows and run commands in Git Bash. [`docs/requirements.md`](docs/requirements.md) says how to check and install each one.
 
 ```sh
 npm ci

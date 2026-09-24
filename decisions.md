@@ -956,3 +956,23 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Fixture 19 pins the tied shape**, and the ccusage comparison reports MATCH on it. The independent Python reference implements the same tie-break, so the two agree by construction rather than by import.
   - **On real logs, this was the last disagreement.** `verify` went from 12 differences to 0 across 33 days.
   - **What it corrects in D-058:** not the decision, which stands, but the claim that the fixture proved agreement in general. It proved it for one shape.
+
+## D-066: Nilometer checks the Node.js version first, stops below 24, and warns above it (2026-09-24)
+
+- **Status:** accepted. Refines [D-057](decisions.md), which it leaves standing: Node 24 is still the one supported version.
+- **Context:** A beta tester tried to install without Node.js at all, and the README gave one line of requirements. Getting it wrong is worse than it looks, because nothing on the install path stops a wrong version:
+  - **`npm ci` only warns.** `engines` is `>=24 <25`, but npm doesn't enforce it unless told to.
+  - **An older Node.js crashes without a word.** *Observed 2026-09-24 on Node 22.11.0:* `--help` works, then `ingest` and `report` both exit 139 (a segfault) the moment the database opens, with nothing printed. A user sees a crash, not "you need Node.js 24".
+  - **A newer Node.js works.** *Observed the same day on Node 26.10.0:* `ingest` and `report` ran, and the whole suite passed (907 tests; two git-spawning tests timed out under load in the full run and passed when rerun alone, on 26 and on 24). This refines D-057's premise that "every major needs its own `better-sqlite3` build": the version in use ships one prebuilt binary per platform (`prebuilds/darwin-x64.node` and so on), not one per Node.js major. The crash runs in one direction only.
+- **Options:**
+  - (a) Documentation only. Rejected on its own: the people who most need the guide are the ones who skip it, and they still get a silent segfault.
+  - (b) `engine-strict=true` in `.npmrc`, so `npm ci` refuses a wrong version. Rejected: it applies to every dependency's `engines`, and three development tools ask for `>=24.15.0`, so it would refuse the Node 24.12.0 the Windows test PC runs (the `EBADENGINE` warnings recorded in the README). It also checks only at install, not when an older Node.js runs an existing install.
+  - (c) Refuse anything but 24. Rejected: it would stop a setup observed to work, and make someone downgrade for a failure nobody has seen.
+  - (d) **Stop below 24 with a message; run above 24 with a one-line warning.** Chosen.
+- **Decision:** (d). `checkNodeVersion` (`core/util/node-version.ts`) runs first in `cli/main.cli.ts`, which loads the rest of the program with a dynamic import only after it passes, because a static import would run before the check could. Below 24 it prints which version was found, that the database would crash, where the install guide is, and "Nothing was changed.", then exits 1. Above 24 it prints that newer versions aren't tested and runs. The messages go to stderr, so `--json` output is unaffected.
+- **Consequences:**
+  - **[`docs/requirements.md`](docs/requirements.md)** is the install guide both messages point to: how to check for Claude Code, Node.js 24, git, and Git for Windows, and how to install each, including how to get 24 rather than the newest release.
+  - **The supported major is written in three places**, `.nvmrc`, `engines`, and `SUPPORTED_NODE_MAJOR`, and a test fails if they disagree. A test also fails if the entry point goes back to importing the program statically.
+  - **Proven against real runtimes, not only in unit tests:** the built command under Node 22.11.0 prints the message and exits 1 where it used to exit 139, and under Node 26.10.0 it prints the warning and runs.
+  - **Supporting newer Node.js is still a separate decision.** It would need a CI job per major, which D-057 declined. The warning keeps that honest in the meantime: newer versions are allowed, not claimed.
+  - **The status line hook is unaffected.** It is a shell script and never starts Node.js ([D-056](decisions.md)).
