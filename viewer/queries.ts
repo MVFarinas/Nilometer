@@ -163,10 +163,17 @@ export interface ApiListPriceRow {
   readonly covers_to: string;
 }
 
+/** Priced requests dated before the day their rate was read, for one reading date. */
+export interface RateReadingRow {
+  readonly verified_on: string;
+  readonly priced_before_verified_requests: number;
+}
+
 /** Everything projected. */
 export interface ProjectedReport {
   readonly burnRate: readonly BurnRateRow[];
   readonly apiListPrice: readonly ApiListPriceRow[];
+  readonly rateReadings: readonly RateReadingRow[];
 }
 
 /** The views {@link loadObserved} reads. Only `obs_` views belong here. */
@@ -252,6 +259,18 @@ export function loadProjected(db: Db): ProjectedReport {
       "window_open DESC, reset_at_utc DESC, window",
     ),
     apiListPrice: projected<ApiListPriceRow>(db, "proj_api_list_price", "month"),
+    // Grouped by reading date so each count stays beside its own date. The month view's
+    // verified_on is the latest date in the month, which isn't the date its count refers to once
+    // price rows were read on different days.
+    rateReadings: db
+      .prepare(
+        `SELECT verified_on, COUNT(*) AS priced_before_verified_requests
+         FROM request_costs
+         WHERE timestamp_utc IS NOT NULL AND unpriced_reason IS NULL AND day_utc < verified_on
+         GROUP BY verified_on
+         ORDER BY verified_on`,
+      )
+      .all() as RateReadingRow[],
   };
 }
 

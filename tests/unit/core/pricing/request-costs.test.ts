@@ -15,6 +15,8 @@ import { type Db, openDatabase } from "../../../../core/db/database.js";
 import { ensureDerived } from "../../../../core/ingest/derive.js";
 import { ingestLogs } from "../../../../core/ingest/ingest.js";
 import { type PriceRow, loadPriceTable, syncPrices } from "../../../../core/pricing/prices.js";
+import { loadProjected } from "../../../../viewer/queries.js";
+import { renderProjected } from "../../../../viewer/render.js";
 
 /** Repository root. */
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -189,6 +191,43 @@ describe("request_costs: rules without fixtures", () => {
     expect(cost(db, "sx/m/standard-opus").total_usd).toBeCloseTo(0.005, 12);
   });
 
+  it("prices Opus 5.5 at its own rates, with its 0.05× cache read, at standard and fast speed", () => {
+    // Rates read from the pricing page on 2026-09-24. Opus 5.5 cache reads are 0.05× input, not the
+    // 0.1× of the rest of the Opus line, so pricing it as Opus 5 would overstate every cache read.
+    const cacheWrites = { ephemeral_5m_input_tokens: 400, ephemeral_1h_input_tokens: 500 };
+    const db = ingest(
+      [],
+      [
+        line("opus55", "claude-opus-5-5", {
+          input_tokens: 1000,
+          output_tokens: 200,
+          cache_read_input_tokens: 10000,
+          cache_creation: cacheWrites,
+        }),
+        line("opus55-fast", "claude-opus-5-5", {
+          input_tokens: 100,
+          output_tokens: 50,
+          cache_read_input_tokens: 1000,
+          cache_creation: { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 10 },
+          speed: "fast",
+        }),
+      ],
+    );
+    // 1000 × $4 = 4000, 200 × $20 = 4000, 10000 × $0.20 = 2000, 400 × $5 = 2000, 500 × $8 = 4000
+    // → 16000 µ$.
+    const standard = cost(db, "sx/m/opus55");
+    expect(standard.input_usd).toBeCloseTo(0.004, 12);
+    expect(standard.output_usd).toBeCloseTo(0.004, 12);
+    expect(standard.cache_read_usd).toBeCloseTo(0.002, 12);
+    expect(standard.cache_write_5m_usd).toBeCloseTo(0.002, 12);
+    expect(standard.cache_write_1h_usd).toBeCloseTo(0.004, 12);
+    expect(standard).toMatchObject({ unpriced_reason: null, verified_on: "2026-09-24" });
+    expect(standard.total_usd).toBeCloseTo(0.016, 12);
+    // Fast: caching multipliers on the $8 fast input. 100 × $8 = 800, 50 × $40 = 2000,
+    // 1000 × $0.40 = 400, 20 × $10 = 200, 10 × $16 = 160 → 3560 µ$.
+    expect(cost(db, "sx/m/opus55-fast").total_usd).toBeCloseTo(0.00356, 12);
+  });
+
   it("applies 1.1× to every token type for US-only inference", () => {
     const db = ingest(
       [],
@@ -265,5 +304,56 @@ describe("request_costs: rules without fixtures", () => {
       total_usd: 2,
       price_effective_from: "2026-09-02",
     });
+  });
+});
+
+describe("the note on requests dated before their rate was read", () => {
+  it("prints each reading date beside its own count, never every count under the latest date", () => {
+    const row = {
+      effective_from: "0000-01-01",
+      input: 1,
+      output: 0,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_read: 0,
+      fast: null,
+      standard_rate_max_input_tokens: null,
+      source_url: "https://example.test/pricing",
+    };
+    const db = ingest(
+      [],
+      [
+        line("a-early", "claude-a", { input_tokens: 10 }, "2026-09-01T12:00:00Z"),
+        line("a-late", "claude-a", { input_tokens: 10 }, "2026-09-20T12:00:00Z"),
+        line("b-early", "claude-b", { input_tokens: 10 }, "2026-09-10T12:00:00Z"),
+        line("b-mid", "claude-b", { input_tokens: 10 }, "2026-09-20T12:00:00Z"),
+        line("b-same-day", "claude-b", { input_tokens: 10 }, "2026-09-24T12:00:00Z"),
+      ],
+      [
+        { ...row, model_id: "claude-a", verified_on: "2026-09-13" },
+        { ...row, model_id: "claude-b", verified_on: "2026-09-24" },
+      ],
+    );
+    // claude-a, read 2026-09-13: only 09-01 is before it → 1. claude-b, read 2026-09-24: 09-10 and
+    // 09-20 are before it, and a request on the reading day itself is not → 2.
+    const projected = loadProjected(db);
+    expect(projected.rateReadings).toEqual([
+      { verified_on: "2026-09-13", priced_before_verified_requests: 1 },
+      { verified_on: "2026-09-24", priced_before_verified_requests: 2 },
+    ]);
+    const notes = renderProjected(projected, "UTC").filter((l) => l.includes("Rates were read"));
+    expect(notes).toEqual([
+      "  Rates were read from Anthropic's pricing page on 2026-09-13; 1 requests dated before that are priced at those rates.",
+      "  Rates were read from Anthropic's pricing page on 2026-09-24; 2 requests dated before that are priced at those rates.",
+    ]);
+  });
+
+  it("prints no note when every priced request is dated on or after its reading", () => {
+    const db = ingest(
+      [],
+      [line("late", "claude-sonnet-5", { input_tokens: 10 }, "2026-09-20T12:00:00Z")],
+    );
+    expect(loadProjected(db).rateReadings).toEqual([]);
+    expect(renderProjected(loadProjected(db), "UTC").join("\n")).not.toContain("Rates were read");
   });
 });

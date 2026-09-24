@@ -477,15 +477,11 @@ export function renderProjected(projected: ProjectedReport, timeZone: string): s
       ["left", "right", "left", "right", "right", "left"],
     ),
   );
-  const beforeVerified = months.reduce((sum, row) => sum + row.priced_before_verified_requests, 0);
-  const verifiedOn = months
-    .map((row) => row.verified_on)
-    .filter((d) => d !== null)
-    .sort()
-    .at(-1);
-  if (beforeVerified > 0 && verifiedOn !== undefined) {
+  // One line per reading date, each with its own count: summing every count under the latest date
+  // printed the wrong date as soon as two price rows were read on different days.
+  for (const reading of projected.rateReadings) {
     lines.push(
-      `  Rates were read from Anthropic's pricing page on ${verifiedOn}; ${n(beforeVerified, "count")} requests dated before that are priced at those rates.`,
+      `  Rates were read from Anthropic's pricing page on ${reading.verified_on}; ${n(reading.priced_before_verified_requests, "count")} requests dated before that are priced at those rates.`,
     );
   }
   const lowerBound = months.reduce((sum, row) => sum + row.lower_bound_requests, 0);

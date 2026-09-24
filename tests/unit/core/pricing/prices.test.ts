@@ -148,6 +148,7 @@ describe("loadPriceTable", () => {
     }
     expect(rows.map((row) => row.model_id)).toEqual(
       expect.arrayContaining([
+        "claude-opus-5-5",
         "claude-opus-5",
         "claude-sonnet-5",
         "claude-fable-5",
