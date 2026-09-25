@@ -711,6 +711,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Found by re-running on Windows, three times.** Each round found faults in the round before it, and none of them could have been seen from macOS. The first fix ran the checks but split a command path containing a space and still read a missing tool as an ordinary failure; the second fixed both but left one spawn site — the ccusage comparison's own `runCommand` — consulting nothing. Only re-running on the machine found each one.
   - **Windows without gitleaks and shellcheck** reports those three checks as `FAIL (not installed)`. That's accurate: on that machine the audit is incomplete, and the Linux CI run is what clears them.
   - **Symbolic-link tests skip on Windows without Developer Mode** (5 of them after D-050, 32 skipped in total), as D-049 established.
+  - **Extended 2026-09-25 to the git attribution tests.** `tests/unit/core/ingest/attribution.test.ts` starts real `git` processes in every test, and on the public repository's Windows CI job its `runGit` test timed out twice (at 9.4 s once) and passed each time on re-run. That file now takes the same 60-second limit, proven the same way: set to 1 ms, 12 of its 15 tests time out (the other three finish inside a millisecond). The other unit tests keep the 5-second default, including the few that start a process once, until one of them shows the same pattern.
 
 ## D-052: The coverage thresholds are a POSIX gate; Windows runs the tests without them (2026-09-18)
 

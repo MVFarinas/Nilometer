@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { slash } from "../../../setup/platform.js";
 
 import { applyMigrations, listMigrations, openDatabase } from "../../../../core/db/database.js";
@@ -90,6 +90,11 @@ function repoWithWorktree(): { repo: string; sub: string; worktree: string } {
   git(repo, "worktree", "add", "-q", join(base, "demo-worktree"));
   return { repo, sub: join(repo, "packages", "sub"), worktree: join(base, "demo-worktree") };
 }
+
+// Every test here starts real git processes, and process start-up is slow on Windows. The Windows CI
+// job timed out `runGit` at 9.4 s against Vitest's 5-second default while nothing was wrong, and
+// passed on re-run, so this file takes the integration tests' limit (D-051).
+vi.setConfig({ testTimeout: 60_000 });
 
 describe("runGit", () => {
   it("returns trimmed stdout and the exit code", () => {
