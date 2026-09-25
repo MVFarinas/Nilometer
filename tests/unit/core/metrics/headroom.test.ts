@@ -12,7 +12,7 @@
  * | r8 | 11:00:00 | seven_day | 30 | 09-10 00:00 | |
  * | r2 | 12:00:00 | five_hour | 55 | 15:00 | the peak |
  * | r3 | 12:00:00 | five_hour | 50 | 15:00 | same second as r2, later line: the last reading |
- * | r4 | 14:30:00 | five_hour | 101 | 15:00 | invalid percentage, excluded |
+ * | r4 | 14:30:00 | five_hour | -1 | 15:00 | invalid percentage, excluded |
  * | r5 | 15:00:05 | five_hour | 3 | 15:00 | captured after its reset |
  * | r6 | 15:10:00 | five_hour | 4 | 20:00 | |
  * | r7 | 16:00:00 | five_hour | 20 | 20:00 | last reading overall |
@@ -42,7 +42,7 @@ const READINGS: readonly Reading[] = [
   reading("11:00:00", "seven_day", 30, "2026-09-10T00:00:00Z"),
   reading("12:00:00", "five_hour", 55, "2026-09-03T15:00:00Z"),
   reading("12:00:00", "five_hour", 50, "2026-09-03T15:00:00Z"),
-  reading("14:30:00", "five_hour", 101, "2026-09-03T15:00:00Z"),
+  reading("14:30:00", "five_hour", -1, "2026-09-03T15:00:00Z"),
   reading("15:00:05", "five_hour", 3, "2026-09-03T15:00:00Z"),
   reading("15:10:00", "five_hour", 4, "2026-09-03T20:00:00Z"),
   reading("16:00:00", "five_hour", 20, "2026-09-03T20:00:00Z"),
@@ -126,7 +126,7 @@ describe("headroom and peak: hand-computed scenario", () => {
       ]),
     ).toEqual([
       ["five_hour", "2026-09-03T10:00:00.000Z", null, null],
-      ["five_hour", "2026-09-03T15:00:00.000Z", 55, "2026-09-03T12:00:00.000Z"], // r2, not the invalid 101
+      ["five_hour", "2026-09-03T15:00:00.000Z", 55, "2026-09-03T12:00:00.000Z"], // r2, not the invalid -1
       ["five_hour", "2026-09-03T20:00:00.000Z", 20, "2026-09-03T16:00:00.000Z"],
       ["seven_day", "2026-09-10T00:00:00.000Z", 42, "2026-09-03T16:00:00.000Z"],
     ]);
@@ -200,6 +200,74 @@ describe("headroom and peak: edge cases", () => {
         readings_after_reset: 0,
         window_open: 0,
       }),
+    ]);
+  });
+});
+
+/*
+ * Readings over 100% (D-068), worked out on paper first. Claude Code reports a 5-hour window just
+ * above 100% while it is over its limit; they are readings like any other.
+ *
+ * | Reading | At (2026-09-04 UTC) | Window | used | resets | Note |
+ * |---|---|---|---|---|---|
+ * | a | 10:00:00 | five_hour | 80 | 15:00 | |
+ * | b | 11:00:00 | five_hour | 100 | 15:00 | first reading at the limit: the status line hit |
+ * | c | 11:30:00 | five_hour | 103 | 15:00 | the peak |
+ * | d | 12:00:00 | five_hour | 101 | 15:00 | the last reading before the reset |
+ */
+describe("headroom, peak and limit hits with readings over 100% (D-068)", () => {
+  let db: Db;
+
+  beforeAll(() => {
+    /**
+     * Builds a 5-hour reading on 2026-09-04 for the window resetting at 15:00 UTC.
+     * @param time - `HH:MM:SS` UTC.
+     * @param used - used_percentage.
+     * @returns The reading.
+     */
+    const at = (time: string, used: number): Reading => ({
+      at: `2026-09-04T${time}Z`,
+      session: "s",
+      window: "five_hour",
+      used,
+      resets: "2026-09-04T15:00:00Z",
+    });
+    db = ingest({ "-p/s.jsonl": [user("s", "u", null, "2026-09-04T09:00:00Z")] }, [
+      at("10:00:00", 80),
+      at("11:00:00", 100),
+      at("11:30:00", 103),
+      at("12:00:00", 101),
+    ]);
+  });
+
+  it("reports the peak and the last reading as recorded, above 100 and unclamped", () => {
+    expect(rows(db, "obs_window_peak", "window")).toMatchObject([
+      {
+        window: "five_hour",
+        peak_used_percentage: 103,
+        peak_reading_at_utc: "2026-09-04T11:30:00.000Z",
+      },
+    ]);
+    expect(rows(db, "obs_window_headroom", "window")).toMatchObject([
+      {
+        window: "five_hour",
+        last_used_percentage: 101,
+        last_reading_at_utc: "2026-09-04T12:00:00.000Z",
+        readings: 4,
+      },
+    ]);
+  });
+
+  it("detects the limit from the status line at the first reading at or above 100", () => {
+    expect(rows(db, "status_limit_groups", "window")).toMatchObject([
+      {
+        window: "five_hour",
+        first_at_utc: "2026-09-04T11:00:00.000Z",
+        reset_at_utc: "2026-09-04T15:00:00.000Z",
+      },
+    ]);
+    expect(rows(db, "obs_limit_hits", "hits")).toMatchObject([
+      { hits: 1, status_line_only_hits: 1 },
     ]);
   });
 });

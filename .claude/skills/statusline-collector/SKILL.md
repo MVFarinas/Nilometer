@@ -58,7 +58,7 @@ The spool uses the ingest pipeline's offset rules (see `ingest-session-logs`). F
 | decoded payload parses as JSON | reading stored raw, `malformed` in ingest report |
 | `rate_limits` absent | normal: Pro/Max only, and only after the session's first API response. Stored as "no window data", **never** as 0 |
 | a window (`five_hour`, `seven_day`) absent | that window **reset** or isn't reported (README). Don't carry the previous value forward |
-| `used_percentage` finite and 0–100 | store raw, flag `invalid`. Don't clamp (Monitor clamps ≤101 to 100) |
+| `used_percentage` a number, 0 or more | store raw, flag `invalid` when negative or not a number. **Above 100 is valid** for every window: a plan window over its limit reports 101 and up (D-068). Don't clamp (Monitor clamps ≤101 to 100) |
 | `used_percentage` looks like an epoch (> 1e9) | flag `invalid_epoch_in_percentage` (Claude Code bug #52326, reported via Monitor) |
 | `resets_at` is a plausible epoch | store raw, flag |
 | `spend_limit` window present | store; not used for personal plans |

@@ -26,7 +26,7 @@ import { deriveNewSpoolLines } from "./spool.js";
  * Version of the derivation rules. Bump it whenever classify.ts or this file changes what a raw line
  * derives to; the next open rebuilds every derived row.
  */
-export const PARSER_VERSION = "5";
+export const PARSER_VERSION = "6";
 
 /** Everything one raw line derives to. */
 export interface DerivedLine {

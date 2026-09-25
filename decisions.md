@@ -138,7 +138,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Line contents:** the full raw payload plus a capture timestamp.
   - **Order of work:** pass through the wrapped command's output first, then append.
   - **Errors:** catch everything and exit 0.
-  - **Validation happens at ingest.** Out-of-range or non-finite values are stored raw and flagged invalid, not clamped. Monitor clamps values up to 101 down to 100.
+  - **Validation happens at ingest.** Out-of-range or non-finite values are stored raw and flagged invalid, not clamped. Monitor clamps values up to 101 down to 100. **Range corrected 2026-09-24 ([D-068](decisions.md)):** above 100 is in range for plan windows too; only negative values are.
 - **Consequences:**
   - Status line readings reach the database at the next ingest, not instantly. The README has no live updating, so this costs nothing.
   - The spool is append-only; ingest records its byte offset like any log (D-003).
@@ -999,3 +999,18 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Both implementations follow the spec.** fixtures/README.md defines `quota_window`, `quota_resets_at`, `unusable_quota_fields`, and `quota_window_disagreements`. The Python reference and the loader agree on all 19 cases, including case 20, whose seven hits cover agreement, disagreement, unusable members, and absence. The reset disagreement is loader-only, since resolving reset text is (D-023), and is unit-tested instead.
   - **Real data didn't move.** Re-derived under parser version 5, a real database gave the same hits, the same lockouts with the same spans, and the same window and reset on every hit. Hits written by a version with `quotaLimits` now take them from the fields and older ones from the text, with no disagreements.
   - **The rest of `quotaLimits` is kept, not read.** It stays in `raw_lines`, so a later decision can use `overageStatus` and the others without re-ingesting.
+
+## D-068: A usage percentage above 100 is a reading, not an error (2026-09-24)
+
+- **Status:** accepted. Corrects the range in [D-008](decisions.md) and the `statusline-collector` validation table.
+- **Context:** Spool validation accepted `used_percentage` from 0 to 100 for plan windows, on the premise that only a spend limit can pass 100. *Observed 2026-09-24 (Claude Code 2.1.281):* during a 5-hour lockout the status line reported that window at several values just above 100%. All were flagged `invalid_percentage` and left out, so the report showed a peak well below 100% for a window where the limit was hit, and the status line's own limit detection missed that lockout; only the log caught it. The rule was built to keep bad values out, and it kept out real ones.
+- **Options:**
+  - (a) Keep 0 to 100. Rejected: it hides the readings that show a limit being hit, and understates peak and last observed usage for exactly those windows.
+  - (b) Clamp to 100. Rejected, as D-008 already rejected it: a recorded value is stored as recorded.
+  - (c) Accept any value up to some cap, say 200. Rejected: nothing observed motivates a cap below the existing check for an epoch in the percentage (Claude Code bug #52326), and an invented cap would be a guess.
+  - (d) **Accept every non-negative number below the epoch check, for every window.** Chosen.
+- **Decision:** (d). `validateWindow` flags only a negative or non-numeric percentage as `invalid_percentage`; a value of 1e9 or more stays `invalid_epoch_in_percentage`. Parser version 6 re-derives stored readings.
+- **Consequences:**
+  - **Peak and last observed usage can read above 100%**, as recorded. The views needed no change: limit detection already used `>= 100`, and burn rate already skips windows at or over the limit.
+  - **A status line hit can start at a reading above 100**, when no reading of exactly 100 was captured. That lockout then merges with the logged hits as D-023 describes, with the payload's exact reset.
+  - **Tests:** 101, 105 and 999,999,999 validate; −1 still doesn't. A hand-computed scenario with readings of 80, 100, 103 and 101 gives a peak of 103 and a last reading of 101, and fails under the old rule. Tests that used 101 as their example of an invalid reading now use −1, keeping what they test.

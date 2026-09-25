@@ -103,7 +103,8 @@ describe("runIngestCommand", () => {
     const payload = readFileSync(join(ROOT, "tests/fixtures/statusline/payload.json"), "utf8");
     spawnSync(SH, [hook, dataDir], { input: payload });
     spawnSync(SH, [hook, dataDir], {
-      input: payload.replace('"used_percentage":42.3', '"used_percentage":101'),
+      // Negative is out of range; above 100 no longer is (D-068).
+      input: payload.replace('"used_percentage":42.3', '"used_percentage":-1'),
     });
     spawnSync(SH, [hook, dataDir], { input: "not json" });
     writeFileSync(join(dataDir, HOOK_ERRORS_FILE), "1 append-failed\n");

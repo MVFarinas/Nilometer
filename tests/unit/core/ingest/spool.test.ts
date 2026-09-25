@@ -119,7 +119,10 @@ describe("validateWindow", () => {
     ["a normal reading", "five_hour", good, "valid"],
     ["0%", "seven_day", { ...good, used_percentage: 0 }, "valid"],
     ["exactly 100%", "five_hour", { ...good, used_percentage: 100 }, "valid"],
-    ["101%", "five_hour", { ...good, used_percentage: 101 }, "invalid_percentage"],
+    // Observed over a limit (D-068): Claude Code 2.1.281 reports values just above 100.
+    ["101%, as reported over a limit", "five_hour", { ...good, used_percentage: 101 }, "valid"],
+    ["105% in a weekly window", "seven_day", { ...good, used_percentage: 105 }, "valid"],
+    ["just below an epoch", "five_hour", { ...good, used_percentage: 999_999_999 }, "valid"],
     ["a negative percentage", "seven_day", { ...good, used_percentage: -1 }, "invalid_percentage"],
     ["a string percentage", "five_hour", { ...good, used_percentage: "42" }, "invalid_percentage"],
     ["a missing percentage", "five_hour", { resets_at: 1774036800 }, "invalid_percentage"],
@@ -150,9 +153,15 @@ describe("validateWindow", () => {
   });
 
   it("keeps values as written, never clamped", () => {
-    expect(validateWindow("five_hour", { used_percentage: 101, resets_at: 1774036800 })).toEqual({
+    expect(validateWindow("five_hour", { used_percentage: 105, resets_at: 1774036800 })).toEqual({
       window: "five_hour",
-      usedPercentage: 101,
+      usedPercentage: 105,
+      resetsAt: 1774036800,
+      validity: "valid",
+    });
+    expect(validateWindow("five_hour", { used_percentage: -1, resets_at: 1774036800 })).toEqual({
+      window: "five_hour",
+      usedPercentage: -1,
       resetsAt: 1774036800,
       validity: "invalid_percentage",
     });

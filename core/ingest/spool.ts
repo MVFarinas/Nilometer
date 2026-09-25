@@ -129,8 +129,11 @@ export function validateWindow(window: string, value: LogObject): WindowReading 
   if (usedPercentage >= MIN_EPOCH_SECONDS) {
     return reading("invalid_epoch_in_percentage");
   }
-  // A spend limit may legitimately exceed 100% once exceeded (statusline docs); plan windows can't.
-  if (usedPercentage < 0 || (window !== "spend_limit" && usedPercentage > 100)) {
+  // Above 100 is a real reading, not an error: Claude Code 2.1.281 reported a 5-hour window just
+  // above 100% while it was over its limit (2026-09-24, D-068), as the docs already said a spend
+  // limit can. Only a negative value is out of range; the epoch check above catches the one known
+  // corruption, and nothing is clamped.
+  if (usedPercentage < 0) {
     return reading("invalid_percentage");
   }
   if (resetsAt === null || resetsAt < MIN_EPOCH_SECONDS || resetsAt >= MAX_EPOCH_SECONDS) {
