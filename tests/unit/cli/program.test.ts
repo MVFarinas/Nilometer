@@ -1,11 +1,12 @@
 /**
- * @file Unit tests for cli/program.ts.
+ * @file Unit tests for cli/program.ts, including `report --save --html` (step G1.4, D-070).
  */
 import {
   chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   statSync,
   writeFileSync,
@@ -25,6 +26,7 @@ import {
   describeDeletion,
   describeVerify,
   describeUninstall,
+  HTML_NEEDS_SAVE,
   TERMINAL_ONLY_NOTE,
   report,
   runCli,
@@ -38,7 +40,9 @@ import type { InitOutcome, UninstallOutcome } from "../../../core/install/instal
 import { InstallRecordError } from "../../../core/install/record.js";
 import { PlanPriceError } from "../../../core/plans/plan-prices.js";
 import { UnknownMetricError } from "../../../viewer/explain.js";
-import { NoDatabaseError } from "../../../viewer/report.js";
+import { renderHtmlReport } from "../../../viewer/html.js";
+import { loadHtmlData } from "../../../viewer/html-data.js";
+import { NoDatabaseError, withReportDatabase } from "../../../viewer/report.js";
 import { PriceTableError } from "../../../core/pricing/prices.js";
 import { SettingsError } from "../../../core/settings/settings-file.js";
 
@@ -96,6 +100,20 @@ function expectNoBannedWording(lines: readonly string[]): void {
       expect(line).not.toMatch(pattern);
     }
   }
+}
+
+/**
+ * Copies fixture 06 (one session, three models) into the test home's logs and ingests it, so
+ * `report` has a database to read.
+ * @param deps - Dependencies from {@link testDeps}.
+ */
+function ingestFixture06(deps: CliDeps): void {
+  mkdirSync(join(deps.home, ".claude", "projects", "-fixture-demo"), { recursive: true });
+  writeFileSync(
+    join(deps.home, ".claude", "projects", "-fixture-demo", "s.jsonl"),
+    readFileSync(join(PACKAGE_ROOT, "fixtures/06-mixed-models/projects/-fixture-demo/s06.jsonl")),
+  );
+  expect(runCli(["ingest"], deps)).toBe(0);
 }
 
 /** Common fields for outcome fixtures. */
@@ -904,6 +922,91 @@ describe("runCli", () => {
       `Saved: ${join(shown, "report_2026-09-13_070000-2.txt")} and ${join(shown, "report_2026-09-13_070000-2.json")}`,
     );
     expectNoBannedWording(out);
+    // Without --html, no page is written by either save.
+    expect(readdirSync(reports).filter((name) => name.endsWith(".html"))).toEqual([]);
+  });
+
+  it("refuses --html without --save before opening anything, naming both flags", () => {
+    // With no database at all, the flag error comes first, not "No database at ...": the check
+    // runs before anything is opened.
+    const fresh = testDeps();
+    expect(runCli(["report", "--html"], fresh.deps)).toBe(1);
+    expect(fresh.err).toEqual([HTML_NEEDS_SAVE]);
+    expect(existsSync(join(fresh.deps.home, ".local"))).toBe(false);
+
+    const { deps, out, err } = testDeps();
+    ingestFixture06(deps);
+    const dataDir = join(deps.home, ".local", "share", "nilometer");
+    const before = readdirSync(dataDir).sort();
+    out.length = 0;
+    for (const args of [
+      ["report", "--html"],
+      ["report", "--html", "--json"],
+    ]) {
+      err.length = 0;
+      expect(runCli(args, deps)).toBe(1);
+      expect(err).toEqual([HTML_NEEDS_SAVE]);
+      expect(out).toEqual([]);
+    }
+    expect(HTML_NEEDS_SAVE).toMatch(/--html/);
+    expect(HTML_NEEDS_SAVE).toMatch(/--save/);
+    expectNoBannedWording([HTML_NEEDS_SAVE]);
+    // Nothing was written: no reports folder, and the data directory holds what ingest left.
+    expect(readdirSync(dataDir).sort()).toEqual(before);
+    expect(existsSync(join(dataDir, "reports"))).toBe(false);
+  });
+
+  it("writes the HTML page beside the text and JSON with --save --html, and names all three", () => {
+    const { deps, out } = testDeps();
+    ingestFixture06(deps);
+    const reports = join(deps.home, ".local", "share", "nilometer", "reports");
+    out.length = 0;
+    expect(runCli(["report", "--save", "--html"], deps)).toBe(0);
+    // The clock is 2026-09-13T12:00:00Z, 07:00:00 in America/Chicago (CDT, UTC-5).
+    const shown = join("~", ".local", "share", "nilometer", "reports");
+    expect(out.at(-1)).toBe(
+      `Saved: ${join(shown, "report_2026-09-13_070000.txt")}, ${join(shown, "report_2026-09-13_070000.json")}, and ${join(shown, "report_2026-09-13_070000.html")}`,
+    );
+    expect(readdirSync(reports).sort()).toEqual([
+      "report_2026-09-13_070000.html",
+      "report_2026-09-13_070000.json",
+      "report_2026-09-13_070000.txt",
+    ]);
+    // The page is whatever the HTML report draws from this database at the command's clock, so
+    // this holds for any implementation of the two G1 functions.
+    const expected = withReportDatabase(toPlanDatabaseOptions({}, deps), (db) =>
+      renderHtmlReport(loadHtmlData(db, { timeZone: "America/Chicago", generatedAt: deps.now() })),
+    );
+    expect(readFileSync(join(reports, "report_2026-09-13_070000.html"), "utf8")).toBe(expected);
+  });
+
+  it.skipIf(!HAS_POSIX_MODES)("writes the HTML page readable only by the owner", () => {
+    const { deps } = testDeps();
+    ingestFixture06(deps);
+    expect(runCli(["report", "--save", "--html"], deps)).toBe(0);
+    const page = join(
+      deps.home,
+      ".local",
+      "share",
+      "nilometer",
+      "reports",
+      "report_2026-09-13_070000.html",
+    );
+    expect(statSync(page).mode & 0o777).toBe(0o600);
+  });
+
+  it("keeps stdout pure JSON with --json --save --html, and names the page on stderr", () => {
+    const { deps, out, err } = testDeps();
+    ingestFixture06(deps);
+    out.length = 0;
+    err.length = 0;
+    expect(runCli(["report", "--json", "--save", "--html"], deps)).toBe(0);
+    expect(out).toHaveLength(1);
+    expect(() => JSON.parse(out[0]!) as unknown).not.toThrow();
+    const shown = join("~", ".local", "share", "nilometer", "reports");
+    expect(err).toEqual([
+      `Saved: ${join(shown, "report_2026-09-13_070000.txt")}, ${join(shown, "report_2026-09-13_070000.json")}, and ${join(shown, "report_2026-09-13_070000.html")}`,
+    ]);
   });
 
   it("explains a metric's events, lists all with --all, and rejects unknown metrics first", () => {

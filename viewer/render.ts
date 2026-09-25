@@ -529,12 +529,19 @@ export function renderReport(input: ReportInput): string {
 }
 
 /**
- * Reports whether nothing has been recorded yet: no status line readings and no requests.
+ * Reports whether nothing has been recorded yet: no status line readings, no requests, and no
+ * limit hits.
  * @param observed - The observed report.
- * @returns True when neither source has produced a row.
+ * @returns True when no source has produced a row.
+ * @see D-070 (limit hits count: a database holding only hits printed "Nothing has been recorded
+ *   yet" while the HTML page saved beside it drew the lockouts)
  */
 export function hasNoData(observed: ObservedReport): boolean {
-  return observed.windows.length === 0 && observed.byModel.length === 0;
+  // A limit hit is recorded data even with no request or reading beside it, and hiding it behind
+  // the first-run text would drop an interruption from the report (principle 1).
+  return (
+    observed.windows.length === 0 && observed.byModel.length === 0 && observed.limitHits.hits === 0
+  );
 }
 
 /**

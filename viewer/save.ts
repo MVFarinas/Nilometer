@@ -1,10 +1,14 @@
 /**
- * @file Saving a dated copy of the report (D-030).
+ * @file Saving a dated copy of the report (D-030), and with `--html` its HTML page (D-070).
  *
  * A report is recomputed from the database on every run, so a saved copy is the only record of what
  * the screen said at a given time, before later price rows, view changes, or repository re-resolution
  * (D-020, D-028) change the numbers. Copies hold personal usage and spend figures, so they go to the
- * data directory with owner-only permissions, never to the working directory.
+ * data directory with owner-only permissions, never to the working directory (D-043). The HTML page
+ * also embeds the events behind every drawn element, session IDs included, so it gets the same
+ * treatment.
+ *
+ * Implements README "Commands" (`nilometer report --save`) and step G1.4.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -23,6 +27,8 @@ export interface SavedReport {
   readonly textPath: string;
   /** Unrounded rows and labels. */
   readonly jsonPath: string;
+  /** The self-contained HTML page (D-070); present only when one was asked for. */
+  readonly htmlPath?: string;
 }
 
 /**
@@ -75,14 +81,25 @@ function writeNew(path: string, content: string): boolean {
 }
 
 /**
- * Saves the report as text and JSON under the data directory.
+ * Saves the report as text and JSON under the data directory, and optionally as an HTML page.
+ *
+ * All the files of one save share one stem, so a save's files can be picked out by name alone:
+ * the text file claims the stem, and its twins are written under it.
  * @param dataDir - The data directory holding the database.
  * @param input - The report input, as rendered.
  * @param at - When the report was produced.
- * @returns The two paths written.
- * @throws {Error} If {@link MAX_NAME_ATTEMPTS} names for this second are all taken, or writing fails.
+ * @param html - The rendered HTML page (D-070), written as given; no `.html` file is written when
+ *   it's omitted.
+ * @returns The paths written.
+ * @throws {Error} If {@link MAX_NAME_ATTEMPTS} names for this second are all taken, if a twin of a
+ *   newly claimed text file already exists, or if writing fails.
  */
-export function saveReport(dataDir: string, input: ReportInput, at: Date): SavedReport {
+export function saveReport(
+  dataDir: string,
+  input: ReportInput,
+  at: Date,
+  html?: string,
+): SavedReport {
   const dir = join(dataDir, REPORTS_DIR);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const stem = reportStem(at, input.timeZone);
@@ -93,11 +110,20 @@ export function saveReport(dataDir: string, input: ReportInput, at: Date): Saved
     const textPath = join(dir, `${name}.txt`);
     const jsonPath = join(dir, `${name}.json`);
     if (writeNew(textPath, text)) {
-      // The text file claimed the name; its JSON twin can't exist unless someone made it by hand.
+      // The text file claimed the name; its twins can't exist unless someone made them by hand.
       if (!writeNew(jsonPath, json)) {
         throw new Error(`${jsonPath} already exists though ${textPath} didn't`);
       }
-      return { textPath, jsonPath };
+      if (html === undefined) {
+        return { textPath, jsonPath };
+      }
+      const htmlPath = join(dir, `${name}.html`);
+      // Same rule as the JSON twin: a page found under a claimed stem is never replaced, since it
+      // would then sit beside text it wasn't drawn from.
+      if (!writeNew(htmlPath, html)) {
+        throw new Error(`${htmlPath} already exists though ${textPath} didn't`);
+      }
+      return { textPath, jsonPath, htmlPath };
     }
   }
   throw new Error(`${MAX_NAME_ATTEMPTS} report names for ${stem} are already taken in ${dir}`);

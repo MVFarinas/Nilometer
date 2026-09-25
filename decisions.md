@@ -1031,3 +1031,26 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **A regression test** runs 20 hooks at once, three rounds, with 12 KB payloads, and checks every line decodes to a payload sent. It failed three runs out of three against the old hook, at positions just past multiples of 2,048, and passes on the new one. CI runs it on macOS, Linux, and Windows under Git Bash.
   - **Installed hooks don't change by themselves.** `init` copies the hook into the data directory ([D-056](decisions.md)), so each machine needs `nilometer init` after updating. `init` reports when it refreshed the copy.
   - **If a line ever interleaves anyway,** ingest still reports it as malformed and never repairs it.
+
+## D-070: The GUI is a static HTML report, built before the Phase 8 review (2026-09-25)
+
+- **Status:** accepted. An early exception to [D-031](decisions.md)'s hold on a GUI, which deferred it to the Phase 8 review.
+- **Context:** Using the report for a week and a half answered the question the review would have asked: the tables were correct but hard to read at a glance, while a single hand-drawn chart of one lockout made the data clear at once. The concepts drawn on 2026-09-18 (usage windows as graduated columns, a seam between observed and projected, every figure opening its events) and the principles constrain what any interface may draw. How it's delivered was the open part.
+- **Options for delivery:**
+  - (a) **A static HTML report,** `nilometer report --save --html`. Chosen.
+  - (b) A local web dashboard (`nilometer serve`). Rejected for now: a process to start, stop, and keep from answering other machines, for the same charts. The static report's chart code would carry over if a snapshot proves too limiting.
+  - (c) A menu-bar or tray overlay. Rejected: a live display, which D-031 set aside because Claude Code's `/usage` already shows it, and a native build per operating system.
+  - (d) Charts in the terminal. Rejected: the ASCII-only rule ([D-063](decisions.md)) rules out the block and braille characters that make terminal charts readable.
+  - (e) A VS Code panel. Rejected: the extension never runs the status line ([D-029](decisions.md)), so it would live where half the data doesn't come from.
+- **Options for timing:** (a) **build now**, chosen, because the report adds an output and changes no number, so it can't disturb the data Phase 8 is collecting, and the review can then judge the interface after two weeks of use; (b) record the design and wait for the review, rejected as waiting on a question already answered.
+- **Options for the main picture:** (a) one column per usage window, filled to its peak with a tick at the last observed reading (the gauge); (b) a continuous line of usage over time; (c) **the gauge as the main view, with a window's line over time opened by clicking its column.** Chosen: the gauge answers how full each window got, and the line explains how it got there, which a single lockout chart showed is the clearest way to read a burst.
+- **Decision:**
+  - **One self-contained file,** written next to the text and JSON copies when `--save` and `--html` are given. No server, no background process, and no network requests: charts are hand-drawn SVG and the data is embedded, so the "makes no network requests" promise holds. No chart library: a static file can't load one from a CDN without breaking that promise, and bklit-ui needs React and a build step.
+  - **The same views as the text report,** so the two can't disagree. Observed above a visible seam, projected below it, as the text report orders them. Every chart carries the span it covers.
+  - **Every bar, column, and point opens the events behind it,** embedded in the file so it works offline. The file therefore holds session IDs, like `explain` output, and gets the same privacy note.
+  - **No Pro or Max limit line on the usage chart.** Nothing records what another plan's window holds (D-009), and "which plan would have been enough" is a counterfactual (principle 3). Plan prices appear only as the prices entered, beside observed tokens at API list price, below the seam.
+- **Consequences:**
+  - **Tests hold it to the text report's rules:** the banned-phrase guard runs over the HTML's text, a snapshot pins the page, every drawn bar, column, and point must carry its events, and both themes and a table view are required.
+  - **Checked on real data** against the text report, number for number, before release.
+  - **The Phase 8 review still decides** whether the interface stays, grows into a dashboard, or goes, now with two weeks of use behind the answer.
+  - **The text report's first-run rule now counts limit hits (decided 2026-09-25).** It printed "Nothing has been recorded yet" when a database held no readings and no requests, even with limit hits in it, while the HTML page saved beside it drew those lockouts. The G1.6 verifier found the two copies of one save disagreeing. Options: (a) count limit hits in the first-run check, chosen, since a hit is recorded data and hiding it drops an interruption (principle 1); (b) have the page follow the text report's rule, rejected, since it would hide the same hits in both. `hasNoData` in `viewer/render.ts`, with a test that fails under the old rule.

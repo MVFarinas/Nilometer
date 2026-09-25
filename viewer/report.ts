@@ -78,6 +78,25 @@ export function withReportDatabase<T>(
 }
 
 /**
+ * Reads everything the report shows from a database that's already open, so a caller can read more
+ * from the same connection (the HTML page, D-070) inside one transaction.
+ * @param db - The open, migrated database.
+ * @param databasePath - Where it lives, carried into the input for the saved copies.
+ * @param options - Display zone and home directory.
+ * @returns The report input.
+ */
+export function readReport(db: Db, databasePath: string, options: ReportOptions): ReportInput {
+  return {
+    observed: loadObserved(db),
+    projected: loadProjected(db),
+    timeZone: options.timeZone,
+    lastIngestAt: lastIngestAt(db),
+    databasePath,
+    home: options.home,
+  };
+}
+
+/**
  * Reads everything the report shows.
  * @param options - Data directory and display zone.
  * @param onTightened - Called with any data paths made owner-only before reading (D-043).
@@ -90,14 +109,7 @@ export function loadReport(
 ): ReportInput {
   return withReportDatabase(
     options,
-    (db, databasePath) => ({
-      observed: loadObserved(db),
-      projected: loadProjected(db),
-      timeZone: options.timeZone,
-      lastIngestAt: lastIngestAt(db),
-      databasePath,
-      home: options.home,
-    }),
+    (db, databasePath) => readReport(db, databasePath, options),
     onTightened,
   );
 }

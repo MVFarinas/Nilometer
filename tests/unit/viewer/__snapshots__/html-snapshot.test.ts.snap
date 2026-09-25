@@ -1,0 +1,349 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the HTML report page > matches the reviewed snapshot for the shared scenario 1`] = `
+"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude subscription usage | Nilometer</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --page: #eef1f1; --surface: #fbfcfc; --sunken: #e3e8e8; --ink: #13212a; --ink-2: #44535c;
+  --muted: #6f7d85; --grid: #d9e0e1; --axis: #b6c1c3; --water: #1f7a8c; --water-deep: #155e6c;
+  --silt: #a8793a; --limit: #c2412d;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0c1417; --surface: #121c20; --sunken: #0f181b; --ink: #eef3f4; --ink-2: #b9c6ca;
+    --muted: #8a999e; --grid: #223035; --axis: #33454b; --water: #3aa7b8; --water-deep: #7cc9d5;
+    --silt: #d1a563; --limit: #e5604b;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.55; }
+main { max-width: 1040px; margin: 0 auto; padding: 32px 20px 64px; display: grid; gap: 28px; }
+@media (max-width: 520px) { main { padding: 20px 16px 48px; } }
+h1 { font-size: clamp(24px, 4vw, 32px); line-height: 1.15; font-weight: 600; margin: 0; }
+h2, h3 { margin: 0; }
+h3 { font-size: 16px; font-weight: 600; }
+p { margin: 0; }
+.nm-head { display: grid; gap: 6px; }
+.meta, .span, .note { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.privacy { font-size: 13px; color: var(--ink-2); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--water); font-weight: 600; }
+.nm-part { display: grid; gap: 28px; }
+.panel { display: grid; gap: 10px; background: var(--surface); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+@media (max-width: 520px) { .panel { padding: 14px 12px; } }
+.panel-title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.caveat { font-size: 13px; color: var(--ink-2); }
+.total { font-size: 15px; }
+.total .num { font-weight: 600; }
+.nm-counts { display: grid; gap: 2px; }
+.nm-counts .count { font-size: 14px; margin-top: 6px; }
+.nm-counts .sub { font-size: 13px; color: var(--ink-2); padding-left: 16px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; }
+.k-fill { width: 12px; height: 12px; border-radius: 2px; background: var(--water); }
+.k-tick { width: 14px; height: 2px; background: var(--ink); }
+.k-hit { width: 12px; height: 12px; border-radius: 2px; background: var(--limit); }
+.k-price { width: 12px; height: 12px; border-radius: 2px; background: var(--silt); opacity: 0.55; }
+.k-plan { width: 14px; height: 0; border-top: 2px dashed var(--silt); }
+.plot svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+.nm-js [data-events], .nm-js .nm-col { cursor: pointer; }
+[data-events]:focus-visible, .nm-col:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.nm-sel { outline: 2px solid var(--ink); outline-offset: 1px; }
+.nm-hint { display: none; font-size: 13px; color: var(--muted); }
+.nm-js .nm-hint { display: block; }
+.nm-series-list { display: grid; gap: 6px; }
+.nm-js .nm-series:not([open]) { display: none; }
+.nm-series { background: var(--sunken); border-radius: 8px; padding: 10px 12px; }
+.nm-series > summary { font-weight: 600; cursor: pointer; }
+.nm-series[open] > * + * { margin-top: 8px; }
+.seam { display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; color: var(--silt); }
+.seam::before, .seam::after { content: ""; flex: 1; border-top: 2px dashed var(--silt); opacity: 0.7; }
+#nm-observed-h { color: var(--water); }
+.nm-events { background: var(--sunken); border-radius: 8px; padding: 10px 12px; font-size: 13px; display: grid; gap: 6px; }
+.nm-events[hidden] { display: none; }
+.nm-events ol { margin: 0; padding-left: 22px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+details.nm-table > summary { cursor: pointer; font-size: 13px; color: var(--ink-2); }
+details.nm-table, .nm-series { min-width: 0; max-width: 100%; }
+.table-scroll { overflow-x: auto; max-width: 100%; margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+caption { text-align: left; font-size: 12px; color: var(--muted); padding-bottom: 4px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-weight: 500; color: var(--muted); background: var(--sunken); white-space: nowrap; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+code { font-family: var(--mono); }
+</style>
+</head>
+<body>
+<main>
+<header class="nm-head">
+<h1>Claude subscription usage</h1>
+<p class="meta">Times are in UTC. Last ingest: 2026-09-13 00:00. Report produced: 2026-09-03 14:00.</p>
+<p class="privacy">Privacy: this file holds session IDs and the paths of your session logs, like nilometer explain output, and it makes no network requests. Think before sharing it.</p>
+</header>
+<section class="panel nm-chart" id="nm-coverage" aria-labelledby="nm-coverage-h">
+<div class="panel-title"><h3 id="nm-coverage-h">What each number covers</h3>
+<p class="span">Covers: session logs 2026-09-03 10:00 to 13:05 (UTC); status line 2026-09-03 10:00 to 13:05 (UTC)</p></div>
+<div class="plot"><svg class="nm-chart nm-chart-coverage" viewBox="0 0 960 72" preserveAspectRatio="xMinYMin meet" role="img" aria-label="What each number covers: session logs 2026-09-03 10:00 to 13:05 (UTC); status line 2026-09-03 10:00 to 13:05 (UTC)" font-size="11"><text x="0" y="19" fill="var(--ink-2)" class="nm-label">Session logs</text><rect class="nm-track" x="110" y="9" width="838" height="12" rx="3" fill="var(--sunken)"/><rect class="nm-coverage" x="110" y="9" width="838" height="12" rx="3" fill="var(--water)"><title>Session logs: 2026-09-03 10:00 to 13:05 (UTC), covering tokens, models, and limit hits</title></rect><text x="0" y="43" fill="var(--ink-2)" class="nm-label">Status line</text><rect class="nm-track" x="110" y="33" width="838" height="12" rx="3" fill="var(--sunken)"/><rect class="nm-coverage" x="110.38" y="33" width="837.62" height="12" rx="3" fill="var(--water)"><title>Status line: 2026-09-03 10:00 to 13:05 (UTC), covering usage windows</title></rect><text x="110" y="66" fill="var(--muted)">2026-09-03 10:00</text><text x="948" y="66" fill="var(--muted)" text-anchor="end">2026-09-03 13:05</text></svg></div>
+<details class="nm-table"><summary>Table view: What each number covers</summary>
+<div class="table-scroll"><table><caption>What each number covers</caption>
+<thead><tr><th scope="col">Source</th><th scope="col">What it holds</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><td>Session logs</td><td>tokens, models, limit hits</td><td>2026-09-03 10:00 to 13:05 (UTC)</td></tr>
+<tr><td>Status line</td><td>usage windows</td><td>2026-09-03 10:00 to 13:05 (UTC)</td></tr>
+</tbody></table></div></details>
+<div class="nm-events" aria-live="polite" hidden></div>
+</section>
+<section class="nm-part" id="nm-observed" aria-labelledby="nm-observed-h">
+<h2 class="eyebrow" id="nm-observed-h">OBSERVED</h2>
+<section class="panel nm-chart" id="nm-gauge" aria-labelledby="nm-gauge-h">
+<div class="panel-title"><h3 id="nm-gauge-h">Usage windows</h3>
+<p class="span">Covers: status line 2026-09-03 10:00 to 13:05 (UTC). Readings start when the collector is installed.</p></div>
+<div class="legend"><span><i class="k-fill"></i>Peak usage in the window</span><span><i class="k-tick"></i>Last observed usage (a lower bound)</span><span><i class="k-hit"></i>Limit hit in the window</span></div>
+<div class="plot"><svg class="nm-chart nm-chart-gauge" viewBox="0 0 960 336" preserveAspectRatio="xMinYMin meet" role="img" aria-label="Usage windows: peak and last observed usage per window. Windows resetting 2026-09-03 13:00 to 2026-09-10 00:00 (UTC)" font-size="11"><line class="nm-grid" x1="44" x2="948" y1="276" y2="276" stroke="var(--axis)" stroke-width="1"/><text x="37" y="279.5" fill="var(--muted)" class="nm-tick" text-anchor="end">0%</text><line class="nm-tick" x1="40" x2="44" y1="256" y2="256" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="236" y2="236" stroke="var(--grid)" stroke-width="1"/><text x="37" y="239.5" fill="var(--muted)" class="nm-tick" text-anchor="end">20%</text><line class="nm-tick" x1="40" x2="44" y1="216" y2="216" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="196" y2="196" stroke="var(--grid)" stroke-width="1"/><text x="37" y="199.5" fill="var(--muted)" class="nm-tick" text-anchor="end">40%</text><line class="nm-tick" x1="40" x2="44" y1="176" y2="176" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="156" y2="156" stroke="var(--grid)" stroke-width="1"/><text x="37" y="159.5" fill="var(--muted)" class="nm-tick" text-anchor="end">60%</text><line class="nm-tick" x1="40" x2="44" y1="136" y2="136" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="116" y2="116" stroke="var(--grid)" stroke-width="1"/><text x="37" y="119.5" fill="var(--muted)" class="nm-tick" text-anchor="end">80%</text><line class="nm-tick" x1="40" x2="44" y1="96" y2="96" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="76" y2="76" stroke="var(--grid)" stroke-width="1"/><text x="37" y="79.5" fill="var(--muted)" class="nm-tick" text-anchor="end">100%</text><line class="nm-tick" x1="40" x2="44" y1="56" y2="56" stroke="var(--axis)" stroke-width="1"/><line class="nm-limit" x1="44" x2="948" y1="76" y2="76" stroke="var(--limit)" stroke-width="1.5" stroke-dasharray="5 4"/><line class="nm-limit-key" x1="44" x2="62" y1="10" y2="10" stroke="var(--limit)" stroke-width="1.5" stroke-dasharray="5 4"/><text x="68" y="14" fill="var(--ink-2)" class="nm-label">100%, your plan's limit</text><text x="44" y="34" fill="var(--ink-2)" class="nm-label">5-hour windows</text><g class="nm-col" data-series="five_hour|2026-09-03T13:00:00.000Z" data-events="8 13" tabindex="0" role="button" aria-label="5-hour window resetting 2026-09-03 13:00: peak 103%, last observed usage 103%, 1 limit hit, 3 readings" data-label="5-hour window resetting 2026-09-03 13:00: peak 103%, last observed usage 103%, 1 limit hit, 3 readings"><rect class="nm-track" x="178.67" y="56" width="24" height="220" rx="2" fill="var(--sunken)"/><rect class="nm-data nm-peak" data-events="13" x="178.67" y="70" width="24" height="206" rx="2" fill="var(--water)"><title>Peak 103% at 2026-09-03 11:58, 5-hour window resetting 2026-09-03 13:00</title></rect><line class="nm-data nm-last" data-events="13" x1="175.67" x2="205.67" y1="70" y2="70" stroke="var(--ink)" stroke-width="2"><title>Last observed usage 103% at 2026-09-03 11:58, a lower bound, 5-hour window resetting 2026-09-03 13:00</title></line><circle class="nm-data nm-hit" data-events="8" cx="190.67" cy="58" r="8" fill="var(--limit)" stroke="var(--surface)" stroke-width="2"><title>1 limit hit in the 5-hour window resetting 2026-09-03 13:00</title></circle><text x="190.67" y="61.5" fill="var(--surface)" class="nm-hit-count" text-anchor="middle" font-size="10" font-weight="600" aria-hidden="true" pointer-events="none">1</text></g><text x="190.67" y="300" fill="var(--muted)" text-anchor="middle">13:00</text><text x="190.67" y="312" fill="var(--muted)" text-anchor="middle">09-03</text><g class="nm-col" data-series="five_hour|2026-09-03T18:00:00.000Z" data-events="14" tabindex="0" role="button" aria-label="5-hour window resetting 2026-09-03 18:00: peak 2%, last observed usage 2%, 0 limit hits, 1 reading, open" data-label="5-hour window resetting 2026-09-03 18:00: peak 2%, last observed usage 2%, 0 limit hits, 1 reading, open"><rect class="nm-track" x="472" y="56" width="24" height="220" rx="2" fill="var(--sunken)"/><rect class="nm-data nm-peak" data-events="14" x="472" y="272" width="24" height="4" rx="2" fill="var(--water)"><title>Peak 2% at 2026-09-03 13:05, 5-hour window resetting 2026-09-03 18:00</title></rect><line class="nm-data nm-last" data-events="14" x1="469" x2="499" y1="272" y2="272" stroke="var(--ink)" stroke-width="2"><title>Last observed usage 2% at 2026-09-03 13:05, a lower bound, 5-hour window resetting 2026-09-03 18:00</title></line><text x="484" y="288" fill="var(--muted)" class="nm-open" text-anchor="middle">open</text></g><text x="484" y="300" fill="var(--muted)" text-anchor="middle">18:00</text><line class="nm-group-rule" x1="642.67" x2="642.67" y1="56" y2="276" stroke="var(--grid)" stroke-width="1"/><text x="654.67" y="34" fill="var(--ink-2)" class="nm-label">weekly windows</text><g class="nm-col" data-series="seven_day|2026-09-10T00:00:00.000Z" data-events="14" tabindex="0" role="button" aria-label="weekly window resetting 2026-09-10 00:00: peak 16%, last observed usage 16%, 0 limit hits, 4 readings, open" data-label="weekly window resetting 2026-09-10 00:00: peak 16%, last observed usage 16%, 0 limit hits, 4 readings, open"><rect class="nm-track" x="789.33" y="56" width="24" height="220" rx="2" fill="var(--sunken)"/><rect class="nm-data nm-peak" data-events="14" x="789.33" y="244" width="24" height="32" rx="2" fill="var(--water)"><title>Peak 16% at 2026-09-03 13:05, weekly window resetting 2026-09-10 00:00</title></rect><line class="nm-data nm-last" data-events="14" x1="786.33" x2="816.33" y1="244" y2="244" stroke="var(--ink)" stroke-width="2"><title>Last observed usage 16% at 2026-09-03 13:05, a lower bound, weekly window resetting 2026-09-10 00:00</title></line><text x="801.33" y="288" fill="var(--muted)" class="nm-open" text-anchor="middle">open</text></g><text x="801.33" y="300" fill="var(--muted)" text-anchor="middle">00:00</text><text x="801.33" y="312" fill="var(--muted)" text-anchor="middle">09-10</text><text x="44" y="330" fill="var(--muted)" class="nm-span">Windows resetting 2026-09-03 13:00 to 2026-09-10 00:00 (UTC)</text></svg></div>
+<p class="caveat">Last observed usage is a lower bound: usage after the last Claude Code turn isn&#39;t seen. Readings above 100% are shown as recorded.</p>
+<p class="nm-hint">Select a column to show that window&#39;s readings over time and list the events behind it. Select any bar, point, count, or table cell with a number to list its events.</p>
+<div class="nm-series-list">
+<details class="nm-series" data-series="five_hour|2026-09-03T13:00:00.000Z">
+<summary>5-hour window resetting 2026-09-03 13:00: readings over time</summary>
+<p class="span">Covers: status line 2026-09-03 10:00 to 11:58 (UTC); limit hits 2026-09-03 12:00 to 12:00 (UTC)</p>
+<div class="plot"><svg class="nm-chart nm-chart-series" viewBox="0 0 960 336" preserveAspectRatio="xMinYMin meet" role="img" aria-label="5-hour window resetting 2026-09-03 13:00: observed usage over time, 3 readings, 1 limit hit. Readings 2026-09-03 10:00 to 11:58 (UTC)" font-size="11" data-series="five_hour|2026-09-03T13:00:00.000Z"><line class="nm-grid" x1="44" x2="948" y1="276" y2="276" stroke="var(--axis)" stroke-width="1"/><text x="37" y="279.5" fill="var(--muted)" class="nm-tick" text-anchor="end">0%</text><line class="nm-tick" x1="40" x2="44" y1="256" y2="256" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="236" y2="236" stroke="var(--grid)" stroke-width="1"/><text x="37" y="239.5" fill="var(--muted)" class="nm-tick" text-anchor="end">20%</text><line class="nm-tick" x1="40" x2="44" y1="216" y2="216" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="196" y2="196" stroke="var(--grid)" stroke-width="1"/><text x="37" y="199.5" fill="var(--muted)" class="nm-tick" text-anchor="end">40%</text><line class="nm-tick" x1="40" x2="44" y1="176" y2="176" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="156" y2="156" stroke="var(--grid)" stroke-width="1"/><text x="37" y="159.5" fill="var(--muted)" class="nm-tick" text-anchor="end">60%</text><line class="nm-tick" x1="40" x2="44" y1="136" y2="136" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="116" y2="116" stroke="var(--grid)" stroke-width="1"/><text x="37" y="119.5" fill="var(--muted)" class="nm-tick" text-anchor="end">80%</text><line class="nm-tick" x1="40" x2="44" y1="96" y2="96" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="76" y2="76" stroke="var(--grid)" stroke-width="1"/><text x="37" y="79.5" fill="var(--muted)" class="nm-tick" text-anchor="end">100%</text><line class="nm-tick" x1="40" x2="44" y1="56" y2="56" stroke="var(--axis)" stroke-width="1"/><line class="nm-limit" x1="44" x2="948" y1="76" y2="76" stroke="var(--limit)" stroke-width="1.5" stroke-dasharray="5 4"/><line class="nm-limit-key" x1="44" x2="62" y1="10" y2="10" stroke="var(--limit)" stroke-width="1.5" stroke-dasharray="5 4"/><text x="68" y="14" fill="var(--ink-2)" class="nm-label">100%, your plan's limit</text><line class="nm-reset" x1="948" x2="948" y1="56" y2="276" stroke="var(--ink-2)" stroke-width="1"/><text x="948" y="34" fill="var(--ink-2)" class="nm-label" text-anchor="end">Resets 2026-09-03 13:00</text><path class="nm-data nm-hit" data-events="8" d="M646.53 276V56M646.53 56h8l-8 5z" fill="var(--limit)" stroke="var(--limit)" stroke-width="1.5"><title>Limit hit at 2026-09-03 12:00</title></path><path class="nm-data nm-line" data-events="11 12 13" d="M44 236L45.26 156L636.48 70" fill="none" stroke="var(--water)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><title>Observed usage in the 5-hour window resetting 2026-09-03 13:00, 3 readings</title></path><circle class="nm-data nm-point" data-events="11" cx="44" cy="236" r="4" fill="var(--water)" stroke="var(--surface)" stroke-width="2"><title>Observed usage 20% at 2026-09-03 10:00</title></circle><circle class="nm-data nm-point" data-events="12" cx="45.26" cy="156" r="4" fill="var(--water)" stroke="var(--surface)" stroke-width="2"><title>Observed usage 60% at 2026-09-03 10:00</title></circle><circle class="nm-data nm-point" data-events="13" cx="636.48" cy="70" r="4" fill="var(--water)" stroke="var(--surface)" stroke-width="2"><title>Observed usage 103% at 2026-09-03 11:58</title></circle><text x="44" y="292" fill="var(--muted)">2026-09-03 10:00</text><text x="44" y="330" fill="var(--muted)" class="nm-span">Readings 2026-09-03 10:00 to 11:58 (UTC)</text></svg></div>
+<details class="nm-table"><summary>Table view: 5-hour window resetting 2026-09-03 13:00: readings over time</summary>
+<div class="table-scroll"><table><caption>5-hour window resetting 2026-09-03 13:00: readings over time</caption>
+<thead><tr><th scope="col">Time</th><th scope="col">Event</th><th scope="col">Observed usage</th></tr></thead>
+<tbody>
+<tr><td>2026-09-03 10:00</td><td>Status line reading</td><td class="num" data-events="11" data-label="Observed usage, 5-hour window resetting 2026-09-03 13:00, 2026-09-03 10:00">20%</td></tr>
+<tr><td>2026-09-03 10:00</td><td>Status line reading</td><td class="num" data-events="12" data-label="Observed usage, 5-hour window resetting 2026-09-03 13:00, 2026-09-03 10:00">60%</td></tr>
+<tr><td>2026-09-03 11:58</td><td>Status line reading</td><td class="num" data-events="13" data-label="Observed usage, 5-hour window resetting 2026-09-03 13:00, 2026-09-03 11:58">103%</td></tr>
+<tr><td>2026-09-03 12:00</td><td data-events="8" data-label="Event, 5-hour window resetting 2026-09-03 13:00, 2026-09-03 12:00">Limit hit</td><td class="num"></td></tr>
+</tbody></table></div></details>
+</details>
+<details class="nm-series" data-series="five_hour|2026-09-03T18:00:00.000Z">
+<summary>5-hour window resetting 2026-09-03 18:00: readings over time</summary>
+<p class="span">Covers: status line 2026-09-03 13:05 to 13:05 (UTC)</p>
+<div class="plot"><svg class="nm-chart nm-chart-series" viewBox="0 0 960 336" preserveAspectRatio="xMinYMin meet" role="img" aria-label="5-hour window resetting 2026-09-03 18:00: observed usage over time, 1 reading, 0 limit hits. Readings 2026-09-03 13:05 to 13:05 (UTC)" font-size="11" data-series="five_hour|2026-09-03T18:00:00.000Z"><line class="nm-grid" x1="44" x2="948" y1="276" y2="276" stroke="var(--axis)" stroke-width="1"/><text x="37" y="279.5" fill="var(--muted)" class="nm-tick" text-anchor="end">0%</text><line class="nm-tick" x1="40" x2="44" y1="256" y2="256" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="236" y2="236" stroke="var(--grid)" stroke-width="1"/><text x="37" y="239.5" fill="var(--muted)" class="nm-tick" text-anchor="end">20%</text><line class="nm-tick" x1="40" x2="44" y1="216" y2="216" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="196" y2="196" stroke="var(--grid)" stroke-width="1"/><text x="37" y="199.5" fill="var(--muted)" class="nm-tick" text-anchor="end">40%</text><line class="nm-tick" x1="40" x2="44" y1="176" y2="176" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="156" y2="156" stroke="var(--grid)" stroke-width="1"/><text x="37" y="159.5" fill="var(--muted)" class="nm-tick" text-anchor="end">60%</text><line class="nm-tick" x1="40" x2="44" y1="136" y2="136" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="116" y2="116" stroke="var(--grid)" stroke-width="1"/><text x="37" y="119.5" fill="var(--muted)" class="nm-tick" text-anchor="end">80%</text><line class="nm-tick" x1="40" x2="44" y1="96" y2="96" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="76" y2="76" stroke="var(--grid)" stroke-width="1"/><text x="37" y="79.5" fill="var(--muted)" class="nm-tick" text-anchor="end">100%</text><line class="nm-tick" x1="40" x2="44" y1="56" y2="56" stroke="var(--axis)" stroke-width="1"/><line class="nm-limit" x1="44" x2="948" y1="76" y2="76" stroke="var(--limit)" stroke-width="1.5" stroke-dasharray="5 4"/><line class="nm-limit-key" x1="44" x2="62" y1="10" y2="10" stroke="var(--limit)" stroke-width="1.5" stroke-dasharray="5 4"/><text x="68" y="14" fill="var(--ink-2)" class="nm-label">100%, your plan's limit</text><line class="nm-reset" x1="948" x2="948" y1="56" y2="276" stroke="var(--ink-2)" stroke-width="1"/><text x="948" y="34" fill="var(--ink-2)" class="nm-label" text-anchor="end">Resets 2026-09-03 18:00</text><path class="nm-data nm-line" data-events="14" d="M44 272" fill="none" stroke="var(--water)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><title>Observed usage in the 5-hour window resetting 2026-09-03 18:00, 1 reading</title></path><circle class="nm-data nm-point" data-events="14" cx="44" cy="272" r="4" fill="var(--water)" stroke="var(--surface)" stroke-width="2"><title>Observed usage 2% at 2026-09-03 13:05</title></circle><text x="44" y="292" fill="var(--muted)">2026-09-03 13:05</text><text x="44" y="330" fill="var(--muted)" class="nm-span">Readings 2026-09-03 13:05 to 13:05 (UTC)</text></svg></div>
+<details class="nm-table"><summary>Table view: 5-hour window resetting 2026-09-03 18:00: readings over time</summary>
+<div class="table-scroll"><table><caption>5-hour window resetting 2026-09-03 18:00: readings over time</caption>
+<thead><tr><th scope="col">Time</th><th scope="col">Event</th><th scope="col">Observed usage</th></tr></thead>
+<tbody>
+<tr><td>2026-09-03 13:05</td><td>Status line reading</td><td class="num" data-events="14" data-label="Observed usage, 5-hour window resetting 2026-09-03 18:00, 2026-09-03 13:05">2%</td></tr>
+</tbody></table></div></details>
+</details>
+<details class="nm-series" data-series="seven_day|2026-09-10T00:00:00.000Z">
+<summary>weekly window resetting 2026-09-10 00:00: readings over time</summary>
+<p class="span">Covers: status line 2026-09-03 10:00 to 13:05 (UTC)</p>
+<div class="plot"><svg class="nm-chart nm-chart-series" viewBox="0 0 960 336" preserveAspectRatio="xMinYMin meet" role="img" aria-label="weekly window resetting 2026-09-10 00:00: observed usage over time, 4 readings, 0 limit hits. Readings 2026-09-03 10:00 to 13:05 (UTC)" font-size="11" data-series="seven_day|2026-09-10T00:00:00.000Z"><line class="nm-grid" x1="44" x2="948" y1="276" y2="276" stroke="var(--axis)" stroke-width="1"/><text x="37" y="279.5" fill="var(--muted)" class="nm-tick" text-anchor="end">0%</text><line class="nm-tick" x1="40" x2="44" y1="256" y2="256" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="236" y2="236" stroke="var(--grid)" stroke-width="1"/><text x="37" y="239.5" fill="var(--muted)" class="nm-tick" text-anchor="end">20%</text><line class="nm-tick" x1="40" x2="44" y1="216" y2="216" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="196" y2="196" stroke="var(--grid)" stroke-width="1"/><text x="37" y="199.5" fill="var(--muted)" class="nm-tick" text-anchor="end">40%</text><line class="nm-tick" x1="40" x2="44" y1="176" y2="176" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="156" y2="156" stroke="var(--grid)" stroke-width="1"/><text x="37" y="159.5" fill="var(--muted)" class="nm-tick" text-anchor="end">60%</text><line class="nm-tick" x1="40" x2="44" y1="136" y2="136" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="116" y2="116" stroke="var(--grid)" stroke-width="1"/><text x="37" y="119.5" fill="var(--muted)" class="nm-tick" text-anchor="end">80%</text><line class="nm-tick" x1="40" x2="44" y1="96" y2="96" stroke="var(--axis)" stroke-width="1"/><line class="nm-grid" x1="44" x2="948" y1="76" y2="76" stroke="var(--grid)" stroke-width="1"/><text x="37" y="79.5" fill="var(--muted)" class="nm-tick" text-anchor="end">100%</text><line class="nm-tick" x1="40" x2="44" y1="56" y2="56" stroke="var(--axis)" stroke-width="1"/><line class="nm-limit" x1="44" x2="948" y1="76" y2="76" stroke="var(--limit)" stroke-width="1.5" stroke-dasharray="5 4"/><line class="nm-limit-key" x1="44" x2="62" y1="10" y2="10" stroke="var(--limit)" stroke-width="1.5" stroke-dasharray="5 4"/><text x="68" y="14" fill="var(--ink-2)" class="nm-label">100%, your plan's limit</text><line class="nm-reset" x1="948" x2="948" y1="56" y2="276" stroke="var(--ink-2)" stroke-width="1"/><text x="948" y="34" fill="var(--ink-2)" class="nm-label" text-anchor="end">Resets 2026-09-10 00:00</text><path class="nm-data nm-line" data-events="11 12 13 14" d="M44 256L44.02 252L55.24 246L61.65 244" fill="none" stroke="var(--water)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><title>Observed usage in the weekly window resetting 2026-09-10 00:00, 4 readings</title></path><circle class="nm-data nm-point" data-events="11" cx="44" cy="256" r="4" fill="var(--water)" stroke="var(--surface)" stroke-width="2"><title>Observed usage 10% at 2026-09-03 10:00</title></circle><circle class="nm-data nm-point" data-events="12" cx="44.02" cy="252" r="4" fill="var(--water)" stroke="var(--surface)" stroke-width="2"><title>Observed usage 12% at 2026-09-03 10:00</title></circle><circle class="nm-data nm-point" data-events="13" cx="55.24" cy="246" r="4" fill="var(--water)" stroke="var(--surface)" stroke-width="2"><title>Observed usage 15% at 2026-09-03 11:58</title></circle><circle class="nm-data nm-point" data-events="14" cx="61.65" cy="244" r="4" fill="var(--water)" stroke="var(--surface)" stroke-width="2"><title>Observed usage 16% at 2026-09-03 13:05</title></circle><text x="44" y="292" fill="var(--muted)">2026-09-03 10:00</text><text x="44" y="330" fill="var(--muted)" class="nm-span">Readings 2026-09-03 10:00 to 13:05 (UTC)</text></svg></div>
+<details class="nm-table"><summary>Table view: weekly window resetting 2026-09-10 00:00: readings over time</summary>
+<div class="table-scroll"><table><caption>weekly window resetting 2026-09-10 00:00: readings over time</caption>
+<thead><tr><th scope="col">Time</th><th scope="col">Event</th><th scope="col">Observed usage</th></tr></thead>
+<tbody>
+<tr><td>2026-09-03 10:00</td><td>Status line reading</td><td class="num" data-events="11" data-label="Observed usage, weekly window resetting 2026-09-10 00:00, 2026-09-03 10:00">10%</td></tr>
+<tr><td>2026-09-03 10:00</td><td>Status line reading</td><td class="num" data-events="12" data-label="Observed usage, weekly window resetting 2026-09-10 00:00, 2026-09-03 10:00">12%</td></tr>
+<tr><td>2026-09-03 11:58</td><td>Status line reading</td><td class="num" data-events="13" data-label="Observed usage, weekly window resetting 2026-09-10 00:00, 2026-09-03 11:58">15%</td></tr>
+<tr><td>2026-09-03 13:05</td><td>Status line reading</td><td class="num" data-events="14" data-label="Observed usage, weekly window resetting 2026-09-10 00:00, 2026-09-03 13:05">16%</td></tr>
+</tbody></table></div></details>
+</details>
+</div>
+<details class="nm-table"><summary>Table view: Usage windows</summary>
+<div class="table-scroll"><table><caption>Usage windows</caption>
+<thead><tr><th scope="col">Window</th><th scope="col">Resets</th><th scope="col">Peak</th><th scope="col">Peak reading at</th><th scope="col">Last observed usage</th><th scope="col">Reading at</th><th scope="col">Readings</th><th scope="col">Limit hits</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><td>5-hour</td><td>2026-09-03 13:00</td><td class="num" data-events="13" data-label="Peak, 5-hour window resetting 2026-09-03 13:00">103%</td><td>2026-09-03 11:58</td><td class="num" data-events="13" data-label="Last observed usage, 5-hour window resetting 2026-09-03 13:00">103%</td><td>2026-09-03 11:58</td><td class="num" data-events="11 12 13" data-label="Readings, 5-hour window resetting 2026-09-03 13:00">3</td><td class="num" data-events="8" data-label="Limit hits, 5-hour window resetting 2026-09-03 13:00">1</td><td>reset</td></tr>
+<tr><td>5-hour</td><td>2026-09-03 18:00</td><td class="num" data-events="14" data-label="Peak, 5-hour window resetting 2026-09-03 18:00">2%</td><td>2026-09-03 13:05</td><td class="num" data-events="14" data-label="Last observed usage, 5-hour window resetting 2026-09-03 18:00">2%</td><td>2026-09-03 13:05</td><td class="num" data-events="14" data-label="Readings, 5-hour window resetting 2026-09-03 18:00">1</td><td class="num" data-events="" data-label="Limit hits, 5-hour window resetting 2026-09-03 18:00">0</td><td>open</td></tr>
+<tr><td>weekly</td><td>2026-09-10 00:00</td><td class="num" data-events="14" data-label="Peak, weekly window resetting 2026-09-10 00:00">16%</td><td>2026-09-03 13:05</td><td class="num" data-events="14" data-label="Last observed usage, weekly window resetting 2026-09-10 00:00">16%</td><td>2026-09-03 13:05</td><td class="num" data-events="11 12 13 14" data-label="Readings, weekly window resetting 2026-09-10 00:00">4</td><td class="num" data-events="" data-label="Limit hits, weekly window resetting 2026-09-10 00:00">0</td><td>open</td></tr>
+</tbody></table></div></details>
+<div class="nm-events" aria-live="polite" hidden></div>
+</section>
+<section class="panel nm-chart" id="nm-lockouts" aria-labelledby="nm-lockouts-h">
+<div class="panel-title"><h3 id="nm-lockouts-h">Elapsed lockout time (limit hit to reset, overlapping hits counted once)</h3>
+<p class="span">Covers: session logs 2026-09-03 10:00 to 13:05 (UTC); status line 2026-09-03 10:00 to 13:05 (UTC)</p></div>
+<div class="nm-counts">
+<p class="total"><span class="num" data-events="8" data-label="Elapsed lockout time">1 h 0 m</span> across 1 lockout</p>
+<p class="sub" data-events="" data-label="Hits with an unknown reset time">Hits with an unknown reset time, not included: 0</p>
+<p class="count" data-events="8" data-label="Rate-limit interruptions">Rate-limit interruptions: 1</p>
+<p class="sub">5-hour window: <span class="num" data-events="8" data-label="Rate-limit interruptions, 5-hour window">1</span> | weekly window: <span class="num" data-events="" data-label="Rate-limit interruptions, weekly window">0</span> | window unknown: <span class="num" data-events="" data-label="Rate-limit interruptions, window unknown">0</span></p>
+<p class="sub">From the session logs: <span class="num" data-events="8" data-label="Rate-limit interruptions, from the session logs">1</span> | seen only in the status line: <span class="num" data-events="" data-label="Rate-limit interruptions, seen only in the status line">0</span></p>
+</div>
+<p class="caveat">Each interval runs from a limit hit to the window&#39;s reset. What happened during it isn&#39;t observed.</p>
+<div class="plot"><svg class="nm-chart nm-chart-lockouts" viewBox="0 0 960 76" preserveAspectRatio="xMinYMin meet" role="img" aria-label="Elapsed lockout time, limit hit to reset. Lockouts 2026-09-03 12:00 to 13:00 (UTC)" font-size="11"><line class="nm-grid" x1="124" x2="124" y1="8" y2="36" stroke="var(--axis)" stroke-width="1"/><text x="124" y="50" fill="var(--muted)" class="nm-tick" text-anchor="middle">0</text><line class="nm-grid" x1="245" x2="245" y1="8" y2="36" stroke="var(--grid)" stroke-width="1"/><text x="245" y="50" fill="var(--muted)" class="nm-tick" text-anchor="middle">10 m</text><line class="nm-grid" x1="366" x2="366" y1="8" y2="36" stroke="var(--grid)" stroke-width="1"/><text x="366" y="50" fill="var(--muted)" class="nm-tick" text-anchor="middle">20 m</text><line class="nm-grid" x1="487" x2="487" y1="8" y2="36" stroke="var(--grid)" stroke-width="1"/><text x="487" y="50" fill="var(--muted)" class="nm-tick" text-anchor="middle">30 m</text><line class="nm-grid" x1="608" x2="608" y1="8" y2="36" stroke="var(--grid)" stroke-width="1"/><text x="608" y="50" fill="var(--muted)" class="nm-tick" text-anchor="middle">40 m</text><line class="nm-grid" x1="729" x2="729" y1="8" y2="36" stroke="var(--grid)" stroke-width="1"/><text x="729" y="50" fill="var(--muted)" class="nm-tick" text-anchor="middle">50 m</text><line class="nm-grid" x1="850" x2="850" y1="8" y2="36" stroke="var(--grid)" stroke-width="1"/><text x="850" y="50" fill="var(--muted)" class="nm-tick" text-anchor="middle">1 h</text><text x="0" y="26" fill="var(--ink-2)" class="nm-label">2026-09-03 12:00</text><rect class="nm-data nm-lockout" data-events="8" x="124" y="14" width="726" height="16" rx="2" fill="var(--limit)"><title>Elapsed lockout time 1 h 0 m, 2026-09-03 12:00 to 13:00 (UTC), 1 limit hit; 5 m 10 s reset to next Claude Code request</title></rect><text x="856" y="26" fill="var(--ink-2)" class="nm-value">1 h 0 m, 1 hit</text><text x="0" y="70" fill="var(--muted)" class="nm-span">Lockouts 2026-09-03 12:00 to 13:00 (UTC)</text></svg></div>
+<details class="nm-table"><summary>Table view: Elapsed lockout time (limit hit to reset, overlapping hits counted once)</summary>
+<div class="table-scroll"><table><caption>Elapsed lockout time (limit hit to reset, overlapping hits counted once)</caption>
+<thead><tr><th scope="col">Limit hit</th><th scope="col">Reset</th><th scope="col">Elapsed lockout time</th><th scope="col">Hits</th><th scope="col">Reset to next Claude Code request</th></tr></thead>
+<tbody>
+<tr><td>2026-09-03 12:00</td><td>2026-09-03 13:00</td><td class="num" data-events="8" data-label="Elapsed lockout time, Lockout from 2026-09-03 12:00">1 h 0 m</td><td class="num" data-events="8" data-label="Hits, Lockout from 2026-09-03 12:00">1</td><td class="num" data-events="10" data-label="Reset to next Claude Code request, Lockout from 2026-09-03 12:00">5 m 10 s</td></tr>
+</tbody></table></div></details>
+<div class="nm-events" aria-live="polite" hidden></div>
+</section>
+<section class="panel nm-chart" id="nm-models" aria-labelledby="nm-models-h">
+<div class="panel-title"><h3 id="nm-models-h">Claude Code output tokens by model</h3>
+<p class="span">Covers: session logs 2026-09-03 10:00 to 13:05 (UTC)</p></div>
+<div class="plot"><svg class="nm-chart nm-chart-models" viewBox="0 0 960 56" preserveAspectRatio="xMinYMin meet" role="img" aria-label="Claude Code tokens by model: output tokens, 2 models" font-size="11"><text x="0" y="19" fill="var(--ink-2)" class="nm-label">claude-opus-5</text><rect class="nm-data nm-model" data-events="4 6 10" x="111" y="9" width="759" height="14" rx="2" fill="var(--water)"><title>claude-opus-5: 360 output tokens from 3 requests</title></rect><text x="876" y="19" fill="var(--ink-2)" class="nm-value">360</text><text x="0" y="43" fill="var(--ink-2)" class="nm-label">claude-sonnet-5</text><rect class="nm-data nm-model" data-events="2" x="111" y="33" width="210.83" height="14" rx="2" fill="var(--water)"><title>claude-sonnet-5: 100 output tokens from 1 request</title></rect><text x="327.83" y="43" fill="var(--ink-2)" class="nm-value">100</text></svg></div>
+<details class="nm-table"><summary>Table view: Claude Code output tokens by model</summary>
+<div class="table-scroll"><table><caption>Claude Code output tokens by model</caption>
+<thead><tr><th scope="col">Model</th><th scope="col">Requests</th><th scope="col">Output</th></tr></thead>
+<tbody>
+<tr><td>claude-opus-5</td><td class="num" data-events="4 6 10" data-label="Requests, claude-opus-5">3</td><td class="num" data-events="4 6 10" data-label="Output, claude-opus-5">360</td></tr>
+<tr><td>claude-sonnet-5</td><td class="num" data-events="2" data-label="Requests, claude-sonnet-5">1</td><td class="num" data-events="2" data-label="Output, claude-sonnet-5">100</td></tr>
+</tbody></table></div></details>
+<div class="nm-events" aria-live="polite" hidden></div>
+</section>
+</section>
+<section class="nm-part" id="nm-projected" aria-labelledby="nm-seam">
+<h2 class="seam" id="nm-seam">PROJECTED: estimates derived from the observations above, not observations</h2>
+<section class="panel nm-chart" id="nm-months" aria-labelledby="nm-months-h">
+<p class="eyebrow">Projected</p>
+<div class="panel-title"><h3 id="nm-months-h">Observed tokens at API list price, by month</h3>
+<p class="span">Covers: session logs 2026-09-03 10:00 to 13:05 (UTC)</p></div>
+<div class="legend"><span><i class="k-price"></i>Observed tokens at API list price</span><span><i class="k-plan"></i>Plan price entered for that month</span></div>
+<p class="caveat">Months in UTC. Covers Claude Code only: web, mobile, and Claude Design usage leaves no token records.</p>
+<p class="caveat">Only the plan price is a price. The bars reprice the tokens observed at API list rates; they aren&#39;t a bill, because paying per token changes how people work.</p>
+<div class="plot"><svg class="nm-chart nm-chart-months" viewBox="0 0 960 260" preserveAspectRatio="xMinYMin meet" role="img" aria-label="Observed tokens at API list price, by month (projected). Months 2026-09-03 10:00 to 13:05 (UTC)" font-size="11"><line class="nm-grid" x1="56" x2="948" y1="204" y2="204" stroke="var(--axis)" stroke-width="1"/><text x="49" y="207.5" fill="var(--muted)" class="nm-tick" text-anchor="end">$0.000</text><line class="nm-grid" x1="56" x2="948" y1="144" y2="144" stroke="var(--grid)" stroke-width="1"/><text x="49" y="147.5" fill="var(--muted)" class="nm-tick" text-anchor="end">$0.005</text><line class="nm-grid" x1="56" x2="948" y1="84" y2="84" stroke="var(--grid)" stroke-width="1"/><text x="49" y="87.5" fill="var(--muted)" class="nm-tick" text-anchor="end">$0.010</text><line class="nm-grid" x1="56" x2="948" y1="24" y2="24" stroke="var(--grid)" stroke-width="1"/><text x="49" y="27.5" fill="var(--muted)" class="nm-tick" text-anchor="end">$0.015</text><rect class="nm-data nm-month" data-events="2 4 6 10" x="482" y="83.8" width="40" height="120.2" rx="2" fill="var(--silt)" fill-opacity="0.55"><title>Projected: observed tokens at API list price for 2026-09, $0.01; 4 priced requests, 0 unpriced requests (not counted as $0); covers 2026-09-03 10:00 to 13:05 (UTC)</title></rect><text x="502" y="77.8" fill="var(--ink)" class="nm-value" text-anchor="middle">$0.01</text><text x="502" y="220" fill="var(--muted)" text-anchor="middle">2026-09</text><text x="56" y="238" fill="var(--muted)" class="nm-span">Months 2026-09-03 10:00 to 13:05 (UTC)</text></svg></div>
+<details class="nm-table"><summary>Table view: Observed tokens at API list price, by month</summary>
+<div class="table-scroll"><table><caption>Observed tokens at API list price, by month</caption>
+<thead><tr><th scope="col">Month</th><th scope="col">At API list price</th><th scope="col">Plan price entered</th><th scope="col">Priced requests</th><th scope="col">Unpriced requests</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><td>2026-09</td><td class="num" data-events="2 4 6 10" data-label="At API list price, 2026-09">$0.01</td><td>none entered</td><td class="num" data-events="2 4 6 10" data-label="Priced requests, 2026-09">4</td><td class="num" data-events="" data-label="Unpriced requests, 2026-09">0</td><td>2026-09-03 10:00 to 2026-09-03 13:05</td></tr>
+</tbody></table></div></details>
+<p class="note" data-events="2 4 6 10" data-label="Requests priced at the rate read on 2026-09-13">Rates were read from Anthropic&#39;s pricing page on 2026-09-13; 4 requests dated before that are priced at those rates.</p>
+<p class="note">To show a plan price beside these amounts: plan-price set &lt;YYYY-MM&gt; &lt;usd&gt; --name &lt;plan&gt;</p>
+<div class="nm-events" aria-live="polite" hidden></div>
+</section>
+</section>
+</main>
+<script type="application/json" id="nm-data">{"timeZone":"UTC","files":["projects/-fixture-html/s1.jsonl","statusline.spool.jsonl"],"events":{"2":{"file":0,"line":2,"atUtc":"2026-09-03T10:00:05.000Z"},"4":{"file":0,"line":4,"atUtc":"2026-09-03T10:00:20.000Z"},"6":{"file":0,"line":6,"atUtc":"2026-09-03T11:58:00.000Z"},"8":{"file":0,"line":8,"atUtc":"2026-09-03T12:00:00.000Z"},"10":{"file":0,"line":10,"atUtc":"2026-09-03T13:05:10.000Z"},"11":{"file":1,"line":1,"atUtc":"2026-09-03T10:00:06.000Z"},"12":{"file":1,"line":2,"atUtc":"2026-09-03T10:00:21.000Z"},"13":{"file":1,"line":3,"atUtc":"2026-09-03T11:58:05.000Z"},"14":{"file":1,"line":4,"atUtc":"2026-09-03T13:05:15.000Z"}}}</script>
+<script>
+"use strict";
+var NM = (function () {
+  /* Formats an ISO instant as the text report does: YYYY-MM-DD HH:MM in the report's zone. */
+  function formatAt(iso, zone) {
+    if (iso === null || iso === undefined) { return "unknown"; }
+    var parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+    }).formatToParts(new Date(iso));
+    function part(type) {
+      for (var i = 0; i < parts.length; i++) { if (parts[i].type === type) { return parts[i].value; } }
+      return "";
+    }
+    return part("year") + "-" + part("month") + "-" + part("day") + " " + part("hour") + ":" + part("minute");
+  }
+  /* Reads a data-events value: raw line IDs separated by spaces. */
+  function parseIds(text) {
+    return String(text || "").split(/\\s+/).filter(function (s) { return s !== ""; })
+      .map(Number).filter(function (n) { return isFinite(n); });
+  }
+  /* Merges ID lists, each ID once, ascending, the order the data layer uses. */
+  function union(lists) {
+    var seen = {}, out = [];
+    lists.forEach(function (list) { list.forEach(function (id) { if (!seen[id]) { seen[id] = true; out.push(id); } }); });
+    return out.sort(function (a, b) { return a - b; });
+  }
+  /* One line per event, as explain prints it: time, two spaces, file:line. Capped at limit. */
+  function eventLines(ids, data, limit) {
+    var lines = [];
+    ids.slice(0, limit).forEach(function (id) {
+      var e = data.events[id];
+      if (!e) { lines.push("unknown  raw line " + id + ": not in this file"); return; }
+      var file = data.files[e.file];
+      var where = file === undefined ? "unknown location" : file + ":" + e.line;
+      lines.push(formatAt(e.atUtc, data.timeZone) + "  " + where);
+    });
+    return { lines: lines, more: Math.max(0, ids.length - limit) };
+  }
+  /* Names a selected element at the head of its list: its data-label, else its SVG title, else
+     its aria-label, which is how a gauge column names its window when opened by Enter. */
+  function labelOf(el) {
+    if (el.hasAttribute("data-label")) { return el.getAttribute("data-label"); }
+    for (var i = 0; i < el.children.length; i++) {
+      if (el.children[i].tagName.toLowerCase() === "title") { return el.children[i].textContent; }
+    }
+    if (el.hasAttribute("aria-label")) { return el.getAttribute("aria-label"); }
+    return "";
+  }
+  return { formatAt: formatAt, parseIds: parseIds, union: union, eventLines: eventLines, labelOf: labelOf };
+})();
+if (typeof document !== "undefined") {
+  (function () {
+    var LIMIT = 200;
+    var source = document.getElementById("nm-data");
+    if (!source) { return; }
+    var data = JSON.parse(source.textContent);
+    document.documentElement.classList.add("nm-js");
+    var selected = null;
+    /* Every element with events becomes reachable by keyboard; a gauge column is one stop. */
+    Array.prototype.forEach.call(document.querySelectorAll("[data-events], .nm-col"), function (el) {
+      var col = el.closest(".nm-col");
+      if (col && col !== el) { return; }
+      if (!el.hasAttribute("tabindex")) { el.setAttribute("tabindex", "0"); }
+      if (el instanceof SVGElement && !el.hasAttribute("role")) { el.setAttribute("role", "button"); }
+    });
+    function collect(el) {
+      var lists = [];
+      if (el.hasAttribute("data-events")) { lists.push(NM.parseIds(el.getAttribute("data-events"))); }
+      Array.prototype.forEach.call(el.querySelectorAll("[data-events]"), function (child) {
+        lists.push(NM.parseIds(child.getAttribute("data-events")));
+      });
+      return NM.union(lists);
+    }
+    function show(panel, ids, label) {
+      var listed = NM.eventLines(ids, data, LIMIT);
+      panel.textContent = "";
+      if (label) { var head = document.createElement("p"); head.className = "nm-events-label"; head.textContent = label; panel.appendChild(head); }
+      var count = document.createElement("p");
+      count.textContent = ids.length + (ids.length === 1 ? " event" : " events") + " behind it, each as time (" + data.timeZone + ") and file:line:";
+      panel.appendChild(count);
+      var list = document.createElement("ol");
+      listed.lines.forEach(function (line) { var li = document.createElement("li"); li.textContent = line; list.appendChild(li); });
+      panel.appendChild(list);
+      if (listed.more > 0) {
+        var more = document.createElement("p");
+        more.textContent = listed.more + " more events not listed; nilometer explain lists every event.";
+        panel.appendChild(more);
+      }
+      panel.hidden = false;
+    }
+    function openSeries(key) {
+      Array.prototype.forEach.call(document.querySelectorAll("details.nm-series"), function (d) {
+        d.open = d.getAttribute("data-series") === key;
+      });
+    }
+    function activate(target) {
+      var col = target.closest(".nm-col");
+      var el = target.closest("[data-events]");
+      /* An element inside the column lists its own events; the column itself lists them all. */
+      var chosen = el && (!col || col.contains(el)) ? el : col;
+      if (!chosen) { return; }
+      if (col) { openSeries(col.getAttribute("data-series")); }
+      var ids = chosen === el ? NM.parseIds(el.getAttribute("data-events")) : collect(col);
+      var section = chosen.closest("section.nm-chart");
+      var panel = section ? section.querySelector(".nm-events") : null;
+      if (panel) { show(panel, ids, NM.labelOf(chosen)); }
+      if (selected) { selected.classList.remove("nm-sel"); }
+      selected = chosen;
+      selected.classList.add("nm-sel");
+    }
+    document.addEventListener("click", function (e) {
+      if (e.target instanceof Element) { activate(e.target); }
+    });
+    document.addEventListener("keydown", function (e) {
+      var t = e.target;
+      if ((e.key === "Enter" || e.key === " ") && t instanceof Element && t.matches("[data-events], .nm-col")) {
+        e.preventDefault();
+        activate(t);
+      }
+    });
+  })();
+}
+</script>
+</body>
+</html>
+"
+`;

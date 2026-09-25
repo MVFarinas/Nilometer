@@ -216,7 +216,7 @@ nilometer init    # or, without npm link: npm start -- init
 |---|---|
 | `nilometer init` | Install the hook (wrapping any existing status line), then backfill from session logs |
 | `nilometer ingest` | Read new session log lines and status line readings into the database. `--full` rereads everything; `--json` prints the outcome as JSON |
-| `nilometer report` | Print what was observed, then projections in a separate section. `--json` prints unrounded rows and every label. `--save` also writes a dated copy (`report_YYYY-MM-DD_HHMMSS.txt` and `.json`) to `~/.local/share/nilometer/reports/` |
+| `nilometer report` | Print what was observed, then projections in a separate section. `--json` prints unrounded rows and every label. `--save` also writes a dated copy (`report_YYYY-MM-DD_HHMMSS.txt` and `.json`) to `~/.local/share/nilometer/reports/`; `--save --html` adds a self-contained `.html` page with the same name, which works offline and makes no network requests |
 | `nilometer explain <metric>` | List the events behind a number in the report, with the file, line, and byte each came from, and add them back up. Metrics: `limit-hits`, `mid-task`, `lockout`, `not-resumed`, `headroom`, `peak`, `unattributed`, `by-model`, `by-repo`, `burn-rate`, `api-list-price` |
 | `nilometer plan-price set <YYYY-MM> <usd> --name <plan>` | Record your plan's USD list price per month from that month on, shown beside API list price. `plan-price list` shows what's entered |
 | `nilometer uninstall` | Remove the hook and restore the status line setting it replaced. Recorded data is kept |

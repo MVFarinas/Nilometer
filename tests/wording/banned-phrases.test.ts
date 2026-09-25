@@ -7,7 +7,7 @@
  * database, and the report fixture, and both the table and the `--json` output (which carries
  * every label) are checked.
  */
-import { mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,42 +21,11 @@ import { stageState, statesOf } from "../../scripts/fidelity/loader-check.js";
 import { loadObserved, loadProjected } from "../../viewer/queries.js";
 import { type ReportInput, renderReport, reportJson } from "../../viewer/render.js";
 import { ingest } from "../unit/core/metrics/helpers.js";
+import { bannedPhrases, findBanned } from "./banned-phrases.js";
 import { FIXTURE_TIME_ZONE, buildReportFixture } from "../unit/viewer/fixture.js";
 
 /** Repository root. */
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
-
-/**
- * Reads the banned phrases from CLAUDE.md and the add-metric skill.
- * @returns Lowercase phrases, each listed once.
- */
-export function bannedPhrases(): string[] {
-  const claude = readFileSync(join(ROOT, "CLAUDE.md"), "utf8");
-  // The paragraph goes on to name the approved wording ("Use the README's wording instead"), which
-  // must not be read as banned.
-  const framings = /Banned framings:([\s\S]*?)(?:Use the README|\n\n)/.exec(claude)?.[1] ?? "";
-  const fromClaude = [...framings.matchAll(/\*([^*]+)\*/g)].map((m) => m[1] as string);
-  const skill = readFileSync(join(ROOT, ".claude/skills/add-metric/SKILL.md"), "utf8");
-  const checklist = /No banned phrasing[^:]*:\s*\*([^*]+)\*/.exec(skill)?.[1] ?? "";
-  const fromSkill = checklist.split(",").map((phrase) => phrase.trim());
-  return [...new Set([...fromClaude, ...fromSkill].map((phrase) => phrase.toLowerCase()))];
-}
-
-/**
- * Finds banned phrases in text. A phrase matches at a word start, in any case, so "recommended"
- * and "Savings" are caught too.
- * @param text - Rendered output.
- * @param phrases - From {@link bannedPhrases}.
- * @returns The phrases found.
- */
-export function findBanned(text: string, phrases: readonly string[]): string[] {
-  return phrases.filter((phrase) =>
-    new RegExp(
-      `\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "\\s+")}`,
-      "i",
-    ).test(text),
-  );
-}
 
 /**
  * Builds a report input over a database.

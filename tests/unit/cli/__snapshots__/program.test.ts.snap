@@ -122,6 +122,8 @@ Options:
   --json             print unrounded rows and the report's labels as JSON
   --save             also save a dated copy (text and JSON) in the data
                      directory's reports folder
+  --html             with --save, also write the report as a self-contained HTML
+                     page
   -h, --help         display help for command"
 `;
 

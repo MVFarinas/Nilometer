@@ -2,7 +2,8 @@
  * @file Command-line program: the `init`, `ingest`, `report`, `explain`, `plan-price`, and
  * `uninstall` commands and their messages.
  *
- * Implements docs/development.md P1.3, P4.8, P7.1, P7.2, and the plan price entry D-027 needs. Logic lives in core/install/install.ts; this module only parses flags,
+ * Implements docs/development.md P1.3, P4.8, P7.1, P7.2, the plan price entry D-027 needs, and
+ * `report --save --html` (step G1.4, D-070). Logic lives in core/install/install.ts; this module only parses flags,
  * calls it, and turns outcomes into words. All wording here follows CLAUDE.md "Wording is part of
  * correctness": messages state what happened, never advice or judgment.
  */
@@ -47,11 +48,13 @@ import { METRIC_NAMES, UnknownMetricError, explain, renderExplanation } from "..
 import { formatNumber } from "../viewer/format.js";
 import {
   NoDatabaseError,
+  readReport,
   type StoredDataSummary,
-  loadReport,
   summarizeStoredData,
   withReportDatabase,
 } from "../viewer/report.js";
+import { loadHtmlData } from "../viewer/html-data.js";
+import { renderHtmlReport } from "../viewer/html.js";
 import { saveReport } from "../viewer/save.js";
 import { displayPath, plural, renderReport, reportJson } from "../viewer/render.js";
 
@@ -117,7 +120,16 @@ interface ReportFlags {
   readonly json?: boolean;
   /** `--save`: also write a dated text and JSON copy to the data directory (D-030). */
   readonly save?: boolean;
+  /** `--html`: with `--save`, also write the self-contained HTML page beside them (D-070). */
+  readonly html?: boolean;
 }
+
+/**
+ * Refusal for `--html` without `--save`. The page is only ever written as a saved copy, never to
+ * stdout, so the flag alone has nowhere to go (D-070).
+ */
+export const HTML_NEEDS_SAVE =
+  "--html needs --save: the HTML page is written only as a saved copy, beside the text and JSON. Nothing was changed.";
 
 /** Flags of the `explain` command. */
 interface ExplainFlags {
@@ -696,22 +708,61 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
       "--save",
       "also save a dated copy (text and JSON) in the data directory's reports folder",
     )
+    .option("--html", "with --save, also write the report as a self-contained HTML page")
     .action((flags: ReportFlags) => {
       setExitCode(
         report(deps, () => {
-          const input = loadReport(
-            { ...toPlanDatabaseOptions(flags, deps), timeZone: deps.timeZone },
-            (tightened) => {
-              noteTightened(deps, tightened);
-            },
+          // Refused before the database is opened, so the bad combination changes nothing: not even
+          // the owner-only tightening a read would do (D-043). Same exit code and stderr as any
+          // other rejected input.
+          if (flags.html === true && flags.save !== true) {
+            return { exitCode: 1, lines: [], errors: [HTML_NEEDS_SAVE] };
+          }
+          /**
+           * Says on stderr that data paths were made owner-only.
+           * @param tightened - Paths that were tightened.
+           */
+          const onTightened = (tightened: readonly string[]): void => {
+            noteTightened(deps, tightened);
+          };
+          const reportOptions = { ...toPlanDatabaseOptions(flags, deps), timeZone: deps.timeZone };
+          // One instant names the files and dates the page, so the page's "generated at" and its
+          // file name can't disagree. Taken only when saving, as before.
+          const at = flags.save === true ? deps.now() : undefined;
+          const { input, html } = withReportDatabase(
+            reportOptions,
+            (db, databasePath) =>
+              // One read transaction for the text and the page: they come from one snapshot of the
+              // database, so an ingest finishing between the two reads can't make them disagree
+              // (D-070: "the same views, so the two can't disagree").
+              db.transaction(() => {
+                const read = readReport(db, databasePath, reportOptions);
+                return {
+                  input: read,
+                  html:
+                    at !== undefined && flags.html === true
+                      ? renderHtmlReport(
+                          // Reuses what readReport just read from this snapshot, so the costliest
+                          // views are computed once (D-070).
+                          loadHtmlData(db, { timeZone: deps.timeZone, generatedAt: at }, read),
+                        )
+                      : undefined,
+                };
+              })(),
+            onTightened,
           );
           const printed =
             flags.json === true ? JSON.stringify(reportJson(input), null, 2) : renderReport(input);
-          if (flags.save !== true) {
+          if (at === undefined) {
             return { exitCode: 0, lines: [printed] };
           }
-          const saved = saveReport(dirname(input.databasePath), input, deps.now());
-          const note = `Saved: ${displayPath(saved.textPath, deps.home)} and ${displayPath(saved.jsonPath, deps.home)}`;
+          const saved = saveReport(dirname(input.databasePath), input, at, html);
+          const textShown = displayPath(saved.textPath, deps.home);
+          const jsonShown = displayPath(saved.jsonPath, deps.home);
+          const note =
+            saved.htmlPath === undefined
+              ? `Saved: ${textShown} and ${jsonShown}`
+              : `Saved: ${textShown}, ${jsonShown}, and ${displayPath(saved.htmlPath, deps.home)}`;
           if (flags.json === true) {
             // stdout must stay pure JSON for tools reading it.
             deps.printError(note);

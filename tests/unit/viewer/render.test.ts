@@ -20,7 +20,7 @@ import {
   windowName,
   type ReportInput,
 } from "../../../viewer/render.js";
-import { ingest, request } from "../core/metrics/helpers.js";
+import { hit, ingest, request } from "../core/metrics/helpers.js";
 import { FIXTURE_TIME_ZONE, buildReportFixture } from "./fixture.js";
 
 describe("small renderers", () => {
@@ -155,6 +155,32 @@ describe("a first run", () => {
     for (const label of [LABELS.interruptions, LABELS.windows, LABELS.byModel, LABELS.burnRate]) {
       expect(text).not.toContain(label);
     }
+  });
+
+  it("prints the full report when the logs hold only a limit hit, with no request or reading", () => {
+    // One synthetic rate_limit line and nothing else: 0 windows, 0 models, 1 hit. The hit is
+    // recorded data, so the report shows it instead of the first-run text (D-070, decided
+    // 2026-09-25 after the G1.6 verifier found the saved .txt and .html disagreeing here).
+    const db = ingest({
+      "-p/s.jsonl": [
+        hit("s1", "h1", null, "2026-09-02T10:00:00Z", "You've hit your session limit"),
+      ],
+    });
+    const observed = loadObserved(db);
+    expect(observed.windows).toHaveLength(0);
+    expect(observed.byModel).toHaveLength(0);
+    expect(observed.limitHits.hits).toBe(1);
+    expect(hasNoData(observed)).toBe(false);
+    const text = renderReport({
+      observed,
+      projected: loadProjected(db),
+      timeZone: "UTC",
+      lastIngestAt: null,
+      databasePath: "/d/usage.db",
+      home: "/home/example",
+    });
+    expect(text).not.toContain("Nothing has been recorded yet.");
+    expect(text).toContain(`${LABELS.limitHits}: 1`);
   });
 
   it("prints the full report as soon as either source has a row", () => {
