@@ -83,12 +83,16 @@ if [ -n "$data_dir" ] && [ -L "$data_dir/statusline.spool.jsonl" ]; then
     { printf '%s spool-symlink-refused\n' "$(date +%s)" >>"$data_dir/hook-errors.log"; } 2>/dev/null
   fi
 elif [ -n "$data_dir" ]; then
-  # Build the whole line first so it reaches the spool as one write, which keeps concurrent
-  # sessions from interleaving short lines. Long lines that do interleave are reported by ingest.
+  # Build the whole line first so it reaches the spool as one write: concurrent sessions append
+  # to the same file, and a line written in pieces can interleave with another hook's line (D-069).
   line="{\"captured_at_s\":$(date +%s),\"hook_version\":$HOOK_VERSION,\"payload_b64\":\"$(base64 <"$tmp" | tr -d '\n')\"}"
+  # printf writes a long line in 2048-byte pieces (bash 3.2 as /bin/sh on macOS, observed), and real
+  # lines run 2.5 to 3.5 KB. cat copies a small file with one write, so the line goes into the temp
+  # file first and cat appends it. The temp file is reused: the wrapped command has finished with
+  # the payload and $line holds its base64, so there's no second temp file to create or clean up.
   # The outer 2>/dev/null must wrap the redirections: a failing `>>` reports its error before any
   # redirection written after it takes effect (P0.3a spike). mkdir runs only when the dir is missing.
-  if ! { { [ -d "$data_dir" ] || mkdir -p "$data_dir"; } && printf '%s\n' "$line" >>"$data_dir/statusline.spool.jsonl"; } 2>/dev/null; then
+  if ! { { [ -d "$data_dir" ] || mkdir -p "$data_dir"; } && printf '%s\n' "$line" >"$tmp" && cat "$tmp" >>"$data_dir/statusline.spool.jsonl"; } 2>/dev/null; then
     # Record the failure where the audit can count it. If even this fails, stay silent.
     if [ ! -L "$data_dir/hook-errors.log" ]; then
       { printf '%s append-failed\n' "$(date +%s)" >>"$data_dir/hook-errors.log"; } 2>/dev/null

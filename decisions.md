@@ -1014,3 +1014,20 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Peak and last observed usage can read above 100%**, as recorded. The views needed no change: limit detection already used `>= 100`, and burn rate already skips windows at or over the limit.
   - **A status line hit can start at a reading above 100**, when no reading of exactly 100 was captured. That lockout then merges with the logged hits as D-023 describes, with the payload's exact reset.
   - **Tests:** 101, 105 and 999,999,999 validate; −1 still doesn't. A hand-computed scenario with readings of 80, 100, 103 and 101 gives a peak of 103 and a last reading of 101, and fails under the old rule. Tests that used 101 as their example of an invalid reading now use −1, keeping what they test.
+
+## D-069: The hook appends each spool line with one write (2026-09-24)
+
+- **Status:** accepted. Refines [D-008](decisions.md) and [D-018](decisions.md): same hook, same line format (`hook_version` stays 1), one write per line.
+- **Context:** The hook built the whole line and appended it with `printf '%s\n' "$line" >>spool`, on the premise that one command is one write. It isn't. *Observed 2026-09-24:* after a reset, several sessions resumed at once and their hooks appended together. One line was split exactly 2,048 bytes in, with another hook's complete line between its two pieces. Both readings were lost, and ingest reported them as malformed, as designed. `/bin/sh` on macOS is bash 3.2, whose `printf` wrote in 2,048-byte pieces, and real spool lines are 2.5 to 3.5 KB, so nearly every line was exposed. The skill had accepted interleaving of "long" lines as a limit; in practice every line was long.
+  - **Reproduced:** 20 hooks at once, five rounds, with 3 KB payloads corrupted 4 to 7 lines in every 100. With 12 KB payloads, 4 to 17 lines in every 60.
+- **Options:**
+  - (a) Keep `printf` and accept the loss. Rejected: every concurrent burst risks it, and bursts happen exactly when several sessions resume after a limit.
+  - (b) A lock around the append (`mkdir` as a mutex). Rejected: a hook killed while holding it leaves a stale lock, and stale-lock handling adds waiting and complexity to every turn.
+  - (c) Write the line to a second temp file, then append it with `cat`, which copies a small file in one write. Worked, but a second `mktemp` added about 11 ms per turn at the median.
+  - (d) **Reuse the payload's temp file for the line, then append it with `cat`.** Chosen. Once `$line` holds the base64 and the wrapped command has run, the payload file is no longer needed. One extra process, no second temp file, and no second name in `/tmp`.
+- **Decision:** (d). `printf '%s\n' "$line" >"$tmp" && cat "$tmp" >>spool`, inside the same error handling as before.
+- **Consequences:**
+  - **Measured:** 0 corrupted lines in 900 with payloads of 3 KB, 12 KB and 60 KB (lines up to about 80 KB), against the reproduction above. Cost: about 4 to 8 ms more per turn at the median on the development machine, from the one `cat`.
+  - **A regression test** runs 20 hooks at once, three rounds, with 12 KB payloads, and checks every line decodes to a payload sent. It failed three runs out of three against the old hook, at positions just past multiples of 2,048, and passes on the new one. CI runs it on macOS, Linux, and Windows under Git Bash.
+  - **Installed hooks don't change by themselves.** `init` copies the hook into the data directory ([D-056](decisions.md)), so each machine needs `nilometer init` after updating. `init` reports when it refreshed the copy.
+  - **If a line ever interleaves anyway,** ingest still reports it as malformed and never repairs it.

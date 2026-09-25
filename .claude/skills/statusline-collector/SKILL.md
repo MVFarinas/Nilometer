@@ -42,7 +42,7 @@ What the hook does *not* do: parse `rate_limits`, validate, touch SQLite, use th
 With no `wrapped-command`, the hook prints the payload's `model.display_name`, or nothing. With no temp file available, it `exec`s the wrapped command on stdin and records nothing, because the status bar wins.
 
 - **Spool path:** under the tool's data directory, never inside `~/.claude`.
-- **Writes:** one line per turn, ending in a single `\n`. Under concurrent sessions a long line may interleave; ingest reports it as malformed and never repairs it.
+- **Writes:** one line per turn, ending in a single `\n`, appended with **one write** (D-069): the line goes into the temp file and `cat` appends it, because `printf` writes long lines in 2048-byte pieces that concurrent hooks interleave. If a line ever does interleave, ingest reports it as malformed and never repairs it.
 - **Portability:** only POSIX `sh`, `mktemp`, `cat`, `date +%s`, `base64`, and `tr`. `base64` wraps lines on Linux and not on macOS, so always pipe through `tr -d '\n'`. `shellcheck` runs in the audit.
 - **Windows (D-049):** Git for Windows supplies all of these, and Claude Code runs the command through Git Bash, where `/bin/sh` resolves. Node can't spawn `/bin/sh` there, so tests spawn `sh` from PATH. Single-quoted backslash paths in the command pass through intact. File modes don't exist, so the hook's `umask` has no effect.
 - **Timestamps** are whole seconds (BSD `date` has no sub-second format). Readings within one second are ordered by spool line order.

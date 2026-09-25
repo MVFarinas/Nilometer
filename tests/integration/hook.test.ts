@@ -397,4 +397,32 @@ describe("concurrency", () => {
     const payloads = readSpool(dataDir).map((line) => decode(line).toString());
     expect(payloads.sort()).toEqual(Array.from({ length: 20 }, (_, i) => `{"run":${i}}`).sort());
   });
+
+  // Real spool lines run 2.5 to 3.5 KB, and the shell's printf wrote them in 2048-byte pieces, so
+  // concurrent hooks interleaved them (observed 2026-09-24; D-069). With 12 KB payloads the old
+  // append corrupted 4 to 17 lines of every 60 in this shape; the one-write append, none.
+  it(
+    "keeps long lines whole when 20 hooks append at once, three rounds",
+    { timeout: 120_000 },
+    async () => {
+      const dataDir = makeDataDir("cat >/dev/null");
+      const pad = "x".repeat(12_000);
+      const expected: string[] = [];
+      for (let round = 0; round < 3; round += 1) {
+        const runs = Array.from({ length: 20 }, (_, i) => {
+          const payload = `{"run":"${round}-${i}","pad":"${pad}"}`;
+          expected.push(payload);
+          return new Promise<number | null>((resolve) => {
+            const child = spawn(SH, [HOOK, dataDir]);
+            child.on("close", resolve);
+            child.stdin.end(payload);
+          });
+        });
+        expect(await Promise.all(runs)).toEqual(Array(20).fill(0));
+      }
+      // readSpool parses every line as JSON, so a line interleaved with another fails here.
+      const payloads = readSpool(dataDir).map((line) => decode(line).toString());
+      expect(payloads.sort()).toEqual(expected.sort());
+    },
+  );
 });
