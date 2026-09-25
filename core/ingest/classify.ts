@@ -334,6 +334,57 @@ export function parseLimitText(text: string): LimitText {
   return { window, resetText: reset === "" ? null : reset };
 }
 
+/** The largest `resetsAt` read: 9999-12-31T23:59:59Z, the last second a four-digit year can write. */
+export const MAX_RESETS_AT = 253_402_300_799;
+
+/** Window and reset time read from a limit hit's `quotaLimits` object (D-067). */
+export interface QuotaFields {
+  /** `quotaLimits.rateLimitType` when it's `five_hour` or `seven_day`; null otherwise. */
+  readonly window: "five_hour" | "seven_day" | null;
+  /** `quotaLimits.resetsAt` as ISO-8601 UTC with milliseconds; null when absent or unusable. */
+  readonly resetsAtUtc: string | null;
+  /** Members present but unusable, in fixtures/README.md order: `quotaLimits`, `rateLimitType`, `resetsAt`. */
+  readonly unusable: readonly string[];
+}
+
+/**
+ * Reads the structured window and reset that Claude Code writes on limit hits from 2.1.281 on
+ * (observed 2026-09-24). Older lines have no `quotaLimits`, which is not a problem; a member that
+ * is present but can't be used is listed, so a change of shape is reported rather than guessed at.
+ * @param line - A limit-hit line.
+ * @returns The window, the reset time, and the unusable members.
+ * @example
+ * parseQuotaLimits({ quotaLimits: { rateLimitType: "five_hour", resetsAt: 1788329400 } });
+ * // { window: "five_hour", resetsAtUtc: "2026-09-02T06:10:00.000Z", unusable: [] }
+ */
+export function parseQuotaLimits(line: LogObject): QuotaFields {
+  if (!Object.hasOwn(line, "quotaLimits")) {
+    return { window: null, resetsAtUtc: null, unusable: [] };
+  }
+  const quota = line["quotaLimits"];
+  if (!isObject(quota)) {
+    return { window: null, resetsAtUtc: null, unusable: ["quotaLimits"] };
+  }
+  const unusable: string[] = [];
+  const type = quota["rateLimitType"];
+  // Only the two windows the rest of the tool knows; anything else (a per-model window, say) is
+  // reported, not mapped onto one of them.
+  const window = type === "five_hour" || type === "seven_day" ? type : null;
+  if (Object.hasOwn(quota, "rateLimitType") && window === null) {
+    unusable.push("rateLimitType");
+  }
+  const resetsAt = quota["resetsAt"];
+  // Whole seconds only: the observed values are integers, and a fraction would mean a unit change.
+  const resetsAtUtc =
+    isNumber(resetsAt) && Number.isInteger(resetsAt) && resetsAt > 0 && resetsAt <= MAX_RESETS_AT
+      ? new Date(resetsAt * 1000).toISOString()
+      : null;
+  if (Object.hasOwn(quota, "resetsAt") && resetsAtUtc === null) {
+    unusable.push("resetsAt");
+  }
+  return { window, resetsAtUtc, unusable };
+}
+
 /** Fields of one event line (limit hit, API error, other synthetic line, or retry notice). */
 export interface EventFields {
   /** Top-level `error` when it's a string, else null. */
@@ -344,6 +395,8 @@ export interface EventFields {
   readonly window: LimitText["window"];
   /** Reset text, for limit hits only. */
   readonly resetText: string | null;
+  /** Window, reset, and unusable members from `quotaLimits`, for limit hits only (D-067). */
+  readonly quota: QuotaFields;
   /** Report label for an API error's unrecognized or missing `error`; null otherwise. */
   readonly unknownErrorKey: string | null;
   /** For retry notices: whether `error.rateLimits` is present and not null. */
@@ -373,6 +426,10 @@ export function extractEvent(line: LogObject, lineClass: LineClass): EventFields
     apiErrorStatus: status,
     window: limit.window,
     resetText: limit.resetText,
+    quota:
+      lineClass === "limit_hit"
+        ? parseQuotaLimits(line)
+        : { window: null, resetsAtUtc: null, unusable: [] },
     unknownErrorKey:
       lineClass === "api_error" && error !== "server_error" ? (error ?? MISSING) : null,
     retryRateLimitsPresent:

@@ -69,7 +69,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - (b) Substring match on message text, as Monitor does.
   - (c) The structured `error == "rate_limit"` field as the event, with `used_percentage >= 100` as a second source from `init` on.
 - **Decision:** (c).
-  - **Window type and reset time** (5-hour vs weekly, "resets 6:10am") exist only in the text. They are parsed best-effort. A line whose text doesn't parse still counts as a limit hit, with window and reset recorded as **unknown**.
+  - **Window type and reset time** (5-hour vs weekly, "resets 6:10am") exist only in the text. They are parsed best-effort. A line whose text doesn't parse still counts as a limit hit, with window and reset recorded as **unknown**. **Superseded in part 2026-09-24 ([D-067](decisions.md)):** from Claude Code 2.1.281 on, the line also carries them as structured `quotaLimits` fields, which are preferred; the text parse remains the fallback for older lines.
   - **Other `<synthetic>` lines** are kept as events but aren't API requests. They are excluded from token sums and from the "Claude Code made a request" signal used by unattributed usage.
 - **Consequences:**
   - Rate-limit interruptions, mid-task interruptions, and sessions not resumed can be backfilled from existing logs. Elapsed lockout time is backfillable only where the reset time parsed.
@@ -361,7 +361,11 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 
 ## D-022: Resumption is reported as activity; auto-resume is not inferred (2026-09-13)
 
-- **Status:** accepted, provisional. Revisit at the first limit hit logged after the hook is installed. **Re-inspected 2026-09-18** and unchanged: the only hit on record is still the 2.1.214 one described below, and the source log has since been deleted by Claude Code's 30-day cleanup, so it survives only because ingestion copies raw lines into the database. Inspecting it again needed no file. Structure, for the next reader: `type: "assistant"`, `isApiErrorMessage: true`, `error: "rate_limit"`, no `rate_limits` on the retry; the window reset 2.8 hours after the hit, and the session's next line came about seven hours after that reset, from a `user` line with `origin.kind: "human"` preceded by two `queue-operation` lines (classified `ignored_type`, not reported as unknown).
+- **Status:** accepted, provisional. Revisit at the first limit hit logged after the hook is installed. **Re-inspected 2026-09-18** and unchanged: the only hit on record is still the 2.1.214 one described below, and the source log has since been deleted by Claude Code's 30-day cleanup, so it survives only because ingestion copies raw lines into the database. Inspecting it again needed no file. Structure, for the next reader: `type: "assistant"`, `isApiErrorMessage: true`, `error: "rate_limit"`, no `rate_limits` on the retry; the window reset 2.8 hours after the hit, and the session's next line came about seven hours after that reset, from a `user` line with `origin.kind: "human"` preceded by two `queue-operation` lines (classified `ignored_type`, not reported as unknown). **Re-inspected 2026-09-24, on the first hits after install** (Claude Code 2.1.281). Structure only:
+  - **A marker exists for Claude Code's own resumption.** After the reset it writes a `user` line with `isMeta: true` and `origin.kind: "auto-continuation"`, preceded by a `queue-operation` enqueue and dequeue and a `system` line of subtype `informational`. Seen in every session that resumed, each within two minutes of the reset.
+  - **Work a background workflow restarts carries no marker.** After a reset, new subagent transcripts began within a minute, their first lines shaped exactly like those written before the hit. The transcripts that hit never continued.
+  - **The hit lines carry more than in 2.1.214:** `apiErrorStatus: 429`, and a `quotaLimits` object with `rateLimitType`, `resetsAt`, `status`, `overageStatus`, and `overageDisabledReason`. Its `resetsAt` matched the reset parsed from the message text on every hit. Ingestion doesn't read it yet.
+  - **Not yet acted on, so the metric is unchanged:** the event view takes the next *non-meta* prompt, so it skips the auto-continuation line and reports the next human or task-notification prompt after it. Showing the marker, and reading `quotaLimits`, each need their own ADR.
 - **Context:** Claude Code resumes automatically after a reset since 2.1.234 (README, Auto-resume). The only logged limit hit on disk (2.1.214) predates that, so how an automatic continuation is logged hasn't been observed. The user line after that hit had `origin.kind: "human"`. Step P6.1 asked for this ADR after inspecting a post-install hit; that hit hasn't happened, and waiting would block the metric.
 - **Options:**
   - (a) Wait for a post-install hit before building the metric.
@@ -976,3 +980,22 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Proven against real runtimes, not only in unit tests:** the built command under Node 22.11.0 prints the message and exits 1 where it used to exit 139, and under Node 26.10.0 it prints the warning and runs.
   - **Supporting newer Node.js is still a separate decision.** It would need a CI job per major, which D-057 declined. The warning keeps that honest in the meantime: newer versions are allowed, not claimed.
   - **The status line hook is unaffected.** It is a shell script and never starts Node.js ([D-056](decisions.md)).
+
+## D-067: A limit hit's window and reset come from `quotaLimits` when present; the text is the fallback (2026-09-24)
+
+- **Status:** accepted. Refines [D-004](decisions.md), whose premise that window and reset "exist only in the text" no longer holds for current versions, and keeps [D-023](decisions.md)'s precedence for the status line.
+- **Context:** Re-inspecting [D-022](decisions.md) on the first hits after install (Claude Code 2.1.281) found a structured `quotaLimits` object on every limit-hit line, absent on the 2.1.214 hit D-004 was written from. It holds `rateLimitType` (`"five_hour"` on every hit examined), `resetsAt` (Unix seconds), `status`, `overageStatus`, `overageDisabledReason`, and a few others. The text parse still worked on every one, but it depends on wording, which has already changed across versions, and on a zone name in parentheses.
+- **Options:**
+  - (a) Keep parsing the text only. Rejected: it ignores an exact value in favor of a best-effort one.
+  - (b) Replace the text parse with the fields. Rejected: older lines, including ones still in backfill, have no `quotaLimits`, and would lose a window and reset they have today.
+  - (c) **Read both; prefer the field, fall back to the text, and say which was used.** Chosen.
+  - For a value that is present but unusable (an unknown `rateLimitType`, a non-integer `resetsAt`): (i) map it to the nearest known window, or (ii) **report it and leave the field empty.** (ii), because a window like a per-model weekly limit mapped onto `seven_day` would be a guess shown as an observation.
+- **Decision:** (c) with (ii).
+  - **Storage:** `events` gains `quota_window` and `quota_resets_at_utc` (migration 020). `window`, `reset_text`, and `reset_at_utc` keep meaning "from the text", so nothing already stored changes meaning.
+  - **Precedence is in SQL:** `logged_limit_hits` takes `COALESCE(field, text)` for window and reset, and gains `window_source` and `reset_source` (`log_field` or `log_text`). `obs_limit_hits_events` passes `reset_source` through, and a status line group still wins when one matches, as D-023 set.
+  - **Read only what's recognized:** `rateLimitType` of exactly `five_hour` or `seven_day`; `resetsAt` as whole seconds from 1 to 253402300799.
+  - **Report, don't fix:** line problems `unusable_quota_field` (the member), `quota_window_disagrees`, and `quota_reset_disagrees` (both values; resets under a minute apart agree, because reset text has minute precision). The field still wins where they disagree.
+- **Consequences:**
+  - **Both implementations follow the spec.** fixtures/README.md defines `quota_window`, `quota_resets_at`, `unusable_quota_fields`, and `quota_window_disagreements`. The Python reference and the loader agree on all 19 cases, including case 20, whose seven hits cover agreement, disagreement, unusable members, and absence. The reset disagreement is loader-only, since resolving reset text is (D-023), and is unit-tested instead.
+  - **Real data didn't move.** Re-derived under parser version 5, a real database gave the same hits, the same lockouts with the same spans, and the same window and reset on every hit. Hits written by a version with `quotaLimits` now take them from the fields and older ones from the text, with no disagreements.
+  - **The rest of `quotaLimits` is kept, not read.** It stays in `raw_lines`, so a later decision can use `overageStatus` and the others without re-ingesting.

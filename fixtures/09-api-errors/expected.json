@@ -54,7 +54,9 @@
         "error": "server_error",
         "api_error_status": 529,
         "window": null,
-        "reset_text": null
+        "reset_text": null,
+        "quota_window": null,
+        "quota_resets_at": null
       },
       {
         "class": "api_error",
@@ -65,7 +67,9 @@
         "error": "billing_error",
         "api_error_status": 402,
         "window": null,
-        "reset_text": null
+        "reset_text": null,
+        "quota_window": null,
+        "quota_resets_at": null
       },
       {
         "class": "api_error",
@@ -76,7 +80,9 @@
         "error": null,
         "api_error_status": null,
         "window": null,
-        "reset_text": null
+        "reset_text": null,
+        "quota_window": null,
+        "quota_resets_at": null
       },
       {
         "class": "synthetic_other",
@@ -87,7 +93,9 @@
         "error": null,
         "api_error_status": null,
         "window": null,
-        "reset_text": null
+        "reset_text": null,
+        "quota_window": null,
+        "quota_resets_at": null
       }
     ],
     "report": {
@@ -110,7 +118,9 @@
       "missing_fields": [],
       "unparsed_timestamps": [],
       "non_message_iterations": [],
-      "retry_rate_limits_present": 0
+      "retry_rate_limits_present": 0,
+      "unusable_quota_fields": [],
+      "quota_window_disagreements": []
     }
   }
 }

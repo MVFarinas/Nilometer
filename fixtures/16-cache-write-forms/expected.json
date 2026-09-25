@@ -80,7 +80,9 @@
       "missing_fields": [],
       "unparsed_timestamps": [],
       "non_message_iterations": [],
-      "retry_rate_limits_present": 0
+      "retry_rate_limits_present": 0,
+      "unusable_quota_fields": [],
+      "quota_window_disagreements": []
     }
   }
 }

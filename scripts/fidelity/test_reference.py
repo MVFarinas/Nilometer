@@ -770,6 +770,51 @@ class LimitTextTests(unittest.TestCase):
         self.assertEqual(reference.parse_limit_text("session limit resets"), ("five_hour", None))
 
 
+class QuotaLimitsTests(unittest.TestCase):
+    """parse_quota_limits reads the structured window and reset (D-067)."""
+
+    def test_recognized_values(self) -> None:
+        """A known window and a whole-second reset are read; 1788329400 is 2026-09-02 06:10 UTC."""
+        obj = {"quotaLimits": {"rateLimitType": "five_hour", "resetsAt": 1788329400}}
+        self.assertEqual(reference.parse_quota_limits(obj),
+                         ("five_hour", "2026-09-02T06:10:00.000Z", []))
+
+    def test_absent_is_not_a_problem(self) -> None:
+        """No quotaLimits, or an empty one, reads nothing and reports nothing."""
+        self.assertEqual(reference.parse_quota_limits({}), (None, None, []))
+        self.assertEqual(reference.parse_quota_limits({"quotaLimits": {}}), (None, None, []))
+
+    def test_not_an_object(self) -> None:
+        """quotaLimits present but not an object is reported as quotaLimits."""
+        for value in (None, "five_hour", 5, [], True):
+            with self.subTest(value=value):
+                self.assertEqual(reference.parse_quota_limits({"quotaLimits": value}),
+                                 (None, None, ["quotaLimits"]))
+
+    def test_unrecognized_window(self) -> None:
+        """Only the two windows are read; anything else present is reported."""
+        for value in ("seven_day_opus", "FIVE_HOUR", "", None, 5):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    reference.parse_quota_limits({"quotaLimits": {"rateLimitType": value}}),
+                    (None, None, ["rateLimitType"]))
+
+    def test_reset_bounds(self) -> None:
+        """resetsAt is read as whole seconds from 1 to 253402300799, including 5.0; else reported."""
+        read = lambda v: reference.parse_quota_limits({"quotaLimits": {"resetsAt": v}})  # noqa: E731
+        self.assertEqual(read(1)[1], "1970-01-01T00:00:01.000Z")
+        self.assertEqual(read(253402300799)[1], "9999-12-31T23:59:59.000Z")
+        self.assertEqual(read(5.0)[1], "1970-01-01T00:00:05.000Z")
+        for value in (0, -1, 1.5, 253402300800, "1788329400", True, None):
+            with self.subTest(value=value):
+                self.assertEqual(read(value), (None, None, ["resetsAt"]))
+
+    def test_both_unusable_in_order(self) -> None:
+        """When both members are unusable, rateLimitType is listed before resetsAt."""
+        obj = {"quotaLimits": {"resetsAt": "soon", "rateLimitType": "seven_day_opus"}}
+        self.assertEqual(reference.parse_quota_limits(obj), (None, None, ["rateLimitType", "resetsAt"]))
+
+
 class EventTests(CaseTestCase):
     """Event field mapping for each event class."""
 
@@ -779,7 +824,8 @@ class EventTests(CaseTestCase):
         self.assertEqual(result["events"], [{
             "class": "limit_hit", "session_id": "s1", "timestamp": "2026-09-01T11:00:00.000Z",
             "file": FILE, "line": 1, "error": "rate_limit", "api_error_status": 429,
-            "window": "five_hour", "reset_text": "6:10am (UTC)"}])
+            "window": "five_hour", "reset_text": "6:10am (UTC)",
+            "quota_window": None, "quota_resets_at": None}])
         self.assertEqual(result["requests"], [])
         self.assertEqual(result["totals_by_model"], {})
 
@@ -816,7 +862,8 @@ class EventTests(CaseTestCase):
         self.assertEqual(event, {
             "class": "retry_notice", "session_id": "s1", "timestamp": "2026-09-01T12:00:00.000Z",
             "file": FILE, "line": 1, "error": None, "api_error_status": 429,
-            "window": None, "reset_text": None})
+            "window": None, "reset_text": None,
+            "quota_window": None, "quota_resets_at": None})
 
     def test_retry_notice_non_number_status(self) -> None:
         """A missing, string, or boolean error.status gives a null status."""
@@ -880,7 +927,8 @@ class ReportTests(CaseTestCase):
                       "request": 1, "retry_notice": 0, "ignored_type": 0},
             "malformed": [], "ignored_types": {}, "unkeyed_requests": 0,
             "unknown_error_values": {}, "missing_fields": [], "unparsed_timestamps": [],
-            "non_message_iterations": [], "retry_rate_limits_present": 0})
+            "non_message_iterations": [], "retry_rate_limits_present": 0,
+            "unusable_quota_fields": [], "quota_window_disagreements": []})
 
     def test_lines_count_every_class(self) -> None:
         """lines counts complete lines per class, requests before dedup."""
@@ -1020,7 +1068,8 @@ class OutputTests(CaseTestCase):
         self.assertEqual(list(result["report"]), [
             "lines", "malformed", "ignored_types", "unkeyed_requests", "unknown_error_values",
             "missing_fields", "unparsed_timestamps", "non_message_iterations",
-            "retry_rate_limits_present"])
+            "retry_rate_limits_present", "unusable_quota_fields",
+            "quota_window_disagreements"])
 
     def test_single_state_key_is_final(self) -> None:
         """A case without run directories is keyed final."""

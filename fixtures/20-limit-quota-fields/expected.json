@@ -1,0 +1,149 @@
+{
+  "final": {
+    "requests": [],
+    "totals_by_model": {},
+    "totals_by_day_utc": {},
+    "events": [
+      {
+        "class": "limit_hit",
+        "session_id": "s20",
+        "timestamp": "2026-09-01T10:00:05.000Z",
+        "file": "projects/-fixture-demo/s20.jsonl",
+        "line": 2,
+        "error": "rate_limit",
+        "api_error_status": 429,
+        "window": "five_hour",
+        "reset_text": "6:10am (UTC)",
+        "quota_window": "five_hour",
+        "quota_resets_at": "2026-09-02T06:10:00.000Z"
+      },
+      {
+        "class": "limit_hit",
+        "session_id": "s20",
+        "timestamp": "2026-09-01T11:00:00.000Z",
+        "file": "projects/-fixture-demo/s20.jsonl",
+        "line": 3,
+        "error": "rate_limit",
+        "api_error_status": 429,
+        "window": "seven_day",
+        "reset_text": "Sep 5, 9am (UTC)",
+        "quota_window": "five_hour",
+        "quota_resets_at": "2026-09-05T09:00:00.000Z"
+      },
+      {
+        "class": "limit_hit",
+        "session_id": "s20",
+        "timestamp": "2026-09-01T12:00:00.000Z",
+        "file": "projects/-fixture-demo/s20.jsonl",
+        "line": 4,
+        "error": "rate_limit",
+        "api_error_status": 429,
+        "window": null,
+        "reset_text": null,
+        "quota_window": null,
+        "quota_resets_at": null
+      },
+      {
+        "class": "limit_hit",
+        "session_id": "s20",
+        "timestamp": "2026-09-01T13:00:00.000Z",
+        "file": "projects/-fixture-demo/s20.jsonl",
+        "line": 5,
+        "error": "rate_limit",
+        "api_error_status": 429,
+        "window": "five_hour",
+        "reset_text": "6:10am (UTC)",
+        "quota_window": "five_hour",
+        "quota_resets_at": "2026-09-05T09:00:00.000Z"
+      },
+      {
+        "class": "limit_hit",
+        "session_id": "s20",
+        "timestamp": "2026-09-01T14:00:00.000Z",
+        "file": "projects/-fixture-demo/s20.jsonl",
+        "line": 6,
+        "error": "rate_limit",
+        "api_error_status": 429,
+        "window": "five_hour",
+        "reset_text": "2am",
+        "quota_window": null,
+        "quota_resets_at": null
+      },
+      {
+        "class": "limit_hit",
+        "session_id": "s20",
+        "timestamp": "2026-09-01T15:00:00.000Z",
+        "file": "projects/-fixture-demo/s20.jsonl",
+        "line": 7,
+        "error": "rate_limit",
+        "api_error_status": 429,
+        "window": "five_hour",
+        "reset_text": "6:10am (UTC)",
+        "quota_window": null,
+        "quota_resets_at": null
+      },
+      {
+        "class": "limit_hit",
+        "session_id": "s20",
+        "timestamp": "2026-09-01T16:00:00.000Z",
+        "file": "projects/-fixture-demo/s20.jsonl",
+        "line": 8,
+        "error": "rate_limit",
+        "api_error_status": 429,
+        "window": null,
+        "reset_text": null,
+        "quota_window": "seven_day",
+        "quota_resets_at": null
+      }
+    ],
+    "report": {
+      "lines": {
+        "malformed": 0,
+        "limit_hit": 7,
+        "api_error": 0,
+        "synthetic_other": 0,
+        "request": 0,
+        "retry_notice": 0,
+        "ignored_type": 1
+      },
+      "malformed": [],
+      "ignored_types": {
+        "user": 1
+      },
+      "unkeyed_requests": 0,
+      "unknown_error_values": {},
+      "missing_fields": [],
+      "unparsed_timestamps": [],
+      "non_message_iterations": [],
+      "retry_rate_limits_present": 0,
+      "unusable_quota_fields": [
+        {
+          "file": "projects/-fixture-demo/s20.jsonl",
+          "line": 4,
+          "field": "rateLimitType"
+        },
+        {
+          "file": "projects/-fixture-demo/s20.jsonl",
+          "line": 4,
+          "field": "resetsAt"
+        },
+        {
+          "file": "projects/-fixture-demo/s20.jsonl",
+          "line": 6,
+          "field": "quotaLimits"
+        },
+        {
+          "file": "projects/-fixture-demo/s20.jsonl",
+          "line": 8,
+          "field": "resetsAt"
+        }
+      ],
+      "quota_window_disagreements": [
+        {
+          "file": "projects/-fixture-demo/s20.jsonl",
+          "line": 3
+        }
+      ]
+    }
+  }
+}

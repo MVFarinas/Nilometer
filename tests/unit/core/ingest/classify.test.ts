@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   LINE_CLASSES,
   type LogObject,
+  MAX_RESETS_AT,
   MISSING,
   classifyLine,
   dedupKey,
@@ -22,6 +23,7 @@ import {
   objectField,
   parseLimitText,
   parseLine,
+  parseQuotaLimits,
   parseTimestamp,
 } from "../../../../core/ingest/classify.js";
 
@@ -371,6 +373,82 @@ describe("messageText", () => {
 // a RECORD of what it sends, not test data to tidy: the parser matches on "limit" and "resets" and
 // ignores the separator, so editing them leaves every test passing while they describe a message
 // nothing sends. A blanket find-and-replace did exactly that once, and only the diff caught it.
+describe("parseQuotaLimits (D-067)", () => {
+  // 1788329400 is 2026-09-02T06:10:00Z, worked out by hand: 20,698 days after 1970-01-01, plus 6h10m.
+  it("reads a recognized window and a whole-second reset", () => {
+    expect(
+      parseQuotaLimits({
+        quotaLimits: { status: "rejected", rateLimitType: "five_hour", resetsAt: 1788329400 },
+      }),
+    ).toEqual({ window: "five_hour", resetsAtUtc: "2026-09-02T06:10:00.000Z", unusable: [] });
+    expect(parseQuotaLimits({ quotaLimits: { rateLimitType: "seven_day" } })).toEqual({
+      window: "seven_day",
+      resetsAtUtc: null,
+      unusable: [],
+    });
+  });
+
+  it("reports nothing when quotaLimits or a member is absent, as in older versions", () => {
+    const none = { window: null, resetsAtUtc: null, unusable: [] };
+    expect(parseQuotaLimits({ error: "rate_limit" })).toEqual(none);
+    expect(parseQuotaLimits({ quotaLimits: {} })).toEqual(none);
+  });
+
+  it("reports quotaLimits itself when it's present but not an object", () => {
+    for (const value of [null, "five_hour", 5, [], true]) {
+      expect(parseQuotaLimits({ quotaLimits: value })).toEqual({
+        window: null,
+        resetsAtUtc: null,
+        unusable: ["quotaLimits"],
+      });
+    }
+  });
+
+  it("reports a window it doesn't recognize instead of mapping it onto one it does", () => {
+    for (const value of ["seven_day_opus", "FIVE_HOUR", "", null, 5]) {
+      expect(parseQuotaLimits({ quotaLimits: { rateLimitType: value } })).toEqual({
+        window: null,
+        resetsAtUtc: null,
+        unusable: ["rateLimitType"],
+      });
+    }
+  });
+
+  it("accepts resetsAt only as a whole number of seconds from 1 to the year 9999", () => {
+    /**
+     * Reads one resetsAt value.
+     * @param value - The resetsAt member.
+     * @returns The reset time read from it, or null.
+     */
+    const reset = (value: unknown): string | null =>
+      parseQuotaLimits({ quotaLimits: { resetsAt: value } }).resetsAtUtc;
+    expect(reset(1)).toBe("1970-01-01T00:00:01.000Z");
+    expect(reset(MAX_RESETS_AT)).toBe("9999-12-31T23:59:59.000Z");
+    for (const bad of [0, -1, 1.5, MAX_RESETS_AT + 1, "1788329400", true, null]) {
+      expect(parseQuotaLimits({ quotaLimits: { resetsAt: bad } })).toEqual({
+        window: null,
+        resetsAtUtc: null,
+        unusable: ["resetsAt"],
+      });
+    }
+  });
+
+  it("lists both members, window first, when neither can be used", () => {
+    expect(
+      parseQuotaLimits({ quotaLimits: { resetsAt: "soon", rateLimitType: "seven_day_opus" } }),
+    ).toEqual({ window: null, resetsAtUtc: null, unusable: ["rateLimitType", "resetsAt"] });
+  });
+
+  it("reads quotaLimits only on limit hits", () => {
+    const line = { error: "server_error", quotaLimits: { rateLimitType: "five_hour" } };
+    expect(extractEvent(line, "api_error").quota).toEqual({
+      window: null,
+      resetsAtUtc: null,
+      unusable: [],
+    });
+  });
+});
+
 describe("parseLimitText", () => {
   it.each([
     [
@@ -415,6 +493,8 @@ describe("extractEvent", () => {
       apiErrorStatus: 429,
       window: "five_hour",
       resetText: "6:10am (UTC)",
+      // No quotaLimits on this line, as on Claude Code 2.1.214: nothing read, nothing reported.
+      quota: { window: null, resetsAtUtc: null, unusable: [] },
       unknownErrorKey: null,
       retryRateLimitsPresent: false,
     });

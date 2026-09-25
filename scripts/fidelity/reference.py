@@ -679,6 +679,54 @@ def parse_limit_text(text: str) -> tuple[str | None, str | None]:
     return window, reset_text
 
 
+# The largest resetsAt the README accepts: 9999-12-31T23:59:59Z, the last second
+# a four-digit year can write.
+MAX_RESETS_AT = 253402300799
+
+
+def parse_quota_limits(obj: dict[str, Any]) -> tuple[str | None, str | None, list[str]]:
+    """Read the structured window and reset of a limit-hit line (D-067).
+
+    Args:
+        obj: The parsed limit-hit line.
+
+    Returns:
+        ``(quota_window, quota_resets_at, unusable)``. ``quota_window`` is
+        ``quotaLimits.rateLimitType`` when it is exactly ``five_hour`` or
+        ``seven_day``. ``quota_resets_at`` is ``quotaLimits.resetsAt`` read as
+        Unix seconds and written ``YYYY-MM-DDTHH:MM:SS.000Z``, when it is a
+        whole JSON number in ``1..MAX_RESETS_AT``. ``unusable`` names each
+        member that is present but gave nothing, in README order.
+    """
+    if "quotaLimits" not in obj:
+        # Older versions don't write it at all; that is not a problem.
+        return None, None, []
+    quota = obj["quotaLimits"]
+    if not isinstance(quota, dict):
+        return None, None, ["quotaLimits"]
+
+    unusable: list[str] = []
+    rate_type = quota.get("rateLimitType")
+    quota_window = rate_type if rate_type in ("five_hour", "seven_day") else None
+    if "rateLimitType" in quota and quota_window is None:
+        unusable.append("rateLimitType")
+
+    resets_at = quota.get("resetsAt")
+    quota_resets_at = None
+    # float.is_integer covers 5.0; bool is excluded by is_number, as JSON has no
+    # boolean numbers.
+    if (
+        is_number(resets_at)
+        and float(resets_at).is_integer()
+        and 0 < resets_at <= MAX_RESETS_AT
+    ):
+        moment = datetime.fromtimestamp(int(resets_at), tz=timezone.utc)
+        quota_resets_at = moment.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    if "resetsAt" in quota and quota_resets_at is None:
+        unusable.append("resetsAt")
+    return quota_window, quota_resets_at, unusable
+
+
 def build_event(line: LogLine) -> dict[str, Any]:
     """Build the event record for a line of an event class.
 
@@ -687,7 +735,8 @@ def build_event(line: LogLine) -> dict[str, Any]:
 
     Returns:
         The event with ``class``, ``session_id``, ``timestamp``, ``file``,
-        ``line``, ``error``, ``api_error_status``, ``window``, ``reset_text``.
+        ``line``, ``error``, ``api_error_status``, ``window``, ``reset_text``,
+        ``quota_window``, ``quota_resets_at``.
     """
     obj = line.obj or {}
     error = obj.get("error")
@@ -706,8 +755,10 @@ def build_event(line: LogLine) -> dict[str, Any]:
 
     if line.cls == "limit_hit":
         window, reset_text = parse_limit_text(message_text(obj))
+        quota_window, quota_resets_at, _ = parse_quota_limits(obj)
     else:
         window, reset_text = None, None
+        quota_window, quota_resets_at = None, None
 
     return {
         "class": line.cls,
@@ -720,6 +771,8 @@ def build_event(line: LogLine) -> dict[str, Any]:
         "api_error_status": api_error_status,
         "window": window,
         "reset_text": reset_text,
+        "quota_window": quota_window,
+        "quota_resets_at": quota_resets_at,
     }
 
 
@@ -816,6 +869,8 @@ def build_result(lines: list[LogLine]) -> dict[str, Any]:
     unparsed_timestamps: list[dict[str, Any]] = []
     non_message_iterations: list[dict[str, Any]] = []
     retry_rate_limits = 0
+    unusable_quota_fields: list[dict[str, Any]] = []
+    quota_window_disagreements: list[dict[str, Any]] = []
     unkeyed = 0
     request_lines: list[tuple[dict[str, Any], LogLine]] = []
     events: list[dict[str, Any]] = []
@@ -846,6 +901,14 @@ def build_result(lines: list[LogLine]) -> dict[str, Any]:
 
         if line.cls in EVENT_CLASSES:
             events.append(build_event(line))
+        if line.cls == "limit_hit":
+            obj = line.obj or {}
+            quota_window, _, unusable = parse_quota_limits(obj)
+            for field in unusable:
+                unusable_quota_fields.append({**where, "field": field})
+            window, _ = parse_limit_text(message_text(obj))
+            if quota_window is not None and window is not None and quota_window != window:
+                quota_window_disagreements.append(dict(where))
         if line.cls == "api_error":
             error_key = unknown_error_key(line.obj)
             if error_key is not None:
@@ -870,6 +933,8 @@ def build_result(lines: list[LogLine]) -> dict[str, Any]:
             "unparsed_timestamps": unparsed_timestamps,
             "non_message_iterations": non_message_iterations,
             "retry_rate_limits_present": retry_rate_limits,
+            "unusable_quota_fields": unusable_quota_fields,
+            "quota_window_disagreements": quota_window_disagreements,
         },
     }
 

@@ -92,6 +92,7 @@ A view over `request` rows, never an insert-time rule:
 - **An unparsed window or reset** is stored as NULL and labeled unknown. The event still counts.
 - **Wording already differs across versions** ("5-hour limit reached" vs "You've hit your session limit · resets 6:10am (<tz>)"). Classify only on the structured `error` field; the text is for window and reset parsing only.
 - **Reset time (D-023):** `events.reset_at_utc` resolves a `H[:MM]am|pm (<IANA zone>)` reset text against the hit's own timestamp (`core/ingest/reset-time.ts`). Any other wording stays NULL until its shape has been observed.
+- **Structured fields first (D-067):** from Claude Code 2.1.281, a limit hit carries `quotaLimits.rateLimitType` and `quotaLimits.resetsAt`. They go to `events.quota_window` and `events.quota_resets_at_utc`; `logged_limit_hits` prefers them over the text and labels each value `log_field` or `log_text`. An unrecognized value is reported as `unusable_quota_field`, never mapped to a known window, and a field that disagrees with the text is reported (`quota_window_disagrees`, `quota_reset_disagrees`) while the field still wins.
 - **Mid-task vs turn boundary (D-021):** decided by the hit's parent (`parentUuid` in the same session), not by line order. A parent tool result means mid-task, a non-meta prompt means turn start, and anything else is unknown. `parsed_lines` keeps `uuid`, `parent_uuid`, `origin_kind`, `user_content`, and `is_meta` for this. They aren't part of `expected.json`.
 - **Resumption (D-022):** the next request in the session, plus the next prompt's `origin.kind` as written. Nothing is labeled automatic until a post-install hit shows how auto-resume is logged.
 
@@ -125,3 +126,4 @@ Synthetic only, never copied from real logs (they contain prompts and paths). Ea
 13. The same logs ingested twice → a byte-identical fingerprint of every derived table.
 14. A worktree `cwd` and the main-clone `cwd` of one repo → one repository.
 15. A `system`/`api_error` retry notice with `error.status` 429 → one retry_notice event, zero limit hits (D-019).
+16. Limit hits with `quotaLimits` agreeing with the text, disagreeing with it, unusable, `null`, and absent → the field where recognized, the text otherwise, each problem reported (D-067; fixture case 20).

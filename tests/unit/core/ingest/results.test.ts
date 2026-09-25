@@ -134,6 +134,8 @@ describe("readResult", () => {
         unparsed_timestamps: [],
         non_message_iterations: [],
         retry_rate_limits_present: 0,
+        unusable_quota_fields: [],
+        quota_window_disagreements: [],
       },
     });
   });
@@ -169,5 +171,18 @@ describe("readReport", () => {
     expect(report.non_message_iterations).toEqual([
       { file: "projects/-fixture-demo/s17.jsonl", line: 3, type: "advisor" },
     ]);
+  });
+
+  it("maps quotaLimits problems to their documented fields, leaving the reset check out (D-067)", () => {
+    const file = "projects/-fixture-demo/s20.jsonl";
+    const report = readReport(ingestCase("20-limit-quota-fields"));
+    expect(report.unusable_quota_fields).toEqual([
+      { file, line: 4, field: "rateLimitType" },
+      { file, line: 4, field: "resetsAt" },
+      { file, line: 6, field: "quotaLimits" },
+      { file, line: 8, field: "resetsAt" },
+    ]);
+    // Line 5's reset disagreement is a loader-only line problem, not part of the fixture report.
+    expect(report.quota_window_disagreements).toEqual([{ file, line: 3 }]);
   });
 });

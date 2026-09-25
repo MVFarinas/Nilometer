@@ -26,7 +26,7 @@ import { deriveNewSpoolLines } from "./spool.js";
  * Version of the derivation rules. Bump it whenever classify.ts or this file changes what a raw line
  * derives to; the next open rebuilds every derived row.
  */
-export const PARSER_VERSION = "4";
+export const PARSER_VERSION = "5";
 
 /** Everything one raw line derives to. */
 export interface DerivedLine {
@@ -127,6 +127,11 @@ export function deriveLine(bytes: Buffer): DerivedLine {
     }
   }
   const event = EVENT_CLASSES.has(lineClass) ? extractEvent(line, lineClass) : null;
+  // Only limit hits carry reset text, so every other event resolves to null here.
+  const textResetAtUtc = resolveResetTime(event?.resetText ?? null, timestamp?.utc ?? null);
+  if (event !== null) {
+    problems.push(...quotaProblems(event, textResetAtUtc));
+  }
   return {
     parsed: {
       lineClass,
@@ -143,10 +148,41 @@ export function deriveLine(bytes: Buffer): DerivedLine {
     links: extractLinks(line),
     request,
     event,
-    // Only limit hits carry reset text, so every other event resolves to null here.
-    resetAtUtc: resolveResetTime(event?.resetText ?? null, timestamp?.utc ?? null),
+    resetAtUtc: textResetAtUtc,
     problems,
   };
+}
+
+/**
+ * Lists what's wrong with a limit hit's `quotaLimits` (D-067): unusable members, and a window or
+ * reset that disagrees with the message text. Nothing is corrected here; the views prefer the
+ * structured fields, and these problems say where the two sources differed.
+ * @param event - The line's event fields.
+ * @param textResetAtUtc - The reset text resolved against the hit's timestamp, or null.
+ * @returns `[problem, detail]` pairs; empty for lines that aren't limit hits.
+ */
+export function quotaProblems(
+  event: EventFields,
+  textResetAtUtc: string | null,
+): [string, string][] {
+  const problems: [string, string][] = event.quota.unusable.map((field) => [
+    "unusable_quota_field",
+    field,
+  ]);
+  const quotaWindow = event.quota.window;
+  if (quotaWindow !== null && event.window !== null && quotaWindow !== event.window) {
+    problems.push(["quota_window_disagrees", `quotaLimits=${quotaWindow} text=${event.window}`]);
+  }
+  const quotaReset = event.quota.resetsAtUtc;
+  // Reset text has minute precision, so only a gap of a minute or more is a disagreement.
+  if (
+    quotaReset !== null &&
+    textResetAtUtc !== null &&
+    Math.abs(Date.parse(quotaReset) - Date.parse(textResetAtUtc)) >= 60_000
+  ) {
+    problems.push(["quota_reset_disagrees", `quotaLimits=${quotaReset} text=${textResetAtUtc}`]);
+  }
+  return problems;
 }
 
 /**
@@ -171,7 +207,7 @@ export function deriveNewLines(db: Db): number {
     "INSERT INTO requests (raw_line_id, dedup_key, message_id, request_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens, cache_write_unsplit_tokens, speed, service_tier, inference_geo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const insertEvent = db.prepare(
-    "INSERT INTO events (raw_line_id, class, error, api_error_status, window, reset_text, unknown_error_key, retry_rate_limits_present, reset_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO events (raw_line_id, class, error, api_error_status, window, reset_text, unknown_error_key, retry_rate_limits_present, reset_at_utc, quota_window, quota_resets_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const insertProblem = db.prepare(
     "INSERT INTO line_problems (raw_line_id, problem, detail) VALUES (?, ?, ?)",
@@ -229,6 +265,8 @@ export function deriveNewLines(db: Db): number {
           e.unknownErrorKey,
           e.retryRateLimitsPresent ? 1 : 0,
           derived.resetAtUtc,
+          e.quota.window,
+          e.quota.resetsAtUtc,
         );
       }
       for (const [problem, detail] of derived.problems) {

@@ -87,6 +87,10 @@ Classes 2, 3, 4, and 6 each produce one event per line, with no dedup. Fields:
 
 The text is: the concatenation of every string `message.content[].text` when `content` is a list; `content` itself when it's a string; otherwise empty.
 
+- **`quota_window` and `quota_resets_at`:** present on every event, null except on `limit_hit` lines whose `quotaLimits` is an object. Claude Code writes that object on limit hits from some version after 2.1.214 (observed on 2.1.281, D-067); older lines have none.
+  - **`quota_window`:** `quotaLimits.rateLimitType` when it is exactly `"five_hour"` or `"seven_day"`; else `null`.
+  - **`quota_resets_at`:** `quotaLimits.resetsAt` when it is a JSON number (not a boolean) that is whole, greater than 0, and at most `253402300799` (9999-12-31T23:59:59Z), read as seconds since the Unix epoch and written `YYYY-MM-DDTHH:MM:SS.000Z` in UTC; else `null`.
+
 ### Report
 
 - **`lines`:** count of distinct complete lines per class (after line identity, so a repeated line counts once).
@@ -98,6 +102,8 @@ The text is: the concatenation of every string `message.content[].text` when `co
 - **`unparsed_timestamps`:** `[{file, line, raw}]`
 - **`non_message_iterations`:** `[{file, line, type}]` for `usage.iterations[]` entries whose `type` isn't `"message"`.
 - **`retry_rate_limits_present`:** number of `retry_notice` lines where `error.rateLimits` is present and not null (`{}` counts; an absent member doesn't).
+- **`unusable_quota_fields`:** `[{file, line, field}]` for `limit_hit` lines only. `field` is `"quotaLimits"` when that member is present but not an object. When it is an object, `field` is `"rateLimitType"` when that member is present (even as `null`) and `quota_window` came out `null`, then `"resetsAt"` when that member is present and `quota_resets_at` came out `null`, in that order within a line. An absent member is not reported: older versions don't write it.
+- **`quota_window_disagreements`:** `[{file, line}]` for `limit_hit` lines where `quota_window` and `window` are both non-null and differ.
 
 ## `expected.json` shape
 
@@ -141,7 +147,9 @@ The text is: the concatenation of every string `message.content[].text` when `co
       "missing_fields": [],
       "unparsed_timestamps": [],
       "non_message_iterations": [],
-      "retry_rate_limits_present": 0
+      "retry_rate_limits_present": 0,
+      "unusable_quota_fields": [],
+      "quota_window_disagreements": []
     }
   }
 }

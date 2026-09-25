@@ -57,6 +57,8 @@ export interface EventResult {
   readonly api_error_status: number | null;
   readonly window: string | null;
   readonly reset_text: string | null;
+  readonly quota_window: string | null;
+  readonly quota_resets_at: string | null;
 }
 
 /** The report section. */
@@ -70,6 +72,8 @@ export interface ReportResult {
   readonly unparsed_timestamps: { file: string; line: number; raw: unknown }[];
   readonly non_message_iterations: { file: string; line: number; type: string }[];
   readonly retry_rate_limits_present: number;
+  readonly unusable_quota_fields: { file: string; line: number; field: string }[];
+  readonly quota_window_disagreements: { file: string; line: number }[];
 }
 
 /** A complete result in the fixture shape. */
@@ -189,7 +193,8 @@ export function readResult(db: Db): IngestResult {
     db
       .prepare(
         `SELECT x.class, p.session_id, p.timestamp_raw, f.relative_path, l.line_number,
-                x.error, x.api_error_status, x.window, x.reset_text
+                x.error, x.api_error_status, x.window, x.reset_text,
+                x.quota_window, x.quota_resets_at_utc
          FROM events x JOIN parsed_lines p ON p.raw_line_id = x.raw_line_id ${POSITION_JOIN}
          ${CANONICAL_ORDER}`,
       )
@@ -203,6 +208,8 @@ export function readResult(db: Db): IngestResult {
       api_error_status: number | null;
       window: string | null;
       reset_text: string | null;
+      quota_window: string | null;
+      quota_resets_at_utc: string | null;
     }[]
   ).map((row): EventResult => ({
     class: row.class,
@@ -214,6 +221,8 @@ export function readResult(db: Db): IngestResult {
     api_error_status: row.api_error_status,
     window: row.window,
     reset_text: row.reset_text,
+    quota_window: row.quota_window,
+    quota_resets_at: row.quota_resets_at_utc,
   }));
 
   return {
@@ -308,5 +317,15 @@ export function readReport(db: Db): ReportResult {
       type: detail,
     })),
     retry_rate_limits_present: counts.retry_rate_limits,
+    unusable_quota_fields: problems("unusable_quota_field").map(({ file, line, detail }) => ({
+      file,
+      line,
+      field: detail,
+    })),
+    // The detail holds both windows for the database's own report; the fixture shape is the line.
+    quota_window_disagreements: problems("quota_window_disagrees").map(({ file, line }) => ({
+      file,
+      line,
+    })),
   };
 }

@@ -54,7 +54,9 @@
         "error": "rate_limit",
         "api_error_status": 429,
         "window": "five_hour",
-        "reset_text": "6:10am (UTC)"
+        "reset_text": "6:10am (UTC)",
+        "quota_window": null,
+        "quota_resets_at": null
       },
       {
         "class": "limit_hit",
@@ -65,7 +67,9 @@
         "error": "rate_limit",
         "api_error_status": 429,
         "window": "seven_day",
-        "reset_text": "Sep 5, 9am (UTC)"
+        "reset_text": "Sep 5, 9am (UTC)",
+        "quota_window": null,
+        "quota_resets_at": null
       },
       {
         "class": "limit_hit",
@@ -76,7 +80,9 @@
         "error": "rate_limit",
         "api_error_status": 429,
         "window": "five_hour",
-        "reset_text": "2am"
+        "reset_text": "2am",
+        "quota_window": null,
+        "quota_resets_at": null
       },
       {
         "class": "limit_hit",
@@ -87,7 +93,9 @@
         "error": "rate_limit",
         "api_error_status": 429,
         "window": null,
-        "reset_text": null
+        "reset_text": null,
+        "quota_window": null,
+        "quota_resets_at": null
       }
     ],
     "report": {
@@ -109,7 +117,9 @@
       "missing_fields": [],
       "unparsed_timestamps": [],
       "non_message_iterations": [],
-      "retry_rate_limits_present": 0
+      "retry_rate_limits_present": 0,
+      "unusable_quota_fields": [],
+      "quota_window_disagreements": []
     }
   }
 }

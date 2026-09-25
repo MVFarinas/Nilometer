@@ -180,6 +180,8 @@ export interface SyntheticSpec extends LineBase {
   readonly messageId?: string;
   /** `requestId`; omitted when undefined. */
   readonly requestId?: string;
+  /** `quotaLimits`, written as given (null included); omitted when undefined, as before 2.1.281. */
+  readonly quotaLimits?: unknown;
 }
 
 /**
@@ -205,6 +207,8 @@ export function syntheticLine(spec: SyntheticSpec): Record<string, unknown> {
   if (spec.error !== undefined) line["error"] = spec.error;
   if (spec.status !== undefined) line["apiErrorStatus"] = spec.status;
   if (spec.apiError !== undefined) line["isApiErrorMessage"] = spec.apiError;
+  // Present on limit hits from Claude Code 2.1.281 on (D-067); absent before, so undefined omits it.
+  if (spec.quotaLimits !== undefined) line["quotaLimits"] = spec.quotaLimits;
   return line;
 }
 
@@ -559,6 +563,23 @@ export function buildCases(): FixtureCase[] {
           assistantLine({ session: "s19", uuid: "u19-a-1", ts: "2026-09-01T23:59:57.000Z", messageId: "msg_19a", requestId: "req_19a", usage: { input: 2, output: 30, cacheRead: 0 } }),
           assistantLine({ session: "s19", uuid: "u19-a-2", ts: "2026-09-01T23:59:58.000Z", messageId: "msg_19a", requestId: "req_19a", usage: { input: 2, output: 30, cacheRead: 0 } }),
           assistantLine({ session: "s19", uuid: "u19-a-3", ts: "2026-09-02T00:00:01.000Z", messageId: "msg_19a", requestId: "req_19a", usage: { input: 2, output: 30, cacheRead: 0 } }),
+        ]),
+      },
+    },
+    {
+      // Limit hits carrying quotaLimits (D-067): fields agreeing with the text, disagreeing with it,
+      // unusable, and absent. resetsAt values: 1788329400 = 2026-09-02T06:10Z, 1788598800 = 2026-09-05T09:00Z.
+      id: "20-limit-quota-fields",
+      files: {
+        [sessionPath("projects", "s20")]: toJsonl([
+          userLine({ session: "s20", uuid: "u20-0", ts: at("10:00:00") }),
+          syntheticLine({ session: "s20", uuid: "u20-a", ts: at("10:00:05"), apiError: true, error: "rate_limit", status: 429, text: "You've hit your session limit · resets 6:10am (UTC)", quotaLimits: { status: "rejected", resetsAt: 1788329400, rateLimitType: "five_hour", overageStatus: "rejected" } }),
+          syntheticLine({ session: "s20", uuid: "u20-b", ts: at("11:00:00"), apiError: true, error: "rate_limit", status: 429, text: "You've hit your weekly limit · resets Sep 5, 9am (UTC)", quotaLimits: { status: "rejected", resetsAt: 1788598800, rateLimitType: "five_hour" } }),
+          syntheticLine({ session: "s20", uuid: "u20-c", ts: at("12:00:00"), apiError: true, error: "rate_limit", status: 429, text: "Usage limit reached", quotaLimits: { status: "rejected", resetsAt: "soon", rateLimitType: "seven_day_opus" } }),
+          syntheticLine({ session: "s20", uuid: "u20-d", ts: at("13:00:00"), apiError: true, error: "rate_limit", status: 429, text: "You've hit your session limit · resets 6:10am (UTC)", quotaLimits: { status: "rejected", resetsAt: 1788598800, rateLimitType: "five_hour" } }),
+          syntheticLine({ session: "s20", uuid: "u20-e", ts: at("14:00:00"), apiError: true, error: "rate_limit", status: 429, text: "5-hour limit reached ∙ resets 2am", quotaLimits: null }),
+          syntheticLine({ session: "s20", uuid: "u20-f", ts: at("15:00:00"), apiError: true, error: "rate_limit", status: 429, text: "You've hit your session limit · resets 6:10am (UTC)" }),
+          syntheticLine({ session: "s20", uuid: "u20-g", ts: at("16:00:00"), apiError: true, error: "rate_limit", status: 429, text: "Usage limit reached", quotaLimits: { status: "rejected", resetsAt: 0, rateLimitType: "seven_day" } }),
         ]),
       },
     },

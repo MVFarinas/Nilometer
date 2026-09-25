@@ -54,7 +54,9 @@
         "error": null,
         "api_error_status": 429,
         "window": null,
-        "reset_text": null
+        "reset_text": null,
+        "quota_window": null,
+        "quota_resets_at": null
       },
       {
         "class": "retry_notice",
@@ -65,7 +67,9 @@
         "error": null,
         "api_error_status": 429,
         "window": null,
-        "reset_text": null
+        "reset_text": null,
+        "quota_window": null,
+        "quota_resets_at": null
       }
     ],
     "report": {
@@ -87,7 +91,9 @@
       "missing_fields": [],
       "unparsed_timestamps": [],
       "non_message_iterations": [],
-      "retry_rate_limits_present": 1
+      "retry_rate_limits_present": 1,
+      "unusable_quota_fields": [],
+      "quota_window_disagreements": []
     }
   }
 }
