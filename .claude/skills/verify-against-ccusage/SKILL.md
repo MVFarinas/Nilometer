@@ -90,6 +90,7 @@ Keep this list in the suite, and assert that each delta appears exactly where pr
 | requests with no `message.id` | ccusage doesn't dedup them; we fall back to `requestId` (D-001). Observed in fixture 05 |
 | a log file rewritten shorter between ingests | ccusage re-reads current files, so removed requests vanish; we keep raw lines (D-002). Observed in fixture 12, run-2 |
 | a request line missing `output_tokens` | ccusage drops the whole line; we count it with output 0 and report the missing field. Observed in fixture 17 |
+| a `usage.iterations[]` entry with `model: null` | ccusage 20.0.20 drops the whole line; we count it, since the API served it. Seen once on real logs (P8 weekly pass 1), reproduced in fixture 21 |
 | project grouping | ccusage uses the encoded directory name; we resolve `cwd` through git (D-010) |
 | day buckets | ccusage with `-z UTC` vs our machine-local buckets; compare with our output forced to UTC |
 

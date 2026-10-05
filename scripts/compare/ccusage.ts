@@ -152,6 +152,18 @@ export const KNOWN_DELTAS: readonly KnownDelta[] = [
     reason:
       "ccusage drops a line missing output_tokens; we count it with output 0 and report the field (fixtures/README.md)",
   },
+  // 21: ccusage drops line 2 (input 3, output 8), whose message iteration has model null. Sonnet 5
+  // at $2 / $10, by hand: ours 7 × 2 + 20 × 10 = 214 µ$, ccusage 4 × 2 + 12 × 10 = 128 µ$.
+  ...(["input", "output", "cost_usd"] as const).map((field): KnownDelta => ({
+    caseId: "21-null-iteration-model",
+    state: "final",
+    key: "2026-09-01|claude-sonnet-5",
+    field,
+    ours: { input: 7, output: 20, cost_usd: 0.000214 }[field],
+    theirs: { input: 4, output: 12, cost_usd: 0.000128 }[field],
+    reason:
+      "ccusage drops a line whose usage.iterations[] entry has model null; the API served it, so we count it (fixtures/21-null-iteration-model/README.md)",
+  })),
 ];
 
 /**

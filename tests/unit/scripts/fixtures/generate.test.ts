@@ -66,6 +66,17 @@ describe("usage", () => {
     const result = usage({ extraIterations: [{ type: "advisor" }] });
     expect(result["iterations"]).toEqual([{ type: "message" }, { type: "advisor" }]);
   });
+
+  it("replaces the message iteration when one is given, keeping extra iterations after it", () => {
+    const result = usage({
+      messageIteration: { type: "message", model: null },
+      extraIterations: [{ type: "advisor" }],
+    });
+    expect(result["iterations"]).toEqual([
+      { type: "message", model: null },
+      { type: "advisor" },
+    ]);
+  });
 });
 
 describe("line builders", () => {

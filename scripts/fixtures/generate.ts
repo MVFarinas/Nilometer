@@ -38,6 +38,11 @@ export interface UsageSpec {
   readonly cache1h?: number;
   /** When set, writes only `cache_creation_input_tokens` (older logs without the split object). */
   readonly unsplit?: number;
+  /**
+   * Replaces the default `{ type: "message" }` first entry of `iterations[]`. Real logs have
+   * carried `{ type: "message", model: null }` there, which ccusage drops (fixture 21).
+   */
+  readonly messageIteration?: Record<string, unknown>;
   /** Extra `iterations[]` entries after the default message iteration. */
   readonly extraIterations?: readonly Record<string, unknown>[];
 }
@@ -65,7 +70,10 @@ export function usage(spec: UsageSpec): Record<string, unknown> {
       ephemeral_5m_input_tokens: spec.cache5m ?? 0,
     };
   }
-  result["iterations"] = [{ type: "message" }, ...(spec.extraIterations ?? [])];
+  result["iterations"] = [
+    spec.messageIteration ?? { type: "message" },
+    ...(spec.extraIterations ?? []),
+  ];
   return result;
 }
 
@@ -580,6 +588,18 @@ export function buildCases(): FixtureCase[] {
           syntheticLine({ session: "s20", uuid: "u20-e", ts: at("14:00:00"), apiError: true, error: "rate_limit", status: 429, text: "5-hour limit reached ∙ resets 2am", quotaLimits: null }),
           syntheticLine({ session: "s20", uuid: "u20-f", ts: at("15:00:00"), apiError: true, error: "rate_limit", status: 429, text: "You've hit your session limit · resets 6:10am (UTC)" }),
           syntheticLine({ session: "s20", uuid: "u20-g", ts: at("16:00:00"), apiError: true, error: "rate_limit", status: 429, text: "Usage limit reached", quotaLimits: { status: "rejected", resetsAt: 0, rateLimitType: "seven_day" } }),
+        ]),
+      },
+    },
+    {
+      // A request whose message iteration carries `model: null`, seen once in a real log set
+      // (P8 weekly pass 1). ccusage 20.0.20 drops such a line; with `model` absent it counts it.
+      // Line a is the control, line b the null.
+      id: "21-null-iteration-model",
+      files: {
+        [sessionPath("projects", "s21")]: toJsonl([
+          assistantLine({ session: "s21", uuid: "u21-a", ts: at("10:00:01"), messageId: "msg_21a", requestId: "req_21a", usage: { input: 4, output: 12, cacheRead: 0 } }),
+          assistantLine({ session: "s21", uuid: "u21-b", ts: at("10:00:02"), messageId: "msg_21b", requestId: "req_21b", usage: { input: 3, output: 8, cacheRead: 0, messageIteration: { type: "message", model: null } } }),
         ]),
       },
     },
