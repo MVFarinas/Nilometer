@@ -1056,3 +1056,16 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Checked on real data** against the text report, number for number, before release.
   - **The Phase 8 review still decides** whether the interface stays, grows into a dashboard, or goes, now with two weeks of use behind the answer.
   - **The text report's first-run rule now counts limit hits (decided 2026-09-25).** It printed "Nothing has been recorded yet" when a database held no readings and no requests, even with limit hits in it, while the HTML page saved beside it drew those lockouts. The G1.6 verifier found the two copies of one save disagreeing. Options: (a) count limit hits in the first-run check, chosen, since a hit is recorded data and hiding it drops an interruption (principle 1); (b) have the page follow the text report's rule, rejected, since it would hide the same hits in both. `hasNoData` in `viewer/render.ts`, with a test that fails under the old rule.
+
+## D-071: The Python reference reads Unix seconds without the platform's C runtime (2026-10-05)
+
+- **Status:** accepted. Found by the first Phase 8 weekly audit on the Windows PC.
+- **Context:** A6a failed on Windows with 117 of 118 tests passing. `parse_quota_limits` in `scripts/fidelity/reference.py` turned `quotaLimits.resetsAt` into a date with `datetime.fromtimestamp`, which goes through the C runtime. On Windows that raises `OSError: [Errno 22]` for any time past about the year 3000, so the upper bound the README accepts, `253402300799` (9999-12-31T23:59:59Z), could not be read there. The macOS audit never showed it. The TypeScript loader was never affected: `new Date(seconds * 1000)` is defined by JavaScript, not the platform, up to the year 275760.
+- **Options:**
+  - (a) Lower `MAX_RESETS_AT` to what Windows can convert. Rejected: the reference would then disagree with the loader and the README about which values are readable, and the suite exists to catch exactly that.
+  - (b) Skip the bound test on Windows. Rejected: a skip hides a reference that can't read a value the loader accepts.
+  - (c) **Add the seconds to a fixed 1970-01-01 UTC datetime.** Chosen: plain arithmetic, the same on every platform, and the same result wherever both work.
+- **Decision:** (c), `UNIX_EPOCH + timedelta(seconds=...)`. It was the reference's only `fromtimestamp`.
+- **Consequences:**
+  - **The existing test is the guard.** `QuotaLimitsTests.test_reset_bounds` already failed on Windows. On macOS it was proven with a stand-in `fromtimestamp` that raises past the Windows limit: the old code failed under it and the new code passed.
+  - **Any later date conversion in the reference** should avoid `fromtimestamp`, `utcfromtimestamp` and `time.gmtime` for the same reason.

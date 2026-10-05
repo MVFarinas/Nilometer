@@ -683,6 +683,11 @@ def parse_limit_text(text: str) -> tuple[str | None, str | None]:
 # a four-digit year can write.
 MAX_RESETS_AT = 253402300799
 
+# Unix seconds are added to this rather than passed to datetime.fromtimestamp,
+# which goes through the platform C runtime: on Windows it raises OSError past
+# about the year 3000, so MAX_RESETS_AT could not be read there (D-071).
+UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
 
 def parse_quota_limits(obj: dict[str, Any]) -> tuple[str | None, str | None, list[str]]:
     """Read the structured window and reset of a limit-hit line (D-067).
@@ -720,7 +725,7 @@ def parse_quota_limits(obj: dict[str, Any]) -> tuple[str | None, str | None, lis
         and float(resets_at).is_integer()
         and 0 < resets_at <= MAX_RESETS_AT
     ):
-        moment = datetime.fromtimestamp(int(resets_at), tz=timezone.utc)
+        moment = UNIX_EPOCH + timedelta(seconds=int(resets_at))
         quota_resets_at = moment.strftime("%Y-%m-%dT%H:%M:%S.000Z")
     if "resetsAt" in quota and quota_resets_at is None:
         unusable.append("resetsAt")
