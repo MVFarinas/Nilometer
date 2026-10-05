@@ -278,6 +278,40 @@ describe("request_costs: rules without fixtures", () => {
     expect(cost(db, "sx/m/long-sonnet").unpriced_reason).toBe("long_context_rate_unverified");
   });
 
+  it("prices Sonnet 5.5 at its own row, with no fast rate and no standard-rate limit", () => {
+    // Rates read from the pricing page on 2026-10-04. They equal Sonnet 5's, but an exact match is
+    // required (no family fallback), so without its own row every Sonnet 5.5 request is unpriced.
+    const db = ingest(
+      [],
+      [
+        line("sonnet55", "claude-sonnet-5-5", {
+          input_tokens: 1000,
+          output_tokens: 200,
+          cache_read_input_tokens: 10000,
+          cache_creation: { ephemeral_5m_input_tokens: 400, ephemeral_1h_input_tokens: 500 },
+        }),
+        // Above 200K input: Sonnet 5.5 bills the full 1M context at standard rates, so it stays priced.
+        line("sonnet55-long", "claude-sonnet-5-5", {
+          input_tokens: 300000,
+          output_tokens: 0,
+        }),
+      ],
+    );
+    // 1000 × $2 = 2000, 200 × $10 = 2000, 10000 × $0.20 = 2000, 400 × $2.50 = 1000, 500 × $4 = 2000
+    // → 9000 µ$.
+    const standard = cost(db, "sx/m/sonnet55");
+    expect(standard.input_usd).toBeCloseTo(0.002, 12);
+    expect(standard.output_usd).toBeCloseTo(0.002, 12);
+    expect(standard.cache_read_usd).toBeCloseTo(0.002, 12);
+    expect(standard.cache_write_5m_usd).toBeCloseTo(0.001, 12);
+    expect(standard.cache_write_1h_usd).toBeCloseTo(0.002, 12);
+    expect(standard).toMatchObject({ unpriced_reason: null, verified_on: "2026-10-04" });
+    expect(standard.total_usd).toBeCloseTo(0.009, 12);
+    // 300000 × $2 = 0.6 $.
+    expect(cost(db, "sx/m/sonnet55-long")).toMatchObject({ unpriced_reason: null });
+    expect(cost(db, "sx/m/sonnet55-long").total_usd).toBeCloseTo(0.6, 12);
+  });
+
   it("applies 1.1× to every token type for US-only inference", () => {
     const db = ingest(
       [],

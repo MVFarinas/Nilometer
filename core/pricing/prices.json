@@ -215,6 +215,19 @@
       "verified_on": "2026-09-24"
     },
     {
+      "model_id": "claude-sonnet-5-5",
+      "effective_from": "0000-01-01",
+      "input": 2,
+      "output": 10,
+      "cache_write_5m": 2.5,
+      "cache_write_1h": 4,
+      "cache_read": 0.2,
+      "fast": null,
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-10-04"
+    },
+    {
       "model_id": "claude-sonnet-5",
       "effective_from": "0000-01-01",
       "input": 2,
