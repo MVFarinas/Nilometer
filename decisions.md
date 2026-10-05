@@ -508,6 +508,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 - **Consequences:**
   - Headroom, peak, unattributed usage, and burn rate cover terminal sessions only. Unattributed usage also counts extension turns made between two terminal readings, since the extension leaves no reading but does write logs. Its request check still sees those requests, so they aren't miscounted as usage outside Claude Code.
   - Re-verify when a Claude Code release changes the extension's status line support.
+    - *Re-verified (2026-10-04, macOS on 2.1.287, Windows on 2.1.289), counts only:* sessions run only in the extension had no readings (31 of 31 on macOS, 16 of 16 on Windows), and every session with readings ran at least partly in the terminal. In the sessions used both ways, every reading fell in a terminal stretch and none in an extension stretch. On macOS the last reading came one second after the last terminal request, and three days of extension-only use followed with none.
 
 ## D-030: `report --save` writes a dated text and JSON copy to the data directory (2026-09-13)
 
