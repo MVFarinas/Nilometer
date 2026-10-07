@@ -288,7 +288,7 @@ crontab -e
 
 cron doesn't load your shell's Node version manager, so give the full path to a Node 24 binary. With fnm, that's `~/.local/share/fnm/node-versions/v24.<x>/installation/bin/node`, and it changes when you install a new Node 24 release. `nilometer` on your PATH may resolve to a different Node inside cron.
 
-Run `nilometer ingest` before `nilometer report` to include the latest turns. Status line metrics start filling in once Claude Code has run a few turns **in a terminal** with the hook installed; the VS Code extension doesn't run the status line. Ingest at least every few weeks, since Claude Code deletes session logs after 30 days by default.
+Run `nilometer ingest` before `nilometer report` to include the latest turns. Status line metrics start filling in once Claude Code has run a few turns **in a terminal** with the hook installed; the VS Code extension doesn't run the status line. Ingest at least weekly, since Claude Code deletes session logs after 30 days by default.
 
 ### Sample output
 

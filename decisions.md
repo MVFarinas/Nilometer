@@ -1069,3 +1069,44 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 - **Consequences:**
   - **The existing test is the guard.** `QuotaLimitsTests.test_reset_bounds` already failed on Windows. On macOS it was proven with a stand-in `fromtimestamp` that raises past the Windows limit: the old code failed under it and the new code passed.
   - **Any later date conversion in the reference** should avoid `fromtimestamp`, `utcfromtimestamp` and `time.gmtime` for the same reason.
+
+## D-072: A data directory moved to a new computer keeps its readings and its repositories (2026-10-07)
+
+- **Status:** accepted. A one-time operation on one install, recorded because it settles how a move is done until repository aliases exist ([D-028](decisions.md)).
+- **Context:** The maintainer's Mac was replaced during Phase 8, and the new account has a different home directory name. The old data directory arrived as a zip: the database, the status line spool, the hook, the install record, and the saved reports. The session logs did not come with it; the database already holds copies of them ([D-002](decisions.md)). Three things in it still named the old home directory:
+  - **The spool's file record.** `source_files` keys a file by `(root, relative_path)`, and the spool's root is the data directory. At the new path, the next ingest would have read the whole spool again as a new file and stored every reading twice, since raw-line identity is per file.
+  - **Repository roots.** Every cached root in `repositories` was under the old home directory. On the new computer each would have been re-checked, found missing, and kept as "directory no longer exists". Each project would then have shown as two rows, its old path and its new one.
+  - **The install record and the status line command.** Both pointed at the old settings file and the old hook. The migrated `settings.json` still ran the old path, which doesn't exist on the new computer, so the status line recorded nothing there until `init` ran again.
+- **Options for the spool:**
+  - (a) Let ingest read the spool at its new path as a new file. Rejected: every reading stored twice.
+  - (b) **Point the spool's existing `source_files` row at the new data directory.** Chosen. The new file's inode differs, so ingest re-reads it from byte 0 (D-003), every line already stored is a no-op by content hash, and only the lines appended after the old computer's last ingest are added.
+- **Options for repositories:**
+  - (a) Leave the old roots, labeled missing. Rejected: it splits every project in the by-repository table.
+  - (b) Build repository aliases now. Rejected for now: the backlog defers them until needed, and a move is the case that needs them, but a feature isn't built to finish a data migration.
+  - (c) **Rewrite a cached root only where git confirms a repository at the translated path** (`git -C <new path> rev-parse --git-common-dir` returns `<new path>/.git`). Chosen. The `cwd` values copied from the logs are left exactly as logged. Ingest's own re-check (D-028) then carries each root forward as `last_known`, labeled a git repository because its root exists.
+- **Decision:** (b) for the spool, (c) for repositories. Then `init` re-pointed the status line, after the install record was given the new settings path. The record's `backupPath` became null, because the old computer's settings backup didn't move. The new computer's own short-lived database was set aside, and its requests were read again from its logs, which are still on disk.
+- **Consequences:**
+  - **Checked on real data.** After the merge:
+    - The spool has one file row and no repeated lines.
+    - The usage-window section of the report matches the old computer's last saved report line for line.
+    - July to September at API list price, and all 18 limit hits, match it exactly.
+  - **20 of 21 repository roots joined their new paths.** The one missing from the new computer, and the working folders that were never repositories (the home directory, a temporary folder), stay labeled "directory no longer exists". That is correct, because they don't exist there.
+  - **`resolved_via = 'last_known'` is stretched slightly.** Git verified the old path on the old computer and the new path on this one, not one path on one machine. A query that needs the distinction can compare `cwd` with `repo_root`.
+  - **A second move should get a command, not a repeat by hand.** The alias table D-028 describes would make the repository part a user-entered mapping. The spool part belongs in that command too.
+  - **`init` and `ingest` don't notice a status line command whose hook file is missing.** The hook never runs, so `hook-errors.log` has nothing to record. Whether to warn about it is a Phase 8 review question, not part of this decision.
+
+## D-073: The private-term scan takes repository names only from roots git confirmed (2026-10-07)
+
+- **Status:** accepted. Refines the private-term gate (A22) behind the export and the public clone's pre-push scan.
+- **Context:** The gate builds its terms from the denylist, session IDs, Claude Code's project folder names, and the last segment of every repository in the maintainer's database. "Repository" there meant the `repository` column of `request_repositories`, which falls back to the working folder itself when git found no repository. After the D-072 merge, those fallbacks included the home folder, Downloads, Desktop, `~/.claude/projects`, a `memory` folder, and a temporary `tasks` folder. Their names are ordinary words, so the scan reported 381 findings in files that hadn't changed, and any export or push would have been blocked.
+- **Options:**
+  - (a) Add the words to the gate's list of allowed public terms. Rejected: every new folder Claude Code is started in can add another word, so the gate would break again on the next one.
+  - (b) **Take repository terms only from rows with a git-confirmed root** (`repositories.repo_root IS NOT NULL`: resolved by git directly, carried forward as last known, or found through a parent folder). Chosen. A folder that was never a repository has no project name to protect, as a rule. The exceptions are private folder names without git, and those go in the denylist by hand.
+  - (c) Skip short or dictionary words. Rejected: real repository names are often ordinary words, so this weakens the gate exactly where it matters.
+- **Decision:** (b), in `collectTerms` (`scripts/export/export.ts`). On the maintainer's data it dropped 14 names: ten ordinary folder words, and four project folders that were never git repositories. Those four were added to the denylist, together with the new computer's account and host names.
+- **Consequences:**
+  - **Proven both ways.**
+    - A new test fails on the old query, which returned a never-repository folder and a missing folder with no root as terms, and passes on the new one.
+    - On real data the export went from 381 findings to 0.
+    - Two real repository names written into a carried file were still flagged.
+  - **A private project kept outside git is no longer caught automatically.** It needs a denylist line. The cost is accepted, because the alternative fails on every ordinary folder name.
