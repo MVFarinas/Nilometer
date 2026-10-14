@@ -21,6 +21,8 @@ const HELPER_VIEWS = new Set([
   "window_readings",
   "window_instances",
   "window_reading_pairs",
+  // D-075 (step G2.2): plan names and months only, the one way an observed view may read plans.
+  "plan_periods",
 ]);
 
 /** Names an observed view must never depend on: cost data and user-entered plan prices. */
@@ -81,6 +83,26 @@ function dependencies(
   return seen;
 }
 
+/**
+ * Lists every observed view that reaches a projection or cost data. plan_periods is the one door
+ * to plan_prices an observed view may use (D-075): it reads only plan names and months, which a
+ * test of its own pins, so the walk doesn't continue through it.
+ * @param views - View name to SQL.
+ * @param names - Every view and table name.
+ * @returns `view → dependency` for each leak.
+ */
+function leaksOf(views: Map<string, string>, names: readonly string[]): string[] {
+  const throughPlans = new Map(views);
+  throughPlans.set("plan_periods", "");
+  return [...views.keys()]
+    .filter((name) => name.startsWith("obs_"))
+    .flatMap((name) =>
+      [...dependencies(name, throughPlans, names)]
+        .filter((dep) => dep.startsWith("proj_") || PROJECTION_INPUTS.includes(dep))
+        .map((dep) => `${name} → ${dep}`),
+    );
+}
+
 describe("metric view structure", () => {
   it("classifies every view as a helper, an observation, or a projection", () => {
     const { views } = schema();
@@ -96,14 +118,28 @@ describe("metric view structure", () => {
 
   it("keeps every observed view free of projections and cost data, transitively", () => {
     const { views, names } = schema();
-    const leaks = [...views.keys()]
-      .filter((name) => name.startsWith("obs_"))
-      .flatMap((name) =>
-        [...dependencies(name, views, names)]
-          .filter((dep) => dep.startsWith("proj_") || PROJECTION_INPUTS.includes(dep))
-          .map((dep) => `${name} → ${dep}`),
-      );
-    expect(leaks).toEqual([]);
+    expect(leaksOf(views, names)).toEqual([]);
+  });
+
+  it("lets plan_periods read plan names and months only, never a price (D-075)", () => {
+    const { views, names } = schema();
+    const sql = views.get("plan_periods") ?? "";
+    // Its only input is plan_prices, and no column of it that holds money.
+    expect(references(sql, names).filter((name) => name !== "plan_periods")).toEqual([
+      "plan_prices",
+    ]);
+    expect(sql).not.toMatch(/usd_per_month|\*/);
+  });
+
+  it("still finds an observed view that reads plan_prices other than through plan_periods", () => {
+    const views = new Map([
+      ["obs_ok", "SELECT plan_name FROM plan_periods"],
+      ["obs_direct", "SELECT usd_per_month FROM plan_prices"],
+      ["plan_periods", "SELECT effective_month, plan_name FROM plan_prices"],
+    ]);
+    expect(leaksOf(views, ["obs_ok", "obs_direct", "plan_periods", "plan_prices"])).toEqual([
+      "obs_direct → plan_prices",
+    ]);
   });
 
   it("finds a dependency through an intermediate view", () => {

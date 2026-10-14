@@ -18,4 +18,14 @@ First public version.
 - **Limit hits read structured fields:** on current Claude Code versions, the window and reset of a limit hit come from the structured `quotaLimits` fields in the log, with the message text as the fallback for older versions. Each hit records which source it used, and any disagreement between the two is reported.
 - **Usage above 100% is kept:** a usage window reading above 100%, which Claude Code reports once a limit is passed, is recorded as a reading instead of being discarded as invalid, so peak and last observed usage show it.
 - **Concurrent sessions no longer corrupt status line readings:** the hook appends each reading in a single write. Before, a reading written while other sessions' hooks ran could interleave with theirs, and both were lost (reported as malformed). Run `nilometer init` after updating to install the new hook.
+- **The HTML page has tabs:**
+  - **Overview first:** a card for each observed chart, with its key numbers and a small picture of the chart.
+  - **Then one tab per chart:** usage windows, interruptions, by model, and by repository.
+  - **Projections in their own labelled group:** burn rate and observed tokens at API list price.
+
+  Usage by repository and burn rate are new to the page; before, only the text report showed them. Every number on a card still opens its events. Printing shows every tab, and without JavaScript the page reads top to bottom as before.
+- **Interruptions per plan:**
+  - **Per plan period:** once you've entered a plan price with `plan-price set`, the report splits limit hits, lockouts, and elapsed lockout time by the plan in effect, so a count no longer mixes your old plan with your new one.
+  - **The HTML page** shows the split as a table on the Interruptions tab and as one lane per plan on the lockout chart.
+  - **`nilometer explain by-plan`** lists the events behind each row.
 - **Install guide:** [`docs/requirements.md`](docs/requirements.md) explains how to check for and install everything Nilometer needs, including how to get Node.js 24 and not a newer release.

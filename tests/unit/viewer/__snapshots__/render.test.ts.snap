@@ -16,6 +16,11 @@ Interruptions
   Elapsed lockout time (limit hit to reset, overlapping hits counted once): 1 h 59 m across 1 lockout
     Hits with an unknown reset time, not included: 1
     2026-09-01 09:00 to 2026-09-01 11:00: 1 h 59 m, 1 hit; reset to next Claude Code request: 30 m 5 s
+  By plan period: plans as entered with plan-price set; a plan applies from the first day of its month, so a change within a month counts from the month it was entered for (months in America/Chicago).
+    Plan             Months          Hits  Lockouts  Elapsed lockout time  Covers
+    ---------------  --------------  ----  --------  --------------------  ------------------------------------
+    no plan entered  before 2026-09     0         0                   0 s  2026-08-20 10:00 to 2026-08-20 10:00
+    Example plan     2026-09 onward     2         1              1 h 59 m  2026-09-01 09:00 to 2026-09-02 15:00
   Sessions with no further request after a limit hit: 1 of 2 sessions with a hit
     Reset came after the logs end: 0 | reset time unknown: 1
     A session that continued after its reset may have been resumed automatically; these counts are requests, not who made them.

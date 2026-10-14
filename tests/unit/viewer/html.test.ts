@@ -33,9 +33,17 @@ import {
   mergeEvents,
   renderHtmlReport,
 } from "../../../viewer/html.js";
-import { LABELS } from "../../../viewer/render.js";
+import { LABELS, describeBurnRate } from "../../../viewer/render.js";
 
-vi.mock("../../../viewer/html-charts.js", () => ({
+vi.mock("../../../viewer/html-charts.js", async (importOriginal) => ({
+  // The sentence and the bar count are wording and layout the page shares with the charts; kept real.
+  burnSentence: (await importOriginal<typeof import("../../../viewer/html-charts.js")>())
+    .burnSentence,
+  REPO_BARS: 10,
+  renderRepoBars: vi.fn(() => '<svg id="chart-repos"></svg>'),
+  renderBurnRate: vi.fn(
+    (input: { burn: { window: string } }) => `<svg id="chart-burn-${input.burn.window}"></svg>`,
+  ),
   renderCoverage: vi.fn(() => '<svg id="chart-coverage"></svg>'),
   renderGauge: vi.fn(() => '<svg id="chart-gauge"></svg>'),
   renderWindowSeries: vi.fn(
@@ -172,11 +180,49 @@ const DATA: HtmlReportData = {
     loggedEvents: [8],
     statusLineOnlyEvents: [],
     span: { from: at("10:00:00"), to: at("13:05:10") },
+    byPlan: [],
   },
   afterReset: { count: 0, events: [] },
   models: [
     { model: "claude-opus-5", requests: 3, outputTokens: 360, events: [4, 6, 10] },
     { model: "claude-sonnet-5", requests: 1, outputTokens: 100, events: [2] },
+  ],
+  // The scenario logs no cwd, so all four requests share one unresolved repository (step G2.1).
+  repos: [
+    { repository: null, kind: "unresolved", requests: 4, outputTokens: 460, events: [2, 4, 6, 10] },
+  ],
+  home: "",
+  // Both windows open at the last reading (13:05:10), latest reset first, as the text report lists them.
+  // 7-day: 16% after 13 h 5 m 10 s (47,110 s), so 16 / (47110 / 3600) points per hour, reaching
+  // 100% at 2026-09-03 00:00 + 100 * 47110 / 16 s = 2026-09-06 09:47:17.5. 5-hour: 2% after 310 s,
+  // so 2 / (310 / 3600) points per hour, reaching 100% at 13:00 + 100 * 310 / 2 s = 17:18:20.
+  burn: [
+    {
+      window: "seven_day",
+      resetAtUtc: "2026-09-10T00:00:00.000Z",
+      windowStartUtc: "2026-09-03T00:00:00.000Z",
+      last: 16,
+      lastAtUtc: at("13:05:10"),
+      limitReached: false,
+      ratePerHour: 16 / (47110 / 3600),
+      projectedLimitAtUtc: "2026-09-06T09:47:17.500Z",
+      limitBeforeReset: true,
+      span: { from: at("10:00:05"), to: at("13:05:10") },
+      events: [14],
+    },
+    {
+      window: "five_hour",
+      resetAtUtc: at("18:00:00"),
+      windowStartUtc: at("13:00:00"),
+      last: 2,
+      lastAtUtc: at("13:05:10"),
+      limitReached: false,
+      ratePerHour: 2 / (310 / 3600),
+      projectedLimitAtUtc: at("17:18:20"),
+      limitBeforeReset: true,
+      span: { from: at("10:00:05"), to: at("13:05:10") },
+      events: [14],
+    },
   ],
   months: [
     {
@@ -228,6 +274,8 @@ const EMPTY: HtmlReportData = {
     span: { from: null, to: null },
   },
   models: [],
+  repos: [],
+  burn: [],
   months: [],
   files: [],
   events: {},
@@ -273,6 +321,10 @@ interface PageHelpers {
   ): { lines: string[]; more: number };
   /** Names a selected element for its panel. */
   labelOf(el: FakeElement): string;
+  /** Picks the tab a page address names (step G2.1). */
+  tabFromHash(hash: string, keys: string[]): string;
+  /** The tab a key moves to, or -1 (step G2.1). */
+  nextTab(index: number, key: string, count: number): number;
 }
 
 /** The parts of a DOM element the script's `labelOf` reads, so Node can stand one in. */
@@ -360,12 +412,39 @@ function pageHelpers(html: string): PageHelpers {
     union: (lists) => here(nm.union(lists)),
     eventLines: (ids, data, limit) => here(nm.eventLines(ids, data, limit)),
     labelOf: (el) => nm.labelOf(el),
+    tabFromHash: (hash, keys) => nm.tabFromHash(hash, keys),
+    nextTab: (index, key, count) => nm.nextTab(index, key, count),
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
+
+/**
+ * States a burn window in the text report's own words, independently of the page, for comparison.
+ * @param burn - A burn window from the test data.
+ * @returns describeBurnRate's sentence, unindented.
+ */
+function burnSentenceFor(burn: HtmlReportData["burn"][number]): string {
+  return describeBurnRate(
+    {
+      window: burn.window,
+      reset_at_utc: burn.resetAtUtc,
+      window_start_utc: burn.windowStartUtc,
+      last_used_percentage: burn.last,
+      last_reading_at_utc: burn.lastAtUtc,
+      window_open: 1,
+      limit_reached: burn.limitReached ? 1 : 0,
+      projected_percentage_points_per_hour: burn.ratePerHour,
+      projected_limit_at_utc: burn.projectedLimitAtUtc,
+      projected_limit_before_reset: burn.limitBeforeReset ? 1 : 0,
+      covers_from: burn.span.from,
+      covers_to: burn.span.to,
+    },
+    "UTC",
+  ).trim();
+}
 
 describe("the page shell", () => {
   it("returns one complete document with a doctype, language, charset, viewport, and title", () => {
@@ -466,8 +545,9 @@ describe("the sections", () => {
   });
 
   it("gives every chart a table view", () => {
-    // Coverage 1, gauge 1, one per series (3), lockouts 1, models 1, months 1: 8.
-    expect(renderHtmlReport(DATA).split('<details class="nm-table">')).toHaveLength(8 + 1);
+    // Coverage 1, gauge 1, one per series (3), lockouts 1, models 1, repositories 1, burn rate 1,
+    // months 1: 10 (D-084 added repositories and burn rate to the page).
+    expect(renderHtmlReport(DATA).split('<details class="nm-table">')).toHaveLength(10 + 1);
   });
 
   it("places each chart in its own section with the chart options the page uses", () => {
@@ -844,6 +924,10 @@ describe("traceability of the tables (principle 4)", () => {
     LABELS.columns.model,
     LABELS.columns.planPrice,
     LABELS.columns.covers,
+    // Step G2.1: a repository's path and kind name it; a projected instant dates the projection.
+    LABELS.columns.repository,
+    LABELS.columns.kind,
+    HTML_LABELS.limitProjectedFor,
   ]);
 
   it("gives every table cell holding a number its events, outside the identity columns", () => {
@@ -856,8 +940,8 @@ describe("traceability of the tables (principle 4)", () => {
       unpricedEvents: [16, 17],
     };
     const tables = parseTables(renderHtmlReport({ ...DATA, months: [month] }));
-    // Coverage, gauge, three series, lockouts, models, months: 8.
-    expect(tables).toHaveLength(8);
+    // Coverage, gauge, three series, lockouts, models, repositories, burn rate, months: 10.
+    expect(tables).toHaveLength(10);
     let checked = 0;
     for (const table of tables) {
       for (const row of table.rows) {
@@ -879,9 +963,10 @@ describe("traceability of the tables (principle 4)", () => {
       }
     }
     // Gauge 3 rows x 4 numbers (peak, last, readings, hits) = 12; series readings 3 + 1 + 4 = 8;
-    // lockout 3 (elapsed, hits, next request); models 2 x 2 = 4; month 3 (amount, priced,
-    // unpriced): 12 + 8 + 3 + 4 + 3 = 30. The guard looked at every one of them.
-    expect(checked).toBe(30);
+    // lockout 3 (elapsed, hits, next request); models 2 x 2 = 4; repositories 1 x 2 (requests,
+    // output) = 2; burn rate 2 x 2 (last usage, rate) = 4; month 3 (amount, priced, unpriced):
+    // 12 + 8 + 3 + 4 + 2 + 4 + 3 = 36. The guard looked at every one of them.
+    expect(checked).toBe(36);
   });
 
   it("keeps the identity columns free of number cells, so the exemption hides no count", () => {
@@ -896,9 +981,278 @@ describe("traceability of the tables (principle 4)", () => {
     // None is a number cell; the header rides along, so a miss names its column.
     expect(identityCells.filter((cell) => cell.attrs.includes('class="num"'))).toEqual([]);
     // Coverage 2 rows x 1 (Covers); gauge 3 x 4 (window, resets, peak at, reading at); series
-    // 4 + 1 + 4 rows x 1 (time); lockouts 1 x 2 (hit, reset); models 2 x 1; months 1 x 3 (month,
-    // plan price, covers): 2 + 12 + 9 + 2 + 2 + 3 = 30.
-    expect(seen).toBe(30);
+    // 4 + 1 + 4 rows x 1 (time); lockouts 1 x 2 (hit, reset); models 2 x 1; repositories 1 x 2
+    // (repository, kind); burn rate 2 x 4 (window, resets, reading at, limit projected for);
+    // months 1 x 3 (month, plan price, covers): 2 + 12 + 9 + 2 + 2 + 2 + 8 + 3 = 40.
+    expect(seen).toBe(40);
+  });
+});
+
+describe("the tabs (step G2.1, D-084)", () => {
+  const html = renderHtmlReport(DATA);
+  const KEYS = ["overview", "windows", "interruptions", "models", "repos", "burn", "price"];
+
+  /**
+   * Cuts one tab panel out of the page.
+   * @param key - The tab.
+   * @returns The panel's HTML, from its opening tag to the next panel or the end of its part.
+   */
+  const panel = (key: string): string => {
+    const start = html.indexOf(`<div class="nm-tabpanel`, html.indexOf(`id="nm-tab-${key}"`) - 60);
+    const next = html.indexOf('<div class="nm-tabpanel', start + 1);
+    return html.slice(start, next < 0 ? html.length : next);
+  };
+
+  it("lists seven tabs in two labeled groups, observed first, each controlling its panel", () => {
+    const nav = /<nav class="nm-tabbar"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? "";
+    expect([...nav.matchAll(/role="tablist"/g)]).toHaveLength(2);
+    expect([...nav.matchAll(/data-tab="([a-z]+)"/g)].map((m) => m[1])).toEqual(KEYS);
+    for (const key of KEYS) {
+      expect(nav).toContain(`id="nm-tabbtn-${key}" aria-controls="nm-tab-${key}"`);
+      expect(html).toContain(
+        `role="tabpanel" id="nm-tab-${key}" aria-labelledby="nm-tabbtn-${key}"`,
+      );
+    }
+    // The overview starts selected and is the only tab in the keyboard order until another is chosen.
+    expect([...nav.matchAll(/aria-selected="true"/g)]).toHaveLength(1);
+    expect(nav).toContain(
+      'id="nm-tabbtn-overview" aria-controls="nm-tab-overview" aria-selected="true" tabindex="0"',
+    );
+    expect(nav.indexOf(escapeHtml(HTML_LABELS.projectedGroup))).toBeGreaterThan(
+      nav.indexOf(escapeHtml(HTML_LABELS.observedGroup)),
+    );
+  });
+
+  it("keeps observed panels in the observed part and projected panels below the seam", () => {
+    const seam = html.indexOf('id="nm-seam"');
+    for (const key of ["overview", "windows", "interruptions", "models", "repos"]) {
+      const at = html.indexOf(`id="nm-tab-${key}"`);
+      expect({ key, observed: at > html.indexOf('id="nm-observed"') && at < seam }).toEqual({
+        key,
+        observed: true,
+      });
+    }
+    for (const key of ["burn", "price"]) {
+      expect({ key, projected: html.indexOf(`id="nm-tab-${key}"`) > seam }).toEqual({
+        key,
+        projected: true,
+      });
+    }
+  });
+
+  it("puts each section in its tab", () => {
+    expect(panel("overview")).toContain('id="nm-coverage"');
+    expect(panel("windows")).toContain('id="nm-gauge"');
+    expect(panel("interruptions")).toContain('id="nm-lockouts"');
+    expect(panel("models")).toContain('id="nm-models"');
+    expect(panel("repos")).toContain('id="nm-repos"');
+    expect(panel("burn")).toContain('id="nm-burn"');
+    expect(panel("price")).toContain('id="nm-months"');
+  });
+
+  it("gives every overview card a span and numbers that list their events (principles 4, 5)", () => {
+    const overview = panel("overview");
+    // The open weekly window: last 16% at 13:05:10 (reading 14), which is also its peak.
+    expect(overview).toContain(
+      `<p class="count" data-events="14" data-label="${HTML_LABELS.weeklyNow}">${HTML_LABELS.weeklyNow}: 16% at 2026-09-03 13:05; resets 2026-09-10 00:00</p>`,
+    );
+    expect(overview).toContain(`data-events="14" data-label="${HTML_LABELS.weeklyPeak}"`);
+    // One hit (line 8), inside the one lockout of 1 h.
+    expect(overview).toContain(
+      `<p class="count" data-events="8" data-label="${LABELS.limitHits}">${LABELS.limitHits}: 1</p>`,
+    );
+    expect(overview).toContain(
+      `data-events="8" data-label="${HTML_LABELS.lockoutElapsed}">${HTML_LABELS.lockoutElapsed}: 1 h 0 m across 1 lockout</p>`,
+    );
+    // claude-opus-5, 360 output tokens; the unresolved repository, 460.
+    expect(overview).toContain(`data-events="4 6 10" data-label="${HTML_LABELS.mostModel}"`);
+    expect(overview).toContain(
+      `data-events="2 4 6 10" data-label="${HTML_LABELS.mostRepo}">${HTML_LABELS.mostRepo}: unknown (no working directory), 460 output tokens</p>`,
+    );
+    const cards = overview.split('<section class="panel nm-card nm-chart"').slice(1);
+    expect(cards).toHaveLength(4);
+    for (const card of cards) {
+      expect(card).toMatch(/<p class="span">Covers: (session logs|status line) /);
+      expect(card).toContain('<div class="nm-events" aria-live="polite" hidden></div>');
+    }
+    // Thumbnails are pictures: inert, so they add no keyboard stops (D-084).
+    expect([...overview.matchAll(/<div class="nm-thumb" inert aria-hidden="true">/g)]).toHaveLength(
+      4,
+    );
+    // No projection on the overview (principle 2).
+    expect(overview).not.toMatch(/project|estimat/i);
+  });
+
+  it("draws repositories with the home directory and a table of every row", () => {
+    // Rendered here: beforeEach clears the stubs' calls, so the shared page above has none.
+    const repos = section(renderHtmlReport(DATA), "nm-repos");
+    expect(charts.renderRepoBars).toHaveBeenCalledWith(
+      { bars: DATA.repos, home: "" },
+      { timeZone: "UTC", width: 960 },
+    );
+    expect(repos).toContain(escapeHtml(HTML_LABELS.repoCaveat));
+    expect(repos).toContain(
+      '<td class="num" data-events="2 4 6 10" data-label="Requests, unknown (no working directory)">4</td>',
+    );
+    // One repository, present: no faded key and no remainder key.
+    expect(repos).not.toContain("k-faded");
+    expect(repos).not.toContain("k-other");
+    const gone = section(
+      renderHtmlReport({
+        ...DATA,
+        home: "/home/example",
+        repos: [
+          {
+            repository: "/home/example/x",
+            kind: "missing",
+            requests: 1,
+            outputTokens: 1,
+            events: [2],
+          },
+        ],
+      }),
+      "nm-repos",
+    );
+    expect(gone).toContain("k-faded");
+    expect(gone).toContain("<td>~/x</td><td>directory no longer exists</td>");
+  });
+
+  it("states each open window's burn rate in the text report's words, with the reading behind it", () => {
+    const burn = section(renderHtmlReport(DATA), "nm-burn");
+    expect(burn).toContain('<p class="eyebrow">Projected</p>');
+    expect(burn).toContain(escapeHtml(LABELS.burnRatePremise));
+    for (const window of DATA.burn) {
+      expect(burn).toContain(
+        `data-events="14" data-label="Burn rate, ${window.window === "five_hour" ? "5-hour" : "weekly"} window resetting`,
+      );
+      expect(burn).toContain(escapeHtml(burnSentenceFor(window)));
+      expect(charts.renderBurnRate).toHaveBeenCalledWith(
+        {
+          burn: window,
+          series: DATA.series.find(
+            (s) => s.window === window.window && s.resetAtUtc === window.resetAtUtc,
+          ),
+        },
+        { timeZone: "UTC", width: 960 },
+      );
+    }
+    expect(section(renderHtmlReport({ ...DATA, burn: [] }), "nm-burn")).toContain(
+      escapeHtml(HTML_LABELS.noOpenWindow),
+    );
+  });
+
+  it("moves between tabs with the arrow keys, Home, and End, wrapping at both ends", () => {
+    const nm = pageHelpers(html);
+    expect(nm.nextTab(0, "ArrowRight", 7)).toBe(1);
+    expect(nm.nextTab(6, "ArrowRight", 7)).toBe(0);
+    expect(nm.nextTab(0, "ArrowLeft", 7)).toBe(6);
+    expect(nm.nextTab(3, "Home", 7)).toBe(0);
+    expect(nm.nextTab(3, "End", 7)).toBe(6);
+    expect(nm.nextTab(3, "Enter", 7)).toBe(-1);
+  });
+
+  it("opens the tab the page address names, else the overview", () => {
+    const nm = pageHelpers(html);
+    expect(nm.tabFromHash("#repos", KEYS)).toBe("repos");
+    expect(nm.tabFromHash("burn", KEYS)).toBe("burn");
+    expect(nm.tabFromHash("#nm-gauge", KEYS)).toBe("overview");
+    expect(nm.tabFromHash("", KEYS)).toBe("overview");
+  });
+
+  it("hides the tab bar without the script and shows every tab when printed", () => {
+    const style = /<style>([\s\S]*?)<\/style>/.exec(html)?.[1] ?? "";
+    expect(style).toContain(".nm-tabbar { display: none; }");
+    expect(style).toContain(".nm-tabs .nm-tabpanel:not(.nm-active) { display: none; }");
+    const print = style.slice(style.indexOf("@media print"));
+    expect(print).toContain(
+      ".nm-tabs .nm-tabpanel:not(.nm-active), .nm-tabs .nm-part:not(.nm-has-active) { display: grid; }",
+    );
+  });
+});
+
+describe("interruptions per plan period (step G2.2, D-075)", () => {
+  /** The scenario with Max 5x entered from 2026-09, so its one hit and lockout fall under it. */
+  const MAX = {
+    kind: "plan",
+    fromMonth: "2026-09",
+    toMonth: null,
+    untilMonth: null,
+    planName: "Max 5x",
+  } as const;
+  const PLANS: HtmlReportData = {
+    ...DATA,
+    lockouts: DATA.lockouts.map((bar) => ({ ...bar, period: MAX })),
+    interruptions: {
+      ...DATA.interruptions,
+      byPlan: [
+        {
+          period: {
+            kind: "none",
+            fromMonth: null,
+            toMonth: "2026-08",
+            untilMonth: "2026-09",
+            planName: null,
+          },
+          hits: 0,
+          lockouts: 0,
+          lockoutSeconds: 0,
+          span: { from: at("10:00:00"), to: at("10:00:00") },
+          hitEvents: [],
+          lockoutEvents: [],
+        },
+        {
+          period: MAX,
+          hits: 1,
+          lockouts: 1,
+          lockoutSeconds: 3600,
+          span: { from: at("10:00:05"), to: at("13:05:10") },
+          hitEvents: [8],
+          lockoutEvents: [8],
+        },
+      ],
+    },
+  };
+
+  it("shows the per-plan table open on the interruptions tab, each number with its events", () => {
+    const lockouts = section(renderHtmlReport(PLANS), "nm-lockouts");
+    expect(lockouts).toContain(
+      escapeHtml(`${LABELS.byPlan}: ${LABELS.byPlanNote} (months in UTC).`),
+    );
+    expect(lockouts).toContain(
+      `<details class="nm-table" open><summary>Table view: ${HTML_LABELS.byPlanCaption}</summary>`,
+    );
+    expect(lockouts).toContain(
+      '<td>Max 5x</td><td>2026-09 onward</td><td class="num" data-events="8" data-label="Hits, Max 5x, 2026-09 onward">1</td>',
+    );
+    expect(lockouts).toContain(
+      'data-label="Elapsed lockout time, Max 5x, 2026-09 onward">1 h 0 m</td>',
+    );
+    expect(lockouts).toContain("<td>no plan entered</td><td>before 2026-09</td>");
+  });
+
+  it("shows no table and no lanes while no plan is entered", () => {
+    const html = renderHtmlReport(DATA);
+    expect(html).not.toContain(HTML_LABELS.byPlanCaption);
+    expect(charts.renderLockouts).toHaveBeenCalledWith(DATA.lockouts, {
+      timeZone: "UTC",
+      width: 960,
+    });
+  });
+
+  it("adds a line per plan to the overview's interruptions card", () => {
+    const html = renderHtmlReport(PLANS);
+    const card = section(html, "nm-card-interruptions");
+    expect(card).toContain(
+      `<p class="sub" data-events="8" data-label="${LABELS.limitHits}, Max 5x">Max 5x, 2026-09 onward: 1 limit hit</p>`,
+    );
+    expect(card).toContain(
+      `data-events="" data-label="${LABELS.limitHits}, no plan entered">no plan entered, before 2026-09: 0 limit hits</p>`,
+    );
+    // The chart is drawn with each bar's period, so it can draw its lanes.
+    expect(charts.renderLockouts).toHaveBeenCalledWith(PLANS.lockouts, {
+      timeZone: "UTC",
+      width: 960,
+    });
   });
 });
 

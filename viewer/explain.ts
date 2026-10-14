@@ -9,7 +9,14 @@
  */
 import type { Db } from "../core/db/database.js";
 import { type ValueKind, formatInstant, formatNumber, printable } from "./format.js";
-import { displayPath, repoKindName, windowName } from "./render.js";
+import type { PlanPeriodRow } from "./queries.js";
+import {
+  displayPath,
+  planPeriodMonths,
+  planPeriodName,
+  repoKindName,
+  windowName,
+} from "./render.js";
 
 /** One event behind a number. */
 export interface ExplainEvent {
@@ -371,6 +378,72 @@ const BUILDERS = {
           })),
         },
       ],
+    };
+  },
+  "by-plan": (db: Db): Explanation => {
+    // The same rows, in the same order, as the report's per-plan table (D-075).
+    const periods = db
+      .prepare(
+        `SELECT * FROM obs_interruptions_by_plan
+         ORDER BY CASE period_kind WHEN 'none' THEN 0 WHEN 'plan' THEN 1 ELSE 2 END, from_month`,
+      )
+      .all() as PlanPeriodRow[];
+    // Each period's hits: obs_limit_hits_events' own rows, so every hit reads as limit-hits lists it.
+    const hits = db.prepare(
+      `SELECT e.*, ${LOCATION_COLUMNS} FROM obs_limit_hits_events e
+       JOIN obs_limit_hits_by_plan_events b ON b.raw_line_id = e.raw_line_id ${LOCATION_JOIN}
+       WHERE b.period_kind = ? AND b.from_month IS ? ORDER BY e.hit_at_utc, e.raw_line_id`,
+    );
+    const intervals = db.prepare(
+      `SELECT * FROM obs_lockout_by_plan_events
+       WHERE period_kind = ? AND from_month IS ? ORDER BY interval_number`,
+    );
+    const intervalHits = db.prepare(
+      `SELECT ${LOCATION_COLUMNS} FROM obs_lockout_interval_hits e ${LOCATION_JOIN}
+       WHERE e.interval_number = ? ORDER BY e.start_utc, e.raw_line_id`,
+    );
+    return {
+      metric: "by-plan",
+      title: "Interruptions by plan period",
+      section: "observed",
+      groups: periods.flatMap((period) => {
+        const name = `${planPeriodName(period)} (${planPeriodMonths(period)})`;
+        return [
+          {
+            title: `${name}: limit hits`,
+            measures: [{ label: "Limit hits", kind: "count" as const, reported: period.hits }],
+            events: (hits.all(period.period_kind, period.from_month) as HitRow[]).map(hitEvent),
+          },
+          {
+            title: `${name}: elapsed lockout time`,
+            measures: [
+              {
+                label: "Elapsed lockout time",
+                kind: "duration" as const,
+                reported: period.lockout_seconds,
+                // TOTAL in the view: 0 for a period with no lockout.
+                nullIsZero: true,
+              },
+            ],
+            events: (
+              intervals.all(period.period_kind, period.from_month) as {
+                interval_number: number;
+                locked_from_utc: string;
+                locked_until_utc: string;
+                hits: number;
+                lockout_seconds: number;
+              }[]
+            ).map((interval) => ({
+              at: interval.locked_from_utc,
+              description: `locked until ${interval.locked_until_utc} | ${interval.hits === 1 ? "1 hit" : `${interval.hits} hits`}`,
+              location: (intervalHits.all(interval.interval_number) as Located[])
+                .map(formatLocation)
+                .join(", "),
+              contributions: [interval.lockout_seconds],
+            })),
+          },
+        ];
+      }),
     };
   },
   "not-resumed": (db: Db): Explanation => ({

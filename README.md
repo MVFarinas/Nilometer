@@ -110,7 +110,7 @@ One screen. No daemon, no desktop app, no live updating. Every metric below is r
 
 | Metric | Source |
 |---|---|
-| Rate-limit interruptions | Logged `error: "rate_limit"` lines; `used_percentage` reaching 100 after `init`. A hit seen in both counts once ([D-023](decisions.md)) |
+| Rate-limit interruptions | Logged `error: "rate_limit"` lines; `used_percentage` reaching 100 after `init`. A hit seen in both counts once ([D-023](decisions.md)). Once a plan price is entered, hits, lockouts, and elapsed lockout time are also shown per plan period, so a count never mixes two plans without saying so ([D-075](decisions.md)) |
 | Mid-task interruptions | The stopped request was answering a tool result, so the model was mid-agentic-loop rather than at a turn boundary. Hits whose position can't be determined are counted separately ([D-021](decisions.md)) |
 | Elapsed lockout time | Limit hit → reset time, with overlapping hits counted once. **Not** a claim about lost productivity. Shown beside it: reset → next Claude Code request ([D-023](decisions.md)) |
 | Sessions not resumed | No further request in the session after a limit was hit. May be abandonment; may be a deliberate stop. Reported without interpretation; sessions whose reset came after the logs end are counted separately ([D-022](decisions.md)) |
@@ -216,8 +216,8 @@ nilometer init    # or, without npm link: npm start -- init
 |---|---|
 | `nilometer init` | Install the hook (wrapping any existing status line), then backfill from session logs |
 | `nilometer ingest` | Read new session log lines and status line readings into the database. `--full` rereads everything; `--json` prints the outcome as JSON |
-| `nilometer report` | Print what was observed, then projections in a separate section. `--json` prints unrounded rows and every label. `--save` also writes a dated copy (`report_YYYY-MM-DD_HHMMSS.txt` and `.json`) to `~/.local/share/nilometer/reports/`; `--save --html` adds a self-contained `.html` page with the same name, which works offline and makes no network requests |
-| `nilometer explain <metric>` | List the events behind a number in the report, with the file, line, and byte each came from, and add them back up. Metrics: `limit-hits`, `mid-task`, `lockout`, `not-resumed`, `headroom`, `peak`, `unattributed`, `by-model`, `by-repo`, `burn-rate`, `api-list-price` |
+| `nilometer report` | Print what was observed, then projections in a separate section. `--json` prints unrounded rows and every label. `--save` also writes a dated copy (`report_YYYY-MM-DD_HHMMSS.txt` and `.json`) to `~/.local/share/nilometer/reports/`; `--save --html` adds a self-contained `.html` page with the same name, which works offline and makes no network requests. The page opens on an overview, has one tab per chart, and keeps the projections in their own labelled tabs |
+| `nilometer explain <metric>` | List the events behind a number in the report, with the file, line, and byte each came from, and add them back up. Metrics: `limit-hits`, `mid-task`, `lockout`, `by-plan`, `not-resumed`, `headroom`, `peak`, `unattributed`, `by-model`, `by-repo`, `burn-rate`, `api-list-price` |
 | `nilometer plan-price set <YYYY-MM> <usd> --name <plan>` | Record your plan's USD list price per month from that month on, shown beside API list price. `plan-price list` shows what's entered |
 | `nilometer uninstall` | Remove the hook and restore the status line setting it replaced. Recorded data is kept |
 

@@ -24,6 +24,7 @@
 import type { Db } from "../core/db/database.js";
 import type {
   AfterResetReadings,
+  BurnWindow,
   CoverageRow,
   EventDetail,
   EventRef,
@@ -37,11 +38,20 @@ import type {
   LockoutBar,
   ModelBar,
   MonthBar,
+  PlanPeriodRef,
+  PlanPeriodTotals,
+  RepoBar,
   SeriesHit,
   SeriesPoint,
   WindowSeries,
 } from "./html-contract.js";
-import { type LimitHits, type LockoutTime, type ObservedReport, lastIngestAt } from "./queries.js";
+import {
+  type LimitHits,
+  type LockoutTime,
+  type ObservedReport,
+  type PlanPeriodRow,
+  lastIngestAt,
+} from "./queries.js";
 
 /**
  * The canonical raw line order (file, then first run, then line) from `001_ingestion.sql`, for a
@@ -129,6 +139,8 @@ interface WindowSqlRow {
 
 /** One `obs_lockout_intervals` row with its hits. */
 interface LockoutSqlRow {
+  /** The interval's number, shared with obs_lockout_by_plan_events. */
+  readonly interval_number: number;
   /** First hit. */
   readonly locked_from_utc: string;
   /** The reset that ended it. */
@@ -187,6 +199,48 @@ interface ModelSqlRow {
   readonly output_tokens: number;
   /** JSON array of the requests' raw line IDs, canonical order. */
   readonly request_ids: string;
+}
+
+/** One `obs_usage_by_repo` row with its requests. */
+interface RepoSqlRow {
+  /** Repository root or working directory; null with no `cwd`. */
+  readonly repository: string | null;
+  /** How the working directory resolved (`request_repositories.repo_kind`). */
+  readonly repo_kind: string;
+  /** Deduplicated requests. */
+  readonly requests: number;
+  /** Output tokens. */
+  readonly output_tokens: number;
+  /** JSON array of the requests' raw line IDs, canonical order. */
+  readonly request_ids: string;
+}
+
+/** One open window's `proj_burn_rate` row with the reading it starts from. */
+interface BurnSqlRow {
+  /** `five_hour` or `seven_day`. */
+  readonly window: BurnWindow["window"];
+  /** The window's reset. */
+  readonly reset_at_utc: string;
+  /** Reset minus the window's length. */
+  readonly window_start_utc: string;
+  /** Last counted reading. */
+  readonly last_used_percentage: number | null;
+  /** When it was observed. */
+  readonly last_reading_at_utc: string | null;
+  /** 1 when that reading was at or above 100. */
+  readonly limit_reached: number | null;
+  /** Percentage points per hour. */
+  readonly projected_percentage_points_per_hour: number | null;
+  /** When the projection reaches 100. */
+  readonly projected_limit_at_utc: string | null;
+  /** 1 when that comes before the reset. */
+  readonly projected_limit_before_reset: number | null;
+  /** The status line's span, from `source_coverage`. */
+  readonly covers_from: string | null;
+  /** The status line's span. */
+  readonly covers_to: string | null;
+  /** The last reading's raw line. */
+  readonly last_reading_raw_line_id: number | null;
 }
 
 /** One `proj_api_list_price` row with its priced requests. */
@@ -351,13 +405,51 @@ function toSeries(row: WindowSqlRow): WindowSeries {
   return { window: row.window, resetAtUtc: row.reset_at_utc, points, hits };
 }
 
+/** One lockout interval's plan period, from `obs_lockout_by_plan_events`. */
+interface LockoutPeriodSqlRow {
+  /** The interval. */
+  readonly interval_number: number;
+  /** `plan` or `none`: an interval always has a time. */
+  readonly period_kind: "plan" | "none";
+  /** The period's first month. */
+  readonly from_month: string | null;
+  /** The month it stops applying. */
+  readonly until_month: string | null;
+  /** The plan's name. */
+  readonly plan_name: string | null;
+  /** The plan's last month; null while it applies. */
+  readonly to_month: string | null;
+}
+
+/**
+ * Maps a plan period's columns onto the contract's reference, with its last month as the view
+ * computes it for the per-plan table (the month before `until_month`).
+ * @param row - The period's columns.
+ * @returns The reference.
+ */
+function periodRef(
+  row: Pick<PlanPeriodRow, "period_kind" | "from_month" | "until_month" | "plan_name"> & {
+    readonly to_month?: string | null;
+  },
+): PlanPeriodRef {
+  return {
+    kind: row.period_kind,
+    fromMonth: row.from_month,
+    toMonth: row.to_month ?? null,
+    untilMonth: row.until_month,
+    planName: row.plan_name,
+  };
+}
+
 /**
  * Loads the lockout intervals, each with the hits merged into it.
  * @param db - Open, migrated database.
+ * @param withPeriods - Whether to tag each interval with its plan period (D-075): only once a plan
+ *   has been entered, as the text report only then prints the split.
  * @returns Intervals in time order; empty with no hit whose reset is known.
  * @see D-023 for the interval (hit to reset, overlaps merged) and reset to next request.
  */
-function loadLockouts(db: Db): LockoutBar[] {
+function loadLockouts(db: Db, withPeriods = false): LockoutBar[] {
   const rows = db
     .prepare(
       `WITH members AS (
@@ -366,7 +458,7 @@ function loadLockouts(db: Db): LockoutBar[] {
          JOIN raw_lines l ON l.id = h.raw_line_id
          GROUP BY h.interval_number
        )
-       SELECT i.locked_from_utc, i.locked_until_utc, i.hits, i.lockout_seconds,
+       SELECT i.interval_number, i.locked_from_utc, i.locked_until_utc, i.hits, i.lockout_seconds,
          i.reset_to_next_request_seconds, i.reset_after_coverage,
          COALESCE(m.hit_ids, '[]') AS hit_ids,
          -- The request behind the view's next_request_at_utc: matching that value, rather than
@@ -383,7 +475,24 @@ function loadLockouts(db: Db): LockoutBar[] {
        ORDER BY i.interval_number`,
     )
     .all() as LockoutSqlRow[];
+  const periods = new Map(
+    (withPeriods
+      ? (db
+          .prepare(
+            // to_month as obs_interruptions_by_plan computes it, so a lane names the same months.
+            `SELECT interval_number, period_kind, from_month, until_month, plan_name,
+               CASE WHEN until_month IS NOT NULL
+                 THEN strftime('%Y-%m', until_month || '-01', '-1 month') END AS to_month
+             FROM obs_lockout_by_plan_events`,
+          )
+          .all() as LockoutPeriodSqlRow[])
+      : []
+    ).map((row) => [row.interval_number, periodRef(row)]),
+  );
   return rows.map((row) => ({
+    ...(periods.has(row.interval_number)
+      ? { period: periods.get(row.interval_number) as PlanPeriodRef }
+      : {}),
     lockedFromUtc: row.locked_from_utc,
     lockedUntilUtc: row.locked_until_utc,
     seconds: row.lockout_seconds,
@@ -408,11 +517,17 @@ function loadLockouts(db: Db): LockoutBar[] {
  */
 function loadInterruptions(
   db: Db,
-  totals?: Pick<ObservedReport, "limitHits" | "lockout">,
+  totals?: Pick<ObservedReport, "limitHits" | "lockout" | "interruptionsByPlan">,
 ): InterruptionTotals {
-  const { limitHits, lockout } = totals ?? {
+  const { limitHits, lockout, interruptionsByPlan } = totals ?? {
     limitHits: db.prepare("SELECT * FROM obs_limit_hits").get() as LimitHits,
     lockout: db.prepare("SELECT * FROM obs_lockout_time").get() as LockoutTime,
+    interruptionsByPlan: db
+      .prepare(
+        `SELECT * FROM obs_interruptions_by_plan
+         ORDER BY CASE period_kind WHEN 'none' THEN 0 WHEN 'plan' THEN 1 ELSE 2 END, from_month`,
+      )
+      .all() as PlanPeriodRow[],
   };
   const row = db
     .prepare(
@@ -468,7 +583,62 @@ function loadInterruptions(
     // obs_limit_hits carries the session logs' span from source_coverage, the span the text
     // report prints beside these counts (principle 5).
     span: { from: limitHits.covers_from, to: limitHits.covers_to },
+    byPlan: loadByPlan(db, interruptionsByPlan),
   };
+}
+
+/**
+ * Loads the per-plan interruptions (D-075), with the events behind each count, only once a plan
+ * has been entered: the text report prints the split only then.
+ * @param db - Open, migrated database.
+ * @param rows - `obs_interruptions_by_plan`, as the text report read it.
+ * @returns One entry per row, in the rows' order; empty with no plan entered.
+ */
+function loadByPlan(db: Db, rows: readonly PlanPeriodRow[]): PlanPeriodTotals[] {
+  if (!rows.some((row) => row.period_kind === "plan")) {
+    return [];
+  }
+  // Grouped by the same two columns obs_interruptions_by_plan counts by, so each list re-adds.
+  const hitLists = db
+    .prepare(
+      `SELECT b.period_kind, b.from_month, json_group_array(b.raw_line_id ORDER BY ${CANONICAL}) AS ids
+       FROM obs_limit_hits_by_plan_events b
+       JOIN raw_lines l ON l.id = b.raw_line_id
+       GROUP BY b.period_kind, b.from_month`,
+    )
+    .all() as { period_kind: string; from_month: string | null; ids: string }[];
+  const lockoutLists = db
+    .prepare(
+      `SELECT i.period_kind, i.from_month, json_group_array(h.raw_line_id ORDER BY ${CANONICAL}) AS ids
+       FROM obs_lockout_by_plan_events i
+       JOIN obs_lockout_interval_hits h ON h.interval_number = i.interval_number
+       JOIN raw_lines l ON l.id = h.raw_line_id
+       GROUP BY i.period_kind, i.from_month`,
+    )
+    .all() as { period_kind: string; from_month: string | null; ids: string }[];
+  /**
+   * Finds a period's list.
+   * @param lists - Lists keyed by kind and first month.
+   * @param row - The period.
+   * @returns Its IDs; empty when it has none.
+   */
+  const listOf = (
+    lists: readonly { period_kind: string; from_month: string | null; ids: string }[],
+    row: PlanPeriodRow,
+  ): EventRef =>
+    parseIds(
+      lists.find((x) => x.period_kind === row.period_kind && x.from_month === row.from_month)
+        ?.ids ?? "[]",
+    );
+  return rows.map((row) => ({
+    period: periodRef(row),
+    hits: row.hits,
+    lockouts: row.lockouts,
+    lockoutSeconds: row.lockout_seconds,
+    span: { from: row.covers_from, to: row.covers_to },
+    hitEvents: listOf(hitLists, row),
+    lockoutEvents: listOf(lockoutLists, row),
+  }));
 }
 
 /**
@@ -519,6 +689,80 @@ function loadModels(db: Db): ModelBar[] {
     requests: row.requests,
     outputTokens: row.output_tokens,
     events: parseIds(row.request_ids),
+  }));
+}
+
+/**
+ * Loads output tokens by repository, each with its deduplicated requests (step G2.1).
+ * @param db - Open, migrated database.
+ * @returns Repositories by output tokens, largest first, ties by name, as the text report orders them.
+ * @see D-010 and D-028 for attribution, D-001 for deduplication.
+ */
+function loadRepos(db: Db): RepoBar[] {
+  const rows = db
+    .prepare(
+      `WITH members AS (
+         -- obs_usage_events is the set obs_usage_by_repo counts, grouped the same way, so each
+         -- list's IDs re-add to its row. explain by-repo matches on the same two columns.
+         SELECT e.repository, e.repo_kind,
+           json_group_array(e.raw_line_id ORDER BY ${CANONICAL}) AS request_ids
+         FROM obs_usage_events e
+         JOIN raw_lines l ON l.id = e.raw_line_id
+         GROUP BY e.repository, e.repo_kind
+       )
+       SELECT r.repository, r.repo_kind, r.requests, r.output_tokens,
+         COALESCE(x.request_ids, '[]') AS request_ids
+       FROM obs_usage_by_repo r
+       -- IS, not =: a request with no cwd has a NULL repository, and its group must still match.
+       LEFT JOIN members x ON x.repository IS r.repository AND x.repo_kind = r.repo_kind
+       ORDER BY r.output_tokens DESC, r.repository`,
+    )
+    .all() as RepoSqlRow[];
+  return rows.map((row) => ({
+    repository: row.repository,
+    kind: row.repo_kind,
+    requests: row.requests,
+    outputTokens: row.output_tokens,
+    events: parseIds(row.request_ids),
+  }));
+}
+
+/**
+ * Loads the burn rate of every open window, a projection, each with the reading it starts from
+ * (step G2.1). Read by its own function from its own view, never mixed into observed rows
+ * (principle 2).
+ * @param db - Open, migrated database.
+ * @returns Open windows in the text report's order: latest reset first, then by window.
+ * @see D-026 for the premise, D-024 for what an open window is.
+ */
+function loadBurn(db: Db): BurnWindow[] {
+  const rows = db
+    .prepare(
+      // The same join explain burn-rate uses for the reading behind each projection, and the same
+      // filter renderProjected prints by (window_open = 1), so the page and the text report agree.
+      `SELECT b.window, b.reset_at_utc, b.window_start_utc, b.last_used_percentage,
+         b.last_reading_at_utc, b.limit_reached, b.projected_percentage_points_per_hour,
+         b.projected_limit_at_utc, b.projected_limit_before_reset, b.covers_from, b.covers_to,
+         h.last_reading_raw_line_id
+       FROM proj_burn_rate b
+       JOIN obs_window_headroom h ON h.window = b.window AND h.reset_at_utc = b.reset_at_utc
+       WHERE b.window_open = 1
+       ORDER BY b.reset_at_utc DESC, b.window`,
+    )
+    .all() as BurnSqlRow[];
+  return rows.map((row) => ({
+    window: row.window,
+    resetAtUtc: row.reset_at_utc,
+    windowStartUtc: row.window_start_utc,
+    last: row.last_used_percentage,
+    lastAtUtc: row.last_reading_at_utc,
+    // NULL means no reading to judge by; nothing says the limit was reached, so it reads false.
+    limitReached: row.limit_reached === 1,
+    ratePerHour: row.projected_percentage_points_per_hour,
+    projectedLimitAtUtc: row.projected_limit_at_utc,
+    limitBeforeReset: row.projected_limit_before_reset === 1,
+    span: { from: row.covers_from, to: row.covers_to },
+    events: single(row.last_reading_raw_line_id),
   }));
 }
 
@@ -677,11 +921,14 @@ export const loadHtmlData: LoadHtmlData = (
   const windows = loadWindows(db);
   const gauge = windows.map(toGauge);
   const series = windows.map(toSeries);
-  const lockouts = loadLockouts(db);
   const interruptions = loadInterruptions(db, loaded?.observed);
+  // Lockouts carry their plan period only once a plan has been entered, as the split does.
+  const lockouts = loadLockouts(db, interruptions.byPlan.length > 0);
   const afterReset = loadAfterReset(db);
   const models = loadModels(db);
+  const repos = loadRepos(db);
   // Projections are read by their own function from their own view, never mixed into the rows above.
+  const burn = loadBurn(db);
   const months = loadMonths(db);
   const priceNotes = loadPriceNotes(db);
   const referenced = [
@@ -693,8 +940,11 @@ export const loadHtmlData: LoadHtmlData = (
     ...interruptions.events,
     ...interruptions.unknownResetEvents,
     ...interruptions.hitsInNoColumnEvents,
+    ...interruptions.byPlan.flatMap((p) => [...p.hitEvents, ...p.lockoutEvents]),
     ...afterReset.events,
     ...models.flatMap((bar) => bar.events),
+    ...repos.flatMap((bar) => bar.events),
+    ...burn.flatMap((window) => window.events),
     ...months.flatMap((bar) => [...bar.events, ...bar.unpricedEvents]),
     ...priceNotes.rateReadings.flatMap((reading) => reading.events),
     ...priceNotes.lowerBoundEvents,
@@ -711,6 +961,9 @@ export const loadHtmlData: LoadHtmlData = (
     interruptions,
     afterReset,
     models,
+    repos,
+    home: meta.home ?? "",
+    burn,
     months,
     priceNotes,
     files,

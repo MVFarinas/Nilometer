@@ -314,6 +314,8 @@ describe("loadHtmlData on the shared HTML fixture (html-fixture.ts)", () => {
       statusLineOnlyEvents: [],
       // The session logs' span: u1 10:00:00 to r4 13:05:10.
       span: { from: at("10:00:00"), to: at("13:05:10") },
+      // No plan entered, so no split (D-075).
+      byPlan: [],
     });
   });
 
@@ -335,6 +337,55 @@ describe("loadHtmlData on the shared HTML fixture (html-fixture.ts)", () => {
       // claude-sonnet-5: r1 alone, 100 output tokens.
       { model: "claude-sonnet-5", requests: 1, outputTokens: 100, events: [log["r1"]] },
     ]);
+  });
+
+  it("puts every request in one unresolved repository, since the fixture logs no cwd (G2.1)", () => {
+    // r1 100 + r2 300 + r3 10 + r4 50 = 460 output tokens over 4 requests. No cwd means no
+    // repositories row to join, so request_repositories calls it unresolved with no repository.
+    expect(data.repos).toEqual([
+      {
+        repository: null,
+        kind: "unresolved",
+        requests: 4,
+        outputTokens: 460,
+        events: [log["r1"], log["r2"], log["r3"], log["r4"]],
+      },
+    ]);
+    // No home in HTML_FIXTURE_META, so nothing shortens a path.
+    expect(data.home).toBe("");
+  });
+
+  it("projects both open windows from the 13:05:10 reading, latest reset first (G2.1)", () => {
+    // The last reading, capture 13:05:15 (spool line 4), is dated by r4 at 13:05:10 (D-045).
+    expect(
+      data.burn.map((b) => [b.window, b.resetAtUtc, b.windowStartUtc, b.last, b.lastAtUtc]),
+    ).toEqual([
+      ["seven_day", "2026-09-10T00:00:00.000Z", "2026-09-03T00:00:00.000Z", 16, at("13:05:10")],
+      ["five_hour", at("18:00:00"), at("13:00:00"), 2, at("13:05:10")],
+    ]);
+    const [weekly, fiveHour] = data.burn;
+    // Weekly: 16% after 13 h 5 m 10 s = 47,110 s, so 16 / (47110 / 3600) points per hour, and 100%
+    // at 100 * 47110 / 16 = 294,437.5 s after the window began: 2026-09-06 09:47:17.5.
+    expect(weekly?.ratePerHour).toBeCloseTo(16 / (47110 / 3600), 9);
+    expect(Date.parse(weekly?.projectedLimitAtUtc ?? "")).toBeCloseTo(
+      Date.parse("2026-09-06T09:47:17.500Z"),
+      -1,
+    );
+    // 5-hour: 2% after 310 s, so 2 / (310 / 3600) points per hour, and 100% at 100 * 310 / 2 =
+    // 15,500 s after 13:00: 17:18:20, before the 18:00 reset.
+    expect(fiveHour?.ratePerHour).toBeCloseTo(2 / (310 / 3600), 9);
+    expect(Date.parse(fiveHour?.projectedLimitAtUtc ?? "")).toBeCloseTo(
+      Date.parse(at("17:18:20")),
+      -1,
+    );
+    for (const b of data.burn) {
+      expect(b.limitReached).toBe(false);
+      expect(b.limitBeforeReset).toBe(true);
+      // The reading explain burn-rate lists: the window's last, spool line 4.
+      expect(b.events).toEqual([spool[4]]);
+      // The status line's span, as the text report prints above its burn rates.
+      expect(b.span).toEqual(data.coverage.find((c) => c.source === "status_line")?.span);
+    }
   });
 
   it("prices the month at API list price from the committed rates, with its priced requests", () => {
@@ -392,6 +443,8 @@ describe("loadHtmlData on the shared HTML fixture (html-fixture.ts)", () => {
       data.interruptions.hitsInNoColumnEvents,
       data.afterReset.events,
       ...data.models.map((bar) => bar.events),
+      ...data.repos.map((bar) => bar.events),
+      ...data.burn.map((b) => b.events),
       ...data.months.flatMap((bar) => [bar.events, bar.unpricedEvents]),
     ];
     const referenced = new Set(refs.flat());
@@ -512,6 +565,54 @@ describe("loadHtmlData on the report fixture (fixture.ts buildReportFixture)", (
         resetAfterCoverage: false,
         events: [id["a4"]],
         nextRequestEvents: [id["a6"]],
+        // a4 at 2026-09-01 09:00:30 in Chicago, in "Example plan"'s months from 2026-09 (D-075).
+        period: {
+          kind: "plan",
+          fromMonth: "2026-09",
+          toMonth: null,
+          untilMonth: null,
+          planName: "Example plan",
+        },
+      },
+    ]);
+  });
+
+  it("splits the interruptions by plan period, each count with its events (D-075)", () => {
+    // In America/Chicago, b1 (2026-08-20 10:00) comes before the plan's first month, 2026-09; every
+    // other line is in it. Hits a4 and c2 are both in September; only a4 has a lockout (c2's
+    // weekly reset text isn't a shape the parser reads, so its reset is unknown).
+    expect(data.interruptions.byPlan).toEqual([
+      {
+        period: {
+          kind: "none",
+          fromMonth: null,
+          toMonth: "2026-08",
+          untilMonth: "2026-09",
+          planName: null,
+        },
+        hits: 0,
+        lockouts: 0,
+        lockoutSeconds: 0,
+        // b1 is the period's only line.
+        span: { from: "2026-08-20T15:00:00.000Z", to: "2026-08-20T15:00:00.000Z" },
+        hitEvents: [],
+        lockoutEvents: [],
+      },
+      {
+        period: {
+          kind: "plan",
+          fromMonth: "2026-09",
+          toMonth: null,
+          untilMonth: null,
+          planName: "Example plan",
+        },
+        hits: 2,
+        lockouts: 1,
+        lockoutSeconds: 7170,
+        // a2 at 14:00:10 to c2 at 20:00:00 the next day, UTC.
+        span: { from: "2026-09-01T14:00:10.000Z", to: "2026-09-02T20:00:00.000Z" },
+        hitEvents: [id["a4"], id["c2"]],
+        lockoutEvents: [id["a4"]],
       },
     ]);
   });
@@ -767,6 +868,7 @@ describe("loadHtmlData places each limit hit in the column whose span holds it",
       statusLineOnlyEvents: [],
       // The fixture's lines run from 10:00:00 to line 6 at 13:00:00 on 2026-09-01.
       span: { from: "2026-09-01T10:00:00.000Z", to: "2026-09-01T13:00:00.000Z" },
+      byPlan: [],
     });
     // The only request (10:00:02) is before the reset, so none follows it.
     expect(data.lockouts.map((bar) => bar.nextRequestEvents)).toEqual([[]]);
@@ -835,6 +937,7 @@ describe("loadHtmlData places each limit hit in the column whose span holds it",
       statusLineOnlyEvents: [],
       // The logs run from line 1 (10:00:00) to line 8 (16:00:00).
       span: { from: on("10:00:00"), to: on("16:00:00") },
+      byPlan: [],
     });
     db.close();
   });
@@ -1127,6 +1230,38 @@ describe.each(CROSS_CHECK)(
         observed.byModel.map((row) => [row.model, row.requests, row.output_tokens]),
       );
       data.models.forEach((bar) => expect(bar.events).toHaveLength(bar.requests));
+      // Step G2.1: the same repositories, in the same order, as the text report's table.
+      expect(
+        data.repos.map((bar) => [bar.repository, bar.kind, bar.requests, bar.outputTokens]),
+      ).toEqual(
+        observed.byRepo.map((row) => [
+          row.repository,
+          row.repo_kind,
+          row.requests,
+          row.output_tokens,
+        ]),
+      );
+      data.repos.forEach((bar) => expect(bar.events).toHaveLength(bar.requests));
+      // And the open windows the text report projects, in its order.
+      expect(
+        data.burn.map((b) => [
+          b.window,
+          b.resetAtUtc,
+          b.last,
+          b.ratePerHour,
+          b.projectedLimitAtUtc,
+        ]),
+      ).toEqual(
+        projected.burnRate
+          .filter((row) => row.window_open === 1)
+          .map((row) => [
+            row.window,
+            row.reset_at_utc,
+            row.last_used_percentage,
+            row.projected_percentage_points_per_hour,
+            row.projected_limit_at_utc,
+          ]),
+      );
       expect(
         data.months.map((bar) => [
           bar.month,
@@ -1183,7 +1318,7 @@ describe.each(CROSS_CHECK)(
             )
             .get(JSON.stringify(events)) as { v: number }
         ).v;
-      for (const bar of data.models) {
+      for (const bar of [...data.models, ...data.repos]) {
         expect(
           sum("SELECT raw_line_id AS id, output_tokens AS v FROM requests_dedup", bar.events),
         ).toBe(bar.outputTokens);
@@ -1213,6 +1348,8 @@ describe.each(CROSS_CHECK)(
         data.interruptions.hitsInNoColumnEvents,
         data.afterReset.events,
         ...data.models.map((bar) => bar.events),
+        ...data.repos.map((bar) => bar.events),
+        ...data.burn.map((b) => b.events),
         ...data.months.flatMap((bar) => [bar.events, bar.unpricedEvents]),
       ];
       expect(
@@ -1269,9 +1406,15 @@ describe("loadHtmlData at the edges", () => {
         loggedEvents: [],
         statusLineOnlyEvents: [],
         span: { from: null, to: null },
+        byPlan: [],
       },
       afterReset: { count: 0, events: [] },
       models: [],
+      // Step G2.1: no request, so no repository; no reading, so no open window to project; no
+      // home given in the meta, so paths would print in full.
+      repos: [],
+      home: "",
+      burn: [],
       months: [],
       // No priced request, so no reading date has requests before it and none is a lower bound.
       priceNotes: { rateReadings: [], lowerBoundRequests: 0, lowerBoundEvents: [] },

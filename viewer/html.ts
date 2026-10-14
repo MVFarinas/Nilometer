@@ -17,14 +17,19 @@
  */
 import { formatCoverage, formatInstant, formatNumber, printable } from "./format.js";
 import {
+  REPO_BARS,
+  burnSentence,
+  renderBurnRate,
   renderCoverage,
   renderGauge,
   renderLockouts,
   renderModelBars,
   renderMonthBars,
+  renderRepoBars,
   renderWindowSeries,
 } from "./html-charts.js";
 import type {
+  BurnWindow,
   ChartOptions,
   CoverageRow,
   EventRef,
@@ -33,12 +38,22 @@ import type {
   LockoutBar,
   ModelBar,
   MonthBar,
+  PlanPeriodRef,
   RenderHtmlReport,
+  RepoBar,
   Span,
   WindowSeries,
   PriceNotes,
 } from "./html-contract.js";
-import { LABELS, plural, windowName } from "./render.js";
+import {
+  LABELS,
+  displayPath,
+  planPeriodMonths,
+  planPeriodName,
+  plural,
+  repoKindName,
+  windowName,
+} from "./render.js";
 
 /** The `viewBox` width every chart is drawn at; CSS scales the SVG to its container. */
 const CHART_WIDTH = 960;
@@ -92,6 +107,34 @@ export const HTML_LABELS = {
     "Unpriced requests have no verified rate and are left out of the amounts, not counted as $0.",
   planHint:
     "To show a plan price beside these amounts: plan-price set <YYYY-MM> <usd> --name <plan>",
+  // Step G2.1 (D-084): the tabs, the overview, and the two charts new to the page.
+  tabsLabel: "Report views",
+  observedGroup: "Observed",
+  projectedGroup: "Projected: estimates, not observations",
+  tabOverview: "Overview",
+  tabWindows: "Usage windows",
+  tabInterruptions: "Interruptions",
+  tabModels: "By model",
+  tabRepos: "By repository",
+  tabBurn: "Burn rate",
+  tabPrice: "API list price",
+  openTab: "Open tab",
+  weeklyNow: "Weekly window, last observed usage",
+  weeklyPeak: "Highest weekly peak observed",
+  mostModel: "Most output tokens, by model",
+  mostRepo: "Most output tokens, by repository",
+  repos: "Claude Code output tokens by repository",
+  repoCaveat:
+    "Worktrees and subfolders count as their repository. A directory that no longer exists keeps its last known repository and is drawn faded.",
+  legendRepo: "Repository or folder",
+  legendGone: "Directory no longer exists",
+  legendOther: "The rest, in one bar",
+  burnObserved: "Observed readings",
+  burnProjected: "Projected at the window's average rate",
+  noOpenWindow: "No open usage window in the status line readings.",
+  lastFrom: "Last observed usage the projection starts from",
+  byPlanCaption: "Limit hits by plan period",
+  limitProjectedFor: "Limit projected for",
 } as const;
 
 /** Which character each HTML-special character becomes. */
@@ -229,9 +272,15 @@ function numberCell(text: string, events: EventRef): Cell {
  * @param caption - What the table shows.
  * @param headers - Column names.
  * @param rows - The rows.
- * @returns A closed `<details>` holding the table.
+ * @param open - True to show the table expanded, for a split a tab exists to show (D-075).
+ * @returns A `<details>` holding the table, closed unless `open`.
  */
-function tableView(caption: string, headers: readonly string[], rows: readonly Row[]): string {
+function tableView(
+  caption: string,
+  headers: readonly string[],
+  rows: readonly Row[],
+  open = false,
+): string {
   const head = headers.map((header) => `<th scope="col">${escapeHtml(header)}</th>`).join("");
   const body = rows
     .map((row) => {
@@ -250,7 +299,7 @@ function tableView(caption: string, headers: readonly string[], rows: readonly R
     })
     .join("\n");
   return [
-    `<details class="nm-table"><summary>${escapeHtml(`${HTML_LABELS.tableView}: ${caption}`)}</summary>`,
+    `<details class="nm-table"${open ? " open" : ""}><summary>${escapeHtml(`${HTML_LABELS.tableView}: ${caption}`)}</summary>`,
     `<div class="table-scroll"><table><caption>${escapeHtml(caption)}</caption>`,
     `<thead><tr>${head}</tr></thead>`,
     `<tbody>\n${body}\n</tbody></table></div></details>`,
@@ -714,6 +763,65 @@ function interruptionCounts(data: HtmlReportData): string {
 }
 
 /**
+ * Names a plan period as the text report's per-plan table does (D-075).
+ * @param period - The period.
+ * @returns Its name and its months, e.g. `["Max 5x", "2026-08 onward"]`.
+ */
+function periodText(period: PlanPeriodRef): [string, string] {
+  const row = {
+    period_kind: period.kind,
+    plan_name: period.planName,
+    from_month: period.fromMonth,
+    to_month: period.toMonth,
+    until_month: period.untilMonth,
+  };
+  return [planPeriodName(row), planPeriodMonths(row)];
+}
+
+/**
+ * Renders the interruptions per plan period (D-075): the note the text report prints, and the
+ * table open, since it's the split this tab exists to show. Nothing until a plan has been entered.
+ * @param data - Report data.
+ * @returns Lines of HTML, or none.
+ */
+function byPlanBlock(data: HtmlReportData): string[] {
+  const periods = data.interruptions.byPlan;
+  if (periods.length === 0) {
+    return [];
+  }
+  const zone = data.timeZone;
+  const c = LABELS.columns;
+  const rows = periods.map((p): Row => {
+    const [name, months] = periodText(p.period);
+    return {
+      name: `${name}, ${months}`,
+      cells: [
+        textCell(name),
+        textCell(months),
+        numberCell(formatNumber(p.hits, "count"), p.hitEvents),
+        numberCell(formatNumber(p.lockouts, "count"), p.lockoutEvents),
+        numberCell(formatNumber(p.lockoutSeconds, "duration"), p.lockoutEvents),
+        // Without the zone, as the month table's span cells: the note above names it.
+        textCell(
+          p.period.kind === "unknown"
+            ? ""
+            : `${formatInstant(p.span.from, zone)} to ${formatInstant(p.span.to, zone)}`,
+        ),
+      ],
+    };
+  });
+  return [
+    para(`${LABELS.byPlan}: ${LABELS.byPlanNote} (months in ${zone}).`),
+    tableView(
+      HTML_LABELS.byPlanCaption,
+      [c.plan, c.months, c.hits, c.lockouts, c.elapsed, c.covers],
+      rows,
+      true,
+    ),
+  ];
+}
+
+/**
  * Renders the elapsed lockout time section, with the interruption counts and caveats next to the
  * number. The total is the view's own (`obs_lockout_time` through the data), not a sum of the
  * drawn bars, so the page and the text report print the same figure.
@@ -726,7 +834,7 @@ function renderLockoutSection(data: HtmlReportData, options: ChartOptions): stri
   // The counts' own span, as the text report states it beside them.
   const span = `Covers: ${sourceSpan("session logs", data.interruptions.span, zone)}; ${sourceSpan("status line", coverageOf(data, "status_line"), zone)}`;
   const bars = data.lockouts;
-  const summary = interruptionCounts(data);
+  const summary = [interruptionCounts(data), ...byPlanBlock(data)].join("\n");
   // The text report's auto-resume caveat qualifies the not-resumed counts, which the page doesn't
   // print, so it stays with them in the text report rather than seeming to qualify the hits here.
   const caveats = para(HTML_LABELS.lockoutCaveat);
@@ -807,6 +915,357 @@ function renderModelSection(data: HtmlReportData, options: ChartOptions): string
       tableView(HTML_LABELS.models, [c.model, c.requests, c.output], rows),
     ].join("\n"),
   });
+}
+
+/**
+ * Shows a repository as the text report does: `~/...` under the home directory, and a name for a
+ * request with no working directory.
+ * @param bar - The repository.
+ * @param home - Home directory, or "".
+ * @returns The display text, unescaped.
+ */
+function repoName(bar: RepoBar, home: string): string {
+  return bar.repository === null
+    ? "unknown (no working directory)"
+    : displayPath(bar.repository, home);
+}
+
+/**
+ * Renders output tokens by repository (step G2.1, D-084), new to the page: until now only the
+ * text report showed it.
+ * @param data - Report data.
+ * @param options - Chart options.
+ * @returns The section.
+ */
+function renderRepoSection(data: HtmlReportData, options: ChartOptions): string {
+  const span = `Covers: ${sourceSpan("session logs", coverageOf(data, "session_logs"), data.timeZone)}`;
+  if (data.repos.length === 0) {
+    return chartSection({
+      id: "nm-repos",
+      heading: HTML_LABELS.repos,
+      span,
+      body: para(HTML_LABELS.noRequests),
+    });
+  }
+  const c = LABELS.columns;
+  const rows = data.repos.map((r: RepoBar): Row => ({
+    name: repoName(r, data.home),
+    cells: [
+      textCell(repoName(r, data.home)),
+      textCell(repoKindName(r.kind)),
+      numberCell(formatNumber(r.requests, "count"), r.events),
+      numberCell(formatNumber(r.outputTokens, "tokens"), r.events),
+    ],
+  }));
+  const keys: [string, string][] = [["k-fill", HTML_LABELS.legendRepo]];
+  if (data.repos.some((r) => r.kind === "missing")) {
+    keys.push(["k-faded", HTML_LABELS.legendGone]);
+  }
+  if (data.repos.length > REPO_BARS) {
+    keys.push(["k-other", HTML_LABELS.legendOther]);
+  }
+  return chartSection({
+    id: "nm-repos",
+    heading: HTML_LABELS.repos,
+    span,
+    body: [
+      legend(keys),
+      para(HTML_LABELS.repoCaveat),
+      plot(renderRepoBars({ bars: data.repos, home: data.home }, options)),
+      tableView(HTML_LABELS.repos, [c.repository, c.kind, c.requests, c.output], rows),
+    ].join("\n"),
+  });
+}
+
+/**
+ * Renders the burn rate of every open window (step G2.1, D-026, D-084), new to the page, below the
+ * seam: the premise next to the numbers, and each window's sentence exactly as the text report
+ * prints it.
+ * @param data - Report data.
+ * @param options - Chart options.
+ * @returns The section.
+ */
+function renderBurnSection(data: HtmlReportData, options: ChartOptions): string {
+  const zone = data.timeZone;
+  // proj_burn_rate carries the status line's span on every row, as the text report prints it.
+  const first = data.burn[0];
+  const span = `Covers: ${sourceSpan("status line", first?.span ?? coverageOf(data, "status_line"), zone)}`;
+  const heading = { id: "nm-burn", heading: LABELS.burnRate, tag: HTML_LABELS.projectedTag };
+  const premise = para(LABELS.burnRatePremise);
+  if (data.burn.length === 0) {
+    return chartSection({
+      ...heading,
+      span,
+      body: [premise, para(HTML_LABELS.noOpenWindow)].join("\n"),
+    });
+  }
+  const c = LABELS.columns;
+  const windows = data.burn.map((burn: BurnWindow) => {
+    const name = windowTitle(burn.window, burn.resetAtUtc, zone);
+    return [
+      countPara(burnSentence(burn, zone), burn.events, `${LABELS.burnRate}, ${name}`),
+      plot(renderBurnRate({ burn, series: seriesOf(data, burn.window, burn.resetAtUtc) }, options)),
+    ].join("\n");
+  });
+  const rows = data.burn.map((burn): Row => ({
+    name: windowTitle(burn.window, burn.resetAtUtc, zone),
+    cells: [
+      textCell(windowName(burn.window)),
+      textCell(formatInstant(burn.resetAtUtc, zone)),
+      numberCell(formatNumber(burn.last, "percent"), burn.events),
+      textCell(formatInstant(burn.lastAtUtc, zone)),
+      numberCell(formatNumber(burn.ratePerHour, "rate"), burn.events),
+      textCell(
+        burn.limitReached
+          ? "limit reached at the last reading"
+          : formatInstant(burn.projectedLimitAtUtc, zone),
+      ),
+    ],
+  }));
+  return chartSection({
+    ...heading,
+    span,
+    body: [
+      legend([
+        ["k-fill", HTML_LABELS.burnObserved],
+        ["k-proj", HTML_LABELS.burnProjected],
+      ]),
+      premise,
+      ...windows,
+      tableView(
+        LABELS.burnRate,
+        [
+          c.window,
+          c.resets,
+          HTML_LABELS.lastFrom,
+          c.readingAt,
+          LABELS.burnRate,
+          HTML_LABELS.limitProjectedFor,
+        ],
+        rows,
+      ),
+    ].join("\n"),
+  });
+}
+
+/** One overview card: a tab's key numbers, its span, and a small, non-interactive copy of its chart. */
+interface CardParts {
+  /** The tab the card opens. */
+  readonly tab: string;
+  /** Heading, unescaped. */
+  readonly heading: string;
+  /** Lines of HTML, each already escaped, each number carrying its events. */
+  readonly lines: readonly string[];
+  /** Chart SVG for the thumbnail; "" for none. */
+  readonly thumbnail: string;
+  /** The span line, unescaped, starting with "Covers:" (principle 5). */
+  readonly span: string;
+}
+
+/**
+ * Renders one overview card. It is a chart section of its own, so a number on it lists its events
+ * in the card itself (principle 4). The thumbnail is `inert`: a picture of the tab's chart, with
+ * its events still on every bar, but no extra keyboard stops and no clicks.
+ * @param card - The card's parts.
+ * @returns The card HTML.
+ */
+function overviewCard(card: CardParts): string {
+  const id = `nm-card-${card.tab}`;
+  return [
+    `<section class="panel nm-card nm-chart" id="${id}" aria-labelledby="${id}-h">`,
+    `<div class="panel-title"><h3 id="${id}-h">${escapeHtml(card.heading)}</h3>`,
+    `<button type="button" class="nm-goto" data-goto="${card.tab}">${escapeHtml(HTML_LABELS.openTab)}</button></div>`,
+    `<div class="nm-card-body">${card.lines.join("\n")}</div>`,
+    card.thumbnail === ""
+      ? ""
+      : `<div class="nm-thumb" inert aria-hidden="true">${plot(card.thumbnail)}</div>`,
+    para(card.span, "span"),
+    '<div class="nm-events" aria-live="polite" hidden></div>',
+    "</section>",
+  ]
+    .filter((part) => part !== "")
+    .join("\n");
+}
+
+/**
+ * Renders the overview tab's cards (step G2.1, D-084): one per observed tab, never a projection
+ * (principle 2), each with the numbers a reader looks for first.
+ * @param data - Report data.
+ * @param options - Chart options.
+ * @returns The cards, in a grid.
+ */
+function renderOverviewCards(data: HtmlReportData, options: ChartOptions): string {
+  const zone = data.timeZone;
+  const status = `Covers: ${sourceSpan("status line", coverageOf(data, "status_line"), zone)}`;
+  const logs = `Covers: ${sourceSpan("session logs", coverageOf(data, "session_logs"), zone)}`;
+  const weekly = data.gauge.filter((w) => w.window === "seven_day");
+  // The open weekly window is the current one; with several (resets jittered), the latest reset.
+  const current = weekly.filter((w) => w.open).at(-1);
+  const highest = weekly.reduce<GaugeWindow | undefined>(
+    (best, w) => (w.peak !== null && (best?.peak ?? -1) < w.peak ? w : best),
+    undefined,
+  );
+  const windowLines =
+    data.gauge.length === 0
+      ? [para(LABELS.noReadings)]
+      : [
+          ...(current === undefined
+            ? []
+            : [
+                countPara(
+                  `${HTML_LABELS.weeklyNow}: ${formatNumber(current.last, "percent")} at ${formatInstant(current.lastAtUtc, zone)}; resets ${formatInstant(current.resetAtUtc, zone)}`,
+                  current.lastEvents,
+                  HTML_LABELS.weeklyNow,
+                  "count",
+                ),
+              ]),
+          ...(highest === undefined
+            ? []
+            : [
+                countPara(
+                  `${HTML_LABELS.weeklyPeak}: ${formatNumber(highest.peak, "percent")}, in the ${windowTitle(highest.window, highest.resetAtUtc, zone)}`,
+                  highest.peakEvents,
+                  HTML_LABELS.weeklyPeak,
+                  "count",
+                ),
+              ]),
+        ];
+  const t = data.interruptions;
+  const inIntervals = mergeEvents(...data.lockouts.map((bar) => bar.events));
+  const model = data.models[0];
+  const repo = data.repos[0];
+  const cards: CardParts[] = [
+    {
+      tab: "windows",
+      heading: HTML_LABELS.tabWindows,
+      lines: windowLines,
+      thumbnail: data.gauge.length === 0 ? "" : renderGauge(data.gauge, options),
+      span: status,
+    },
+    {
+      tab: "interruptions",
+      heading: HTML_LABELS.tabInterruptions,
+      lines: [
+        countPara(
+          `${LABELS.limitHits}: ${formatNumber(t.hits, "count")}`,
+          t.events,
+          LABELS.limitHits,
+          "count",
+        ),
+        // One line per plan period once a plan is entered (D-075), each with its own hits.
+        ...t.byPlan.map((p) => {
+          const [name, months] = periodText(p.period);
+          return countPara(
+            `${name}, ${months}: ${plural(p.hits, "limit hit", "limit hits")}`,
+            p.hitEvents,
+            `${LABELS.limitHits}, ${name}`,
+            "sub",
+          );
+        }),
+        countPara(
+          `${HTML_LABELS.lockoutElapsed}: ${formatNumber(t.lockoutSeconds, "duration")} across ${plural(t.lockoutIntervals, "lockout", "lockouts")}`,
+          inIntervals,
+          HTML_LABELS.lockoutElapsed,
+          "count",
+        ),
+      ],
+      thumbnail: data.lockouts.length === 0 ? "" : renderLockouts(data.lockouts, options),
+      span: `Covers: ${sourceSpan("session logs", t.span, zone)}`,
+    },
+    {
+      tab: "models",
+      heading: HTML_LABELS.tabModels,
+      lines:
+        model === undefined
+          ? [para(HTML_LABELS.noRequests)]
+          : [
+              countPara(
+                `${HTML_LABELS.mostModel}: ${model.model}, ${formatNumber(model.outputTokens, "tokens")} output tokens`,
+                model.events,
+                HTML_LABELS.mostModel,
+                "count",
+              ),
+            ],
+      thumbnail: data.models.length === 0 ? "" : renderModelBars(data.models, options),
+      span: logs,
+    },
+    {
+      tab: "repos",
+      heading: HTML_LABELS.tabRepos,
+      lines:
+        repo === undefined
+          ? [para(HTML_LABELS.noRequests)]
+          : [
+              countPara(
+                `${HTML_LABELS.mostRepo}: ${repoName(repo, data.home)}, ${formatNumber(repo.outputTokens, "tokens")} output tokens`,
+                repo.events,
+                HTML_LABELS.mostRepo,
+                "count",
+              ),
+            ],
+      // The first five are enough for a picture; the tab draws them all.
+      thumbnail:
+        data.repos.length === 0
+          ? ""
+          : renderRepoBars({ bars: data.repos.slice(0, 5), home: data.home }, options),
+      span: logs,
+    },
+  ];
+  return `<div class="nm-cards">\n${cards.map(overviewCard).join("\n")}\n</div>`;
+}
+
+/** The page's tabs, in order: observed first, then projected after a visible gap (D-084). */
+const TABS = [
+  { key: "overview", label: HTML_LABELS.tabOverview, group: "observed" },
+  { key: "windows", label: HTML_LABELS.tabWindows, group: "observed" },
+  { key: "interruptions", label: HTML_LABELS.tabInterruptions, group: "observed" },
+  { key: "models", label: HTML_LABELS.tabModels, group: "observed" },
+  { key: "repos", label: HTML_LABELS.tabRepos, group: "observed" },
+  { key: "burn", label: HTML_LABELS.tabBurn, group: "projected" },
+  { key: "price", label: HTML_LABELS.tabPrice, group: "projected" },
+] as const;
+
+/** A tab's key. */
+type TabKey = (typeof TABS)[number]["key"];
+
+/**
+ * Renders the tab bar (D-084): two tab lists, observed and projected, apart and labeled. Shown only
+ * when the script runs; without it the page reads top to bottom, seam included.
+ * @returns The navigation HTML. The overview tab starts selected.
+ */
+function renderTabBar(): string {
+  /**
+   * Renders one group's tab list.
+   * @param group - Which group.
+   * @param label - The group's visible label.
+   * @returns The group HTML.
+   */
+  const group = (group: "observed" | "projected", label: string): string => {
+    const tabs = TABS.filter((tab) => tab.group === group)
+      .map((tab) => {
+        const selected = tab.key === "overview";
+        return `<button type="button" role="tab" class="nm-tab" id="nm-tabbtn-${tab.key}" aria-controls="nm-tab-${tab.key}" aria-selected="${String(selected)}" tabindex="${selected ? 0 : -1}" data-tab="${tab.key}">${escapeHtml(tab.label)}</button>`;
+      })
+      .join("");
+    return `<div class="nm-tabgroup nm-tabgroup-${group}"><span class="nm-group-label">${escapeHtml(label)}</span><div role="tablist" class="nm-tablist" aria-label="${escapeHtml(label)}">${tabs}</div></div>`;
+  };
+  return [
+    `<nav class="nm-tabbar" aria-label="${escapeHtml(HTML_LABELS.tabsLabel)}">`,
+    group("observed", HTML_LABELS.observedGroup),
+    group("projected", HTML_LABELS.projectedGroup),
+    "</nav>",
+  ].join("\n");
+}
+
+/**
+ * Wraps a tab's content in its panel.
+ * @param key - The tab.
+ * @param content - The panel's HTML.
+ * @returns The panel; the overview's starts active.
+ */
+function tabPanel(key: TabKey, content: string): string {
+  const active = key === "overview" ? " nm-active" : "";
+  return `<div class="nm-tabpanel${active}" role="tabpanel" id="nm-tab-${key}" aria-labelledby="nm-tabbtn-${key}" data-tab="${key}">\n${content}\n</div>`;
 }
 
 /**
@@ -992,6 +1451,35 @@ th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--gri
 th { font-weight: 500; color: var(--muted); background: var(--sunken); white-space: nowrap; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 code { font-family: var(--mono); }
+.k-faded { width: 12px; height: 12px; border-radius: 2px; background: var(--water); opacity: 0.5; }
+.k-other { width: 12px; height: 12px; border-radius: 2px; background: var(--axis); }
+.k-proj { width: 16px; height: 0; border-top: 2px dotted var(--ink-2); }
+.nm-tabpanel { display: grid; gap: 28px; min-width: 0; }
+.nm-tabbar { display: none; }
+.nm-tabs .nm-tabbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 36px; background: var(--page); padding-top: 10px; border-bottom: 1px solid var(--grid); }
+.nm-tabgroup { display: grid; gap: 4px; }
+.nm-group-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; font-weight: 600; color: var(--water); }
+.nm-tabgroup-projected { padding-left: 20px; border-left: 2px dashed var(--silt); }
+.nm-tabgroup-projected .nm-group-label { color: var(--silt); }
+.nm-tablist { display: flex; flex-wrap: wrap; gap: 2px; }
+.nm-tab { font: inherit; font-size: 14px; color: var(--ink-2); background: none; border: 0; border-bottom: 3px solid transparent; border-radius: 6px 6px 0 0; padding: 8px 12px 9px; cursor: pointer; }
+.nm-tab:hover { background: var(--sunken); color: var(--ink); }
+.nm-tab[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--water); }
+.nm-tabgroup-projected .nm-tab[aria-selected="true"] { border-bottom: 3px dashed var(--silt); }
+.nm-tab:focus-visible, .nm-goto:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.nm-tabs .nm-tabpanel:not(.nm-active) { display: none; }
+.nm-tabs .nm-part:not(.nm-has-active) { display: none; }
+.nm-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 720px) { .nm-cards { grid-template-columns: 1fr; } }
+.nm-card { align-content: start; }
+.nm-card-body { display: grid; gap: 2px; }
+.nm-goto { font: inherit; font-size: 13px; color: var(--water-deep); background: var(--sunken); border: 0; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.nm-thumb { max-height: 160px; overflow: hidden; border-radius: 6px; background: var(--sunken); padding: 6px; }
+@media print {
+  .nm-tabs .nm-tabbar, .nm-goto { display: none; }
+  /* The same selectors as the hiding rules, later in the sheet, so printing shows every tab. */
+  .nm-tabs .nm-tabpanel:not(.nm-active), .nm-tabs .nm-part:not(.nm-has-active) { display: grid; }
+}
 `;
 
 /**
@@ -1052,8 +1540,59 @@ var NM = (function () {
     if (el.hasAttribute("aria-label")) { return el.getAttribute("aria-label"); }
     return "";
   }
-  return { formatAt: formatAt, parseIds: parseIds, union: union, eventLines: eventLines, labelOf: labelOf };
+  /* Picks the tab a page address names ("#repos"), or the first tab when it names none (D-084). */
+  function tabFromHash(hash, keys) {
+    var key = String(hash || "").replace(/^#/, "");
+    return keys.indexOf(key) >= 0 ? key : keys[0];
+  }
+  /* The tab an arrow, Home, or End key moves to, wrapping at both ends; -1 for any other key. */
+  function nextTab(index, key, count) {
+    if (key === "ArrowRight") { return (index + 1) % count; }
+    if (key === "ArrowLeft") { return (index - 1 + count) % count; }
+    if (key === "Home") { return 0; }
+    if (key === "End") { return count - 1; }
+    return -1;
+  }
+  return { formatAt: formatAt, parseIds: parseIds, union: union, eventLines: eventLines, labelOf: labelOf,
+    tabFromHash: tabFromHash, nextTab: nextTab };
 })();
+if (typeof document !== "undefined") {
+  (function () {
+    /* Tabs (D-084): one panel at a time, and the part holding it, so the seam shows above a
+       projected panel. Without this script every panel shows, top to bottom. */
+    var tabs = Array.prototype.slice.call(document.querySelectorAll(".nm-tab"));
+    if (tabs.length === 0) { return; }
+    var keys = tabs.map(function (t) { return t.getAttribute("data-tab"); });
+    document.documentElement.classList.add("nm-tabs");
+    function select(key, focus) {
+      tabs.forEach(function (t) {
+        var on = t.getAttribute("data-tab") === key;
+        t.setAttribute("aria-selected", on ? "true" : "false");
+        t.tabIndex = on ? 0 : -1;
+        if (on && focus) { t.focus(); }
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".nm-tabpanel"), function (p) {
+        p.classList.toggle("nm-active", p.getAttribute("data-tab") === key);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".nm-part"), function (part) {
+        part.classList.toggle("nm-has-active", part.querySelector(".nm-tabpanel.nm-active") !== null);
+      });
+      if (window.history && window.history.replaceState) { window.history.replaceState(null, "", "#" + key); }
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener("click", function () { select(t.getAttribute("data-tab"), false); });
+      t.addEventListener("keydown", function (e) {
+        var n = NM.nextTab(i, e.key, tabs.length);
+        if (n >= 0) { e.preventDefault(); select(keys[n], true); }
+      });
+    });
+    document.addEventListener("click", function (e) {
+      var go = e.target instanceof Element ? e.target.closest(".nm-goto") : null;
+      if (go) { select(go.getAttribute("data-goto"), true); window.scrollTo(0, 0); }
+    });
+    select(NM.tabFromHash(window.location.hash, keys), false);
+  })();
+}
 if (typeof document !== "undefined") {
   (function () {
     var LIMIT = ${EVENT_LIST_LIMIT};
@@ -1151,17 +1690,25 @@ function renderPage(data: HtmlReportData): string {
     "<body>",
     "<main>",
     renderHeader(data),
-    renderCoverageSection(data, options),
+    // Navigation only: its labels name the tabs, so the projected group's label sits above the
+    // seam, while every projected panel stays below it in the document (principle 2, D-084).
+    renderTabBar(),
     '<section class="nm-part" id="nm-observed" aria-labelledby="nm-observed-h">',
     `<h2 class="eyebrow" id="nm-observed-h">${escapeHtml(LABELS.observed)}</h2>`,
-    renderGaugeSection(data, options),
-    renderLockoutSection(data, options),
-    renderModelSection(data, options),
+    tabPanel(
+      "overview",
+      [renderCoverageSection(data, options), renderOverviewCards(data, options)].join("\n"),
+    ),
+    tabPanel("windows", renderGaugeSection(data, options)),
+    tabPanel("interruptions", renderLockoutSection(data, options)),
+    tabPanel("models", renderModelSection(data, options)),
+    tabPanel("repos", renderRepoSection(data, options)),
     "</section>",
     // The seam: everything below it is derived from the observations above (principle 2).
     '<section class="nm-part" id="nm-projected" aria-labelledby="nm-seam">',
     `<h2 class="seam" id="nm-seam">${escapeHtml(LABELS.projected)}</h2>`,
-    renderMonthSection(data, options),
+    tabPanel("burn", renderBurnSection(data, options)),
+    tabPanel("price", renderMonthSection(data, options)),
     "</section>",
     "</main>",
     `<script type="application/json" id="nm-data">${embedded}</script>`,

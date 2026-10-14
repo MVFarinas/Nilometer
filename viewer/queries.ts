@@ -118,12 +118,36 @@ export interface RepoRow extends TokenColumns {
   readonly repo_kind: string;
 }
 
+/** One row of `obs_interruptions_by_plan` (D-075). */
+export interface PlanPeriodRow {
+  /** `plan` inside an entered plan's months, `none` before the first, `unknown` for hits with no time. */
+  readonly period_kind: "plan" | "none" | "unknown";
+  /** First local month the plan applies; null for `none` and `unknown`. */
+  readonly from_month: string | null;
+  /** Last local month it applies; null while it still applies. */
+  readonly to_month: string | null;
+  /** The next entry's month (exclusive); for `none`, the first plan's month, or null with none entered. */
+  readonly until_month: string | null;
+  /** The plan's name as entered; null for `none` and `unknown`. */
+  readonly plan_name: string | null;
+  readonly hits: number;
+  readonly five_hour_hits: number;
+  readonly seven_day_hits: number;
+  readonly unknown_window_hits: number;
+  readonly lockouts: number;
+  readonly lockout_seconds: number;
+  readonly covers_from: string | null;
+  readonly covers_to: string | null;
+}
+
 /** Everything observed. */
 export interface ObservedReport {
   readonly limitHits: LimitHits;
   readonly midTask: MidTask;
   readonly lockout: LockoutTime;
   readonly lockoutIntervals: readonly LockoutInterval[];
+  /** Hits, lockouts, and elapsed lockout time per plan period (D-075, step G2.2). */
+  readonly interruptionsByPlan: readonly PlanPeriodRow[];
   readonly notResumed: NotResumed;
   readonly windows: readonly WindowRow[];
   readonly unattributed: readonly UnattributedRow[];
@@ -182,6 +206,7 @@ export const OBSERVED_VIEWS = [
   "obs_mid_task_interruptions",
   "obs_lockout_time",
   "obs_lockout_intervals",
+  "obs_interruptions_by_plan",
   "obs_sessions_not_resumed",
   "obs_window_headroom",
   "obs_window_peak",
@@ -226,6 +251,12 @@ export function loadObserved(db: Db): ObservedReport {
     midTask: observed<MidTask>(db, "obs_mid_task_interruptions")[0] as MidTask,
     lockout: observed<LockoutTime>(db, "obs_lockout_time")[0] as LockoutTime,
     lockoutIntervals: observed<LockoutInterval>(db, "obs_lockout_intervals", "interval_number"),
+    // Before the first plan, then plans in order, then hits with no time (D-075).
+    interruptionsByPlan: observed<PlanPeriodRow>(
+      db,
+      "obs_interruptions_by_plan",
+      "CASE period_kind WHEN 'none' THEN 0 WHEN 'plan' THEN 1 ELSE 2 END, from_month",
+    ),
     notResumed: observed<NotResumed>(db, "obs_sessions_not_resumed")[0] as NotResumed,
     // Headroom and peak describe the same window instances, so they're joined in SQL to sit side by side.
     windows: db

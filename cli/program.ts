@@ -744,7 +744,12 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
                       ? renderHtmlReport(
                           // Reuses what readReport just read from this snapshot, so the costliest
                           // views are computed once (D-070).
-                          loadHtmlData(db, { timeZone: deps.timeZone, generatedAt: at }, read),
+                          // The home directory shortens repository paths to ~/..., as in the text report.
+                          loadHtmlData(
+                            db,
+                            { timeZone: deps.timeZone, generatedAt: at, home: deps.home },
+                            read,
+                          ),
                         )
                       : undefined,
                 };

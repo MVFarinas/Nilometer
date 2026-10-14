@@ -19,6 +19,7 @@ import type {
   BurnRateRow,
   ModelRow,
   ObservedReport,
+  PlanPeriodRow,
   ProjectedReport,
   RepoRow,
 } from "./queries.js";
@@ -33,6 +34,10 @@ export const LABELS = {
   midTask: "Mid-task interruptions (the stopped request was answering a tool result)",
   lockout: "Elapsed lockout time (limit hit to reset, overlapping hits counted once)",
   resetToNextRequest: "reset to next Claude Code request",
+  // D-075 (step G2.2): interruptions per plan period.
+  byPlan: "By plan period",
+  byPlanNote:
+    "plans as entered with plan-price set; a plan applies from the first day of its month, so a change within a month counts from the month it was entered for",
   notResumed: "Sessions with no further request after a limit hit",
   autoResumeCaveat:
     "A session that continued after its reset may have been resumed automatically; these counts are requests, not who made them.",
@@ -77,6 +82,11 @@ export const LABELS = {
     month: "Month",
     apiListPrice: "At API list price",
     planPrice: "Plan price entered",
+    plan: "Plan",
+    months: "Months",
+    hits: "Hits",
+    lockouts: "Lockouts",
+    elapsed: "Elapsed lockout time",
     priced: "Priced requests",
     unpriced: "Unpriced requests",
     covers: "Covers",
@@ -207,6 +217,71 @@ export function repoKindName(kind: string): string {
 }
 
 /**
+ * Names a plan period as the report shows it (D-075).
+ * @param row - The period's kind and plan name.
+ * @returns The plan's name as entered, "no plan entered" before the first, or "time unknown".
+ */
+export function planPeriodName(row: Pick<PlanPeriodRow, "period_kind" | "plan_name">): string {
+  if (row.period_kind === "none") {
+    return "no plan entered";
+  }
+  // Raw: the text table and the page each escape cells themselves (D-050).
+  return row.period_kind === "unknown" ? "time unknown" : (row.plan_name ?? "");
+}
+
+/**
+ * States which months a plan period covers (D-075).
+ * @param row - The period's kind and months.
+ * @returns `2026-07`, `2026-07 to 2026-09`, `2026-08 onward`, `before 2026-07`, `every month`, or
+ *   `no time` for hits that have none.
+ */
+export function planPeriodMonths(
+  row: Pick<PlanPeriodRow, "period_kind" | "from_month" | "to_month" | "until_month">,
+): string {
+  if (row.period_kind === "unknown") {
+    return "no time";
+  }
+  if (row.period_kind === "none") {
+    return row.until_month === null ? "every month" : `before ${row.until_month}`;
+  }
+  if (row.to_month === null) {
+    return `${row.from_month ?? ""} onward`;
+  }
+  return row.to_month === row.from_month
+    ? (row.from_month ?? "")
+    : `${row.from_month ?? ""} to ${row.to_month}`;
+}
+
+/**
+ * Renders the per-plan interruption table (D-075), only once a plan has been entered: before
+ * that, every row would be "no plan entered" and repeat the totals above it.
+ * @param rows - `obs_interruptions_by_plan` rows, in the view's order.
+ * @param timeZone - Display zone.
+ * @returns Lines, or none.
+ */
+function renderByPlan(rows: readonly PlanPeriodRow[], timeZone: string): string[] {
+  if (!rows.some((row) => row.period_kind === "plan")) {
+    return [];
+  }
+  const c = LABELS.columns;
+  return [
+    `  ${LABELS.byPlan}: ${LABELS.byPlanNote} (months in ${timeZone}).`,
+    ...renderTable(
+      [c.plan, c.months, c.hits, c.lockouts, c.elapsed, c.covers],
+      rows.map((row) => [
+        planPeriodName(row),
+        planPeriodMonths(row),
+        n(row.hits, "count"),
+        n(row.lockouts, "count"),
+        n(row.lockout_seconds, "duration"),
+        row.period_kind === "unknown" ? "" : span(row.covers_from, row.covers_to, timeZone),
+      ]),
+      ["left", "left", "right", "right", "right", "left"],
+    ).map((line) => `  ${line}`),
+  ];
+}
+
+/**
  * Formats a span without the zone, for table cells under a heading that names it.
  * @param from - First instant.
  * @param to - Last instant.
@@ -306,6 +381,7 @@ export function renderObserved(observed: ObservedReport, timeZone: string, home 
             : n(interval.reset_to_next_request_seconds, "duration")
         }`,
     ),
+    ...renderByPlan(observed.interruptionsByPlan, timeZone),
     `  ${LABELS.notResumed}: ${n(notResumed.sessions_not_resumed, "count")} of ${plural(notResumed.sessions_with_hits, "session", "sessions")} with a hit`,
     `    Reset came after the logs end: ${n(notResumed.reset_after_coverage, "count")} | reset time unknown: ${n(notResumed.reset_unknown, "count")}`,
     `    ${LABELS.autoResumeCaveat}`,

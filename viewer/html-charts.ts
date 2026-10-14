@@ -17,6 +17,8 @@
  * ASCII (D-063). See D-024, D-045, D-063, D-068, D-070.
  */
 import type {
+  BurnChartInput,
+  BurnWindow,
   ChartOptions,
   CoverageRow,
   EventRef,
@@ -24,7 +26,9 @@ import type {
   LockoutBar,
   ModelBar,
   MonthBar,
+  PlanPeriodRef,
   RenderChart,
+  RepoChartInput,
   WindowSeries,
 } from "./html-contract.js";
 import {
@@ -35,7 +39,17 @@ import {
   formatNumber,
   printable,
 } from "./format.js";
-import { LABELS, plural, windowName } from "./render.js";
+import type { BurnRateRow } from "./queries.js";
+import {
+  LABELS,
+  describeBurnRate,
+  displayPath,
+  planPeriodMonths,
+  planPeriodName,
+  plural,
+  repoKindName,
+  windowName,
+} from "./render.js";
 
 /** Attributes of one SVG element, written in insertion order; an undefined value is left out. */
 type Attrs = Readonly<Record<string, string | number | undefined>>;
@@ -874,6 +888,22 @@ function durationTick(seconds: number): string {
 }
 
 /**
+ * Names a lockout lane by its plan period, as the per-plan table does (D-075).
+ * @param period - The period.
+ * @returns E.g. `Max 5x, 2026-08 onward` or `no plan entered, before 2026-07`.
+ */
+function laneName(period: PlanPeriodRef): string {
+  const row = {
+    period_kind: period.kind,
+    plan_name: period.planName,
+    from_month: period.fromMonth,
+    to_month: period.toMonth,
+    until_month: period.untilMonth,
+  };
+  return `${planPeriodName(row)}, ${planPeriodMonths(row)}`;
+}
+
+/**
  * Describes what followed a lockout's reset.
  * @param bar - The lockout.
  * @returns The reset-to-next-request text, or why there is none.
@@ -903,7 +933,19 @@ export const renderLockouts: RenderChart<readonly LockoutBar[]> = (bars, options
   const axis = durationAxis(Math.max(...bars.map((b) => b.seconds)));
   const left = LOCKOUT.left;
   const plotWidth = options.width - left - LOCKOUT.valueRoom;
-  const bottom = LOCKOUT.top + bars.length * LOCKOUT.row;
+  // One lane per plan period once bars carry one (D-075): a heading row above each period's first
+  // bar. Bars come in time order and periods never overlap, so each period's bars are adjacent.
+  const lanes = bars.map((bar, i) => {
+    const name = bar.period === undefined ? undefined : laneName(bar.period);
+    const previous = i === 0 ? undefined : bars[i - 1]?.period;
+    return name !== undefined && (previous === undefined || laneName(previous) !== name)
+      ? name
+      : undefined;
+  });
+  /** Row index of each bar, counting the lane headings above it. */
+  const rowOf = bars.map((_, i) => i + lanes.slice(0, i + 1).filter((l) => l !== undefined).length);
+  const rows = bars.length + lanes.filter((l) => l !== undefined).length;
+  const bottom = LOCKOUT.top + rows * LOCKOUT.row;
   const parts: string[] = [];
   for (let k = 0; k * axis.step <= axis.end; k += 1) {
     const x = left + ((k * axis.step) / axis.end) * plotWidth;
@@ -924,7 +966,18 @@ export const renderLockouts: RenderChart<readonly LockoutBar[]> = (bars, options
     );
   }
   bars.forEach((bar, i) => {
-    const y = LOCKOUT.top + i * LOCKOUT.row;
+    const y = LOCKOUT.top + (rowOf[i] ?? i) * LOCKOUT.row;
+    const lane = lanes[i];
+    if (lane !== undefined) {
+      // The heading sits in the row above the bar, in a text color, never the bars' color.
+      parts.push(
+        text(0, y - LOCKOUT.row + 18, lane, {
+          class: "nm-lane",
+          fill: "var(--ink)",
+          "font-weight": 600,
+        }),
+      );
+    }
     const width = (bar.seconds / axis.end) * plotWidth;
     const hits = plural(bar.hits, "hit", "hits");
     parts.push(
@@ -1033,6 +1086,323 @@ export const renderModelBars: RenderChart<readonly ModelBar[]> = (bars, options)
     parts,
   );
 };
+
+/** Repositories the chart draws by name; the rest share one bar, and the table lists every one. */
+export const REPO_BARS = 10;
+
+/** Layout of the repository chart (step G2.1). */
+const REPOS = {
+  top: 4,
+  row: 24,
+  valueRoom: 90,
+  charWidth: 6.6,
+  maxChars: 40,
+  maxBars: REPO_BARS,
+} as const;
+
+/** What a repository chart calls a request with no working directory, as `explain by-repo` does. */
+const NO_REPOSITORY = "unknown (no working directory)";
+
+/**
+ * Shortens a long repository path for its row label, keeping the end, where the repository's own
+ * name is; the bar's title keeps the whole path.
+ * @param shown - The path as displayed (`~/...` under the home directory).
+ * @returns The path, or `...` and its last characters past {@link REPOS}.maxChars.
+ */
+function repoLabel(shown: string): string {
+  const safe = printable(shown);
+  return safe.length > REPOS.maxChars ? `...${safe.slice(-(REPOS.maxChars - 3))}` : safe;
+}
+
+/**
+ * Output tokens by repository (step G2.1, D-084): one bar per repository, one hue, in the input's
+ * order (largest first). Past {@link REPOS}.maxBars repositories, the rest are one neutral bar
+ * whose events are all of theirs, so every drawn bar still resolves to its requests (principle 4).
+ * A directory that no longer exists (D-028) is drawn faded, and its title says so.
+ *
+ * Repository rows carry no dates, so this chart can't state its span; the page states it from the
+ * session log coverage, as for models.
+ * @param input - Repositories by output tokens, and the home directory paths shorten against.
+ * @param options - Width and zone.
+ * @returns One `<svg>`; a "No data" svg when there are no repositories.
+ */
+export const renderRepoBars: RenderChart<RepoChartInput> = (input, options) => {
+  const label = `${LABELS.byRepo}: output tokens`;
+  if (input.bars.length === 0) {
+    return noData("repos", options, label);
+  }
+  const named = input.bars.slice(0, REPOS.maxBars);
+  const rest = input.bars.slice(REPOS.maxBars);
+  const rows = named.map((bar) => {
+    const shown = bar.repository === null ? NO_REPOSITORY : displayPath(bar.repository, input.home);
+    return {
+      label: repoLabel(shown),
+      title: `${shown} (${repoKindName(bar.kind)})`,
+      outputTokens: bar.outputTokens,
+      requests: bar.requests,
+      events: bar.events,
+      faded: bar.kind === "missing",
+      other: false,
+    };
+  });
+  if (rest.length > 0) {
+    // Summed here only for drawing: each is a sum of its own unrounded rows from obs_usage_by_repo.
+    rows.push({
+      label: `Other: ${plural(rest.length, "more repository or folder", "more repositories and folders")}`,
+      title: `${plural(rest.length, "repository or folder", "repositories and folders")} past the first ${REPOS.maxBars}`,
+      outputTokens: rest.reduce((sum, bar) => sum + bar.outputTokens, 0),
+      requests: rest.reduce((sum, bar) => sum + bar.requests, 0),
+      events: union(...rest.map((bar) => bar.events)),
+      faded: false,
+      other: true,
+    });
+  }
+  // Size the label column to the longest label, within bounds, so bars start after every label.
+  const longest = Math.max(...rows.map((row) => row.label.length));
+  const left = Math.min(options.width * 0.45, Math.max(80, longest * REPOS.charWidth + 12));
+  const plotWidth = options.width - left - REPOS.valueRoom;
+  const most = Math.max(...rows.map((row) => row.outputTokens));
+  const parts: string[] = [];
+  rows.forEach((row, i) => {
+    const y = REPOS.top + i * REPOS.row;
+    // With no output tokens at all, every bar is empty rather than divided by zero.
+    const width = most > 0 ? (row.outputTokens / most) * plotWidth : 0;
+    parts.push(
+      text(0, y + 15, row.label, { class: "nm-label", fill: "var(--ink-2)" }),
+      el(
+        "rect",
+        {
+          class: row.other ? "nm-data nm-repo nm-repo-other" : "nm-data nm-repo",
+          "data-events": eventList(row.events),
+          x: left,
+          y: y + 5,
+          width,
+          height: 14,
+          rx: 2,
+          // The remainder is neutral, so it never reads as one more repository.
+          fill: row.other ? "var(--axis)" : "var(--water)",
+          // Faded, not recolored: a gone directory is still the same kind of bar (D-028).
+          opacity: row.faded ? 0.5 : undefined,
+        },
+        title(
+          `${row.title}: ${formatNumber(row.outputTokens, "tokens")} output tokens from ${plural(row.requests, "request", "requests")}`,
+        ),
+      ),
+      text(left + width + 6, y + 15, formatNumber(row.outputTokens, "tokens"), {
+        class: "nm-value",
+        fill: "var(--ink-2)",
+      }),
+    );
+  });
+  return svg(
+    "repos",
+    options,
+    REPOS.top + rows.length * REPOS.row + 4,
+    `${label}, ${plural(input.bars.length, "repository or folder", "repositories and folders")}`,
+    parts,
+  );
+};
+
+/**
+ * One open window's burn rate (step G2.1, D-026, D-084): its observed readings, drawn as on its
+ * usage-over-time chart, and the projection, a dotted neutral line from 0% at the window's start
+ * at the window's average rate, to 100% or to the reset, whichever comes first.
+ *
+ * The projection is the only element here that isn't an observation, so it alone is dotted and
+ * neutral: the user's 100% line is red and dashed on every usage chart, and a warm projection
+ * beside it was too close in color for a red-green colorblind reader. The projection, and the
+ * projected time it reaches 100% when that falls before the reset, carry the reading the
+ * projection starts from, as `explain burn-rate` lists it (principle 4).
+ * @param input - The window's projection and its readings.
+ * @param options - Width and zone.
+ * @returns One `<svg>`; a "No data" svg when the window has neither readings nor a last reading.
+ */
+export const renderBurnRate: RenderChart<BurnChartInput> = (input, options) => {
+  const tz = options.timeZone;
+  const burn = input.burn;
+  const name = windowTitle(burn.window, burn.resetAtUtc, tz);
+  const label = `${LABELS.burnRate}, projected, for the ${name}`;
+  const points = input.series?.points ?? [];
+  if (points.length === 0 && burn.last === null) {
+    return noData("burn", options, label);
+  }
+  const scale = percentScale([...points.map((p) => p.used), burn.last]);
+  const from = Date.parse(burn.windowStartUtc);
+  const reset = Date.parse(burn.resetAtUtc);
+  const duration = Math.max(1, reset - from);
+  const left = PLOT.left;
+  const right = options.width - PLOT.right;
+  const top = percentY(scale, scale.top);
+  const baseline = percentY(scale, 0);
+  /**
+   * Places an instant on the window's time axis, from its start to its reset.
+   * @param ms - Epoch milliseconds.
+   * @returns Its x coordinate.
+   */
+  const timeX = (ms: number): number => left + ((ms - from) / duration) * (right - left);
+  const parts = percentAxis(scale, left, right);
+  const resetX = timeX(reset);
+  parts.push(
+    el("line", {
+      class: "nm-reset",
+      x1: resetX,
+      x2: resetX,
+      y1: top,
+      y2: baseline,
+      stroke: "var(--ink-2)",
+      "stroke-width": 1,
+    }),
+    text(resetX, PLOT.labelRow, `${LABELS.columns.resets} ${formatInstant(burn.resetAtUtc, tz)}`, {
+      class: "nm-label",
+      "text-anchor": "end",
+      fill: "var(--ink-2)",
+    }),
+    text(left, baseline + 16, formatInstant(burn.windowStartUtc, tz)),
+  );
+  if (!burn.limitReached && burn.ratePerHour !== null) {
+    const limitAt = burn.projectedLimitAtUtc === null ? null : Date.parse(burn.projectedLimitAtUtc);
+    // The line stops at 100% when that comes before the reset, else at the reset (D-026).
+    const end = limitAt !== null && burn.limitBeforeReset ? limitAt : reset;
+    const endPercent = burn.ratePerHour * ((end - from) / 3_600_000);
+    const sentence = burnSentence(burn, tz);
+    parts.push(
+      el(
+        "path",
+        {
+          class: "nm-data nm-projection",
+          "data-events": eventList(burn.events),
+          d: `M${num(timeX(from))} ${num(baseline)}L${num(timeX(end))} ${num(percentY(scale, endPercent))}`,
+          fill: "none",
+          stroke: "var(--ink-2)",
+          "stroke-width": 2,
+          "stroke-dasharray": "1 5",
+          "stroke-linecap": "round",
+        },
+        title(sentence),
+      ),
+    );
+    if (limitAt !== null && burn.limitBeforeReset) {
+      const x = timeX(limitAt);
+      parts.push(
+        el(
+          "circle",
+          {
+            class: "nm-data nm-projected-limit",
+            "data-events": eventList(burn.events),
+            cx: x,
+            cy: percentY(scale, 100),
+            r: 5,
+            fill: "var(--surface)",
+            stroke: "var(--ink-2)",
+            "stroke-width": 2,
+          },
+          title(sentence),
+        ),
+        text(x, PLOT.keyRow, `limit projected ${formatInstant(burn.projectedLimitAtUtc, tz)}`, {
+          class: "nm-label",
+          // Kept inside the plot: anchored at its end when the point is in the right half.
+          "text-anchor": x > (left + right) / 2 ? "end" : "start",
+          fill: "var(--ink-2)",
+        }),
+      );
+    }
+  } else if (burn.limitReached) {
+    parts.push(
+      text(left + 8, top + 14, "Limit reached at the last reading; nothing is projected.", {
+        class: "nm-label",
+        fill: "var(--ink-2)",
+      }),
+    );
+  }
+  if (points.length > 0) {
+    parts.push(
+      el(
+        "path",
+        {
+          class: "nm-data nm-line",
+          "data-events": eventList(points.map((p) => p.event)),
+          d: points
+            .map(
+              (p, i) =>
+                `${i === 0 ? "M" : "L"}${num(timeX(Date.parse(p.atUtc)))} ${num(percentY(scale, p.used))}`,
+            )
+            .join(""),
+          fill: "none",
+          stroke: "var(--water)",
+          "stroke-width": 2,
+          "stroke-linejoin": "round",
+          "stroke-linecap": "round",
+        },
+        title(`Observed usage in the ${name}, ${plural(points.length, "reading", "readings")}`),
+      ),
+      ...points.map((p) =>
+        el(
+          "circle",
+          {
+            class: "nm-data nm-point",
+            "data-events": String(p.event),
+            cx: timeX(Date.parse(p.atUtc)),
+            cy: percentY(scale, p.used),
+            r: 4,
+            fill: "var(--water)",
+            stroke: "var(--surface)",
+            "stroke-width": 2,
+          },
+          title(
+            `Observed usage ${formatNumber(p.used, "percent")} at ${formatInstant(p.atUtc, tz)}`,
+          ),
+        ),
+      ),
+    );
+  }
+  const readings = extent(points.map((p) => p.atUtc));
+  const span =
+    readings === null
+      ? `Projected from the reading at ${formatInstant(burn.lastAtUtc, tz)}`
+      : `Readings ${formatCoverage(readings.from, readings.to, tz)}; projected from the last one`;
+  parts.push(text(left, baseline + 54, span, { class: "nm-span" }));
+  return svg(
+    "burn",
+    options,
+    PLOT.top + PLOT.height + PLOT.bottom,
+    `${label}, ${plural(points.length, "reading", "readings")}. ${span}`,
+    parts,
+  );
+};
+
+/**
+ * Turns a burn window back into the `proj_burn_rate` row it was read from, so the page can state it
+ * with the text report's own sentence and the two can never word it differently.
+ * @param burn - The window's projection.
+ * @returns The row; `window_open` is 1, since only open windows are loaded.
+ */
+export function burnRow(burn: BurnWindow): BurnRateRow {
+  return {
+    window: burn.window,
+    reset_at_utc: burn.resetAtUtc,
+    window_start_utc: burn.windowStartUtc,
+    last_used_percentage: burn.last,
+    last_reading_at_utc: burn.lastAtUtc,
+    window_open: 1,
+    limit_reached: burn.limitReached ? 1 : 0,
+    projected_percentage_points_per_hour: burn.ratePerHour,
+    projected_limit_at_utc: burn.projectedLimitAtUtc,
+    projected_limit_before_reset: burn.limitBeforeReset ? 1 : 0,
+    covers_from: burn.span.from,
+    covers_to: burn.span.to,
+  };
+}
+
+/**
+ * States a burn rate in the text report's words (`describeBurnRate`), without its indent, for the
+ * projection's title: what it starts from, the rate, and when it reaches 100%.
+ * @param burn - The window's projection.
+ * @param tz - Display zone.
+ * @returns One sentence; it says "projected" unless the limit was already reached.
+ */
+export function burnSentence(burn: BurnWindow, tz: string): string {
+  return describeBurnRate(burnRow(burn), tz).trim();
+}
 
 /** Layout of the month chart. */
 const MONTHS = { top: 24, height: 180, left: 56, right: 12, bottom: 56, maxBar: 40 } as const;

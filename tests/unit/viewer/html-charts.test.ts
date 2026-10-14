@@ -10,19 +10,24 @@
 import { describe, expect, it } from "vitest";
 
 import type {
+  BurnWindow,
   ChartOptions,
   GaugeWindow,
   LockoutBar,
   ModelBar,
   MonthBar,
+  RepoBar,
   WindowSeries,
 } from "../../../viewer/html-contract.js";
 import {
+  burnSentence,
+  renderBurnRate,
   renderCoverage,
   renderGauge,
   renderLockouts,
   renderModelBars,
   renderMonthBars,
+  renderRepoBars,
   renderWindowSeries,
 } from "../../../viewer/html-charts.js";
 
@@ -543,6 +548,51 @@ describe("renderLockouts", () => {
   // Width 600: bars from 124, 600 - 124 - 110 = 366 wide.
   const svg = renderLockouts(LOCKOUTS, OPTIONS);
 
+  it("draws a lane heading above each plan period's first bar (D-075, step G2.2)", () => {
+    const pro = {
+      kind: "plan",
+      fromMonth: "2026-07",
+      toMonth: "2026-08",
+      untilMonth: "2026-09",
+      planName: "Pro",
+    } as const;
+    const max = {
+      kind: "plan",
+      fromMonth: "2026-09",
+      toMonth: null,
+      untilMonth: null,
+      planName: "Max 5x",
+    } as const;
+    const two = renderLockouts(
+      [
+        { ...LOCKOUTS[0]!, period: pro },
+        { ...LOCKOUTS[1]!, period: max },
+      ],
+      OPTIONS,
+    );
+    // Rows 28 apart from 8: heading, bar, heading, bar. Bars in rows 1 and 3, 6 into the row:
+    // 8 + 28 + 6 = 42 and 8 + 3 * 28 + 6 = 98. Headings 18 into rows 0 and 2: 26 and 82.
+    expect(byClass(two, "nm-lockout").map((t) => t.attrs.y)).toEqual(["42", "98"]);
+    expect(byClass(two, "nm-lane").map((t) => t.attrs.y)).toEqual(["26", "82"]);
+    expect(texts(two)).toEqual(
+      expect.arrayContaining(["Pro, 2026-07 to 2026-08", "Max 5x, 2026-09 onward"]),
+    );
+    // Four rows end at 8 + 4 * 28 = 120; the chart is 40 taller: 160.
+    expect(tags(two)[0]?.attrs.viewBox).toBe("0 0 600 160");
+    // Both bars in one period: one heading, bars in rows 1 and 2 (42 and 70).
+    const one = renderLockouts(
+      [
+        { ...LOCKOUTS[0]!, period: max },
+        { ...LOCKOUTS[1]!, period: max },
+      ],
+      OPTIONS,
+    );
+    expect(byClass(one, "nm-lane")).toHaveLength(1);
+    expect(byClass(one, "nm-lockout").map((t) => t.attrs.y)).toEqual(["42", "70"]);
+    // No period on the bars, no headings: the layout below is unchanged.
+    expect(byClass(svg, "nm-lane")).toEqual([]);
+  });
+
   it("draws each lockout on one duration axis with its hit lines", () => {
     // Longest 3600 s: steps of 60 (60 ticks) and 300 (12) are too many; 600 needs 6. Axis 0 to 3600.
     const bars = byClass(svg, "nm-lockout").map((t) => t.attrs);
@@ -665,6 +715,205 @@ describe("renderModelBars", () => {
   });
 });
 
+/** Three repositories under a home of /home/example: one present, one gone (D-028), one with no cwd. */
+const REPOS: readonly RepoBar[] = [
+  {
+    repository: "/home/example/alpha",
+    kind: "repo",
+    requests: 2,
+    outputTokens: 400,
+    events: [1, 2],
+  },
+  {
+    repository: "/home/example/gone",
+    kind: "missing",
+    requests: 1,
+    outputTokens: 100,
+    events: [3],
+  },
+  { repository: null, kind: "unresolved", requests: 1, outputTokens: 50, events: [4] },
+];
+
+describe("renderRepoBars (step G2.1)", () => {
+  const svg = renderRepoBars({ bars: REPOS, home: "/home/example" }, OPTIONS);
+
+  it("scales bars to the most output tokens, after a label column sized to the longest label", () => {
+    // Longest label "unknown (no working directory)", 30 characters: 30 * 6.6 + 12 = 210, under
+    // 600 * 0.45 = 270. Bars 600 - 210 - 90 = 300 wide at most.
+    const bars = byClass(svg, "nm-repo").map((t) => t.attrs);
+    expect(bars.map((b) => b.x)).toEqual(["210", "210", "210"]);
+    // 400 / 400 * 300 = 300; 100 / 400 * 300 = 75; 50 / 400 * 300 = 37.5.
+    expect(bars.map((b) => b.width)).toEqual(["300", "75", "37.5"]);
+    expect(bars.map((b) => b["data-events"])).toEqual(["1 2", "3", "4"]);
+  });
+
+  it("shortens paths under the home directory and names each kind in the title", () => {
+    expect(texts(svg)).toEqual(
+      expect.arrayContaining(["~/alpha", "~/gone", "unknown (no working directory)"]),
+    );
+    expect(svg).toContain(
+      "<title>~/alpha (git repository): 400 output tokens from 2 requests</title>",
+    );
+    expect(svg).toContain(
+      "<title>~/gone (directory no longer exists): 100 output tokens from 1 request</title>",
+    );
+  });
+
+  it("fades a directory that no longer exists, and only that one", () => {
+    expect(byClass(svg, "nm-repo").map((t) => t.attrs.opacity)).toEqual([
+      undefined,
+      "0.5",
+      undefined,
+    ]);
+  });
+
+  it("keeps a path outside the home directory whole, and the end of a long one", () => {
+    const long = `/home/example/${"a".repeat(50)}`;
+    const out = renderRepoBars(
+      {
+        bars: [
+          { repository: "/srv/other", kind: "repo", requests: 1, outputTokens: 1, events: [1] },
+          { repository: long, kind: "repo", requests: 1, outputTokens: 1, events: [2] },
+        ],
+        home: "/home/example",
+      },
+      OPTIONS,
+    );
+    expect(texts(out)).toContain("/srv/other");
+    // "~/" and 50 a's is 52 characters; 40 at most, so "..." and the last 37.
+    expect(texts(out)).toContain(`...${"a".repeat(37)}`);
+    expect(out).toContain(`<title>~/${"a".repeat(50)} (git repository)`);
+  });
+
+  it("draws the first ten by name and the rest as one neutral bar holding all their events", () => {
+    const twelve: RepoBar[] = Array.from({ length: 12 }, (_, i) => ({
+      repository: `/home/example/r${String(i)}`,
+      kind: "repo",
+      requests: 1,
+      outputTokens: 120 - i,
+      events: [100 + i],
+    }));
+    const out = renderRepoBars({ bars: twelve, home: "/home/example" }, OPTIONS);
+    const bars = byClass(out, "nm-repo");
+    // Ten named and one remainder: eleven bars.
+    expect(bars).toHaveLength(11);
+    const other = only(out, "nm-repo-other");
+    // r10 (110) and r11 (109): 219 output tokens, both events, ascending.
+    expect(other["data-events"]).toBe("110 111");
+    expect(other.fill).toBe("var(--axis)");
+    expect(texts(out)).toContain("Other: 2 more repositories and folders");
+    expect(out).toContain(
+      "<title>2 repositories and folders past the first 10: 219 output tokens from 2 requests</title>",
+    );
+  });
+
+  it("returns No data for no repositories", () => {
+    expect(renderRepoBars({ bars: [], home: "" }, OPTIONS)).toContain("No data");
+  });
+});
+
+/** The shared scenario's open 5-hour window: 2% at 13:05:10, 310 s after it began at 13:00. */
+const BURN: BurnWindow = {
+  window: "five_hour",
+  resetAtUtc: "2026-09-03T18:00:00.000Z",
+  windowStartUtc: "2026-09-03T13:00:00.000Z",
+  last: 2,
+  lastAtUtc: "2026-09-03T13:05:10.000Z",
+  limitReached: false,
+  // 2 points in 310 s: 2 / (310 / 3600) per hour, so 100% at 100 * 310 / 2 = 15,500 s: 17:18:20.
+  ratePerHour: 2 / (310 / 3600),
+  projectedLimitAtUtc: "2026-09-03T17:18:20.000Z",
+  limitBeforeReset: true,
+  span: { from: "2026-09-03T10:00:05.000Z", to: "2026-09-03T13:05:10.000Z" },
+  events: [14],
+};
+
+/** That window's one counted reading. */
+const BURN_SERIES: WindowSeries = {
+  window: "five_hour",
+  resetAtUtc: "2026-09-03T18:00:00.000Z",
+  points: [{ atUtc: "2026-09-03T13:05:10.000Z", used: 2, event: 14 }],
+  hits: [],
+};
+
+describe("renderBurnRate (step G2.1)", () => {
+  const svg = renderBurnRate({ burn: BURN, series: BURN_SERIES }, OPTIONS);
+
+  it("says projected in its own label (principle 2)", () => {
+    expect(tags(svg)[0]?.attrs["aria-label"]).toMatch(
+      /^Burn rate, projected, for the 5-hour window/,
+    );
+  });
+
+  it("draws the projection from 0% at the window's start to 100% at the projected time", () => {
+    // Plot 44 to 600 - 12 = 588 over 13:00 to 18:00 (18,000 s). Scale 0 to 110, so
+    // y = 56 + (110 - p) * 2: y(0) = 276, y(100) = 76. 17:18:20 is 15,500 s in:
+    // 44 + 15500 / 18000 * 544 = 512.44.
+    const line = only(svg, "nm-projection");
+    expect(line.d).toBe("M44 276L512.44 76");
+    // Dotted and neutral, apart from the red dashed 100% line (D-084).
+    expect(line.stroke).toBe("var(--ink-2)");
+    expect(line["stroke-dasharray"]).toBe("1 5");
+    // The reading it starts from, as explain burn-rate lists it.
+    expect(line["data-events"]).toBe("14");
+    expect(svg).toContain(`<title>${burnSentence(BURN, "UTC")}</title>`);
+  });
+
+  it("marks the projected limit time, before the reset, with its events", () => {
+    const point = only(svg, "nm-projected-limit");
+    expect([point.cx, point.cy, point["data-events"]]).toEqual(["512.44", "76", "14"]);
+    expect(texts(svg)).toContain("limit projected 2026-09-03 17:18");
+  });
+
+  it("draws the observed reading as on its usage chart, with its event", () => {
+    // 13:05:10 is 310 s in: 44 + 310 / 18000 * 544 = 53.37; y(2) = 56 + 108 * 2 = 272.
+    const point = only(svg, "nm-point");
+    expect([point.cx, point.cy, point["data-events"]]).toEqual(["53.37", "272", "14"]);
+    expect(only(svg, "nm-line")["data-events"]).toBe("14");
+  });
+
+  it("ends the line at the reset when the limit is projected after it", () => {
+    // 10 points per hour for 5 hours is 50%: y(50) = 56 + 60 * 2 = 176, at the reset, x = 588.
+    const out = renderBurnRate(
+      {
+        burn: {
+          ...BURN,
+          ratePerHour: 10,
+          projectedLimitAtUtc: "2026-09-03T23:00:00.000Z",
+          limitBeforeReset: false,
+        },
+        series: BURN_SERIES,
+      },
+      OPTIONS,
+    );
+    expect(only(out, "nm-projection").d).toBe("M44 276L588 176");
+    expect(byClass(out, "nm-projected-limit")).toEqual([]);
+  });
+
+  it("projects nothing when the limit was already reached or no rate exists", () => {
+    const reached = renderBurnRate(
+      { burn: { ...BURN, last: 103, limitReached: true }, series: BURN_SERIES },
+      OPTIONS,
+    );
+    expect(byClass(reached, "nm-projection")).toEqual([]);
+    expect(texts(reached)).toContain("Limit reached at the last reading; nothing is projected.");
+    const noRate = renderBurnRate(
+      { burn: { ...BURN, ratePerHour: null }, series: BURN_SERIES },
+      OPTIONS,
+    );
+    expect(byClass(noRate, "nm-projection")).toEqual([]);
+  });
+
+  it("states where it starts when the window has no counted reading, and No data with nothing", () => {
+    const bare = renderBurnRate({ burn: BURN, series: undefined }, OPTIONS);
+    expect(byClass(bare, "nm-point")).toEqual([]);
+    expect(texts(bare)).toContain("Projected from the reading at 2026-09-03 13:05");
+    expect(renderBurnRate({ burn: { ...BURN, last: null }, series: undefined }, OPTIONS)).toContain(
+      "No data",
+    );
+  });
+});
+
 describe("renderMonthBars", () => {
   const svg = renderMonthBars(MONTHS, OPTIONS);
 
@@ -744,10 +993,31 @@ describe("every chart", () => {
     gauge: renderGauge(GAUGE_INPUT, OPTIONS),
     series: renderWindowSeries(SERIES, OPTIONS),
     lockouts: renderLockouts(LOCKOUTS, OPTIONS),
+    lanes: renderLockouts(
+      LOCKOUTS.map((bar) => ({
+        ...bar,
+        period: {
+          kind: "none",
+          fromMonth: null,
+          toMonth: "2026-08",
+          untilMonth: "2026-09",
+          planName: null,
+        } as const,
+      })),
+      OPTIONS,
+    ),
     models: renderModelBars(MODELS, OPTIONS),
     // A model name outside ASCII (e-acute, U+00E9), so the ASCII guard below sees one (D-063).
     nonAsciiModels: renderModelBars([{ ...MODELS[0]!, model: "claude-caf\u00e9" }], OPTIONS),
     months: renderMonthBars(MONTHS, OPTIONS),
+    repos: renderRepoBars({ bars: REPOS, home: "/home/example" }, OPTIONS),
+    burn: renderBurnRate({ burn: BURN, series: BURN_SERIES }, OPTIONS),
+    burnReached: renderBurnRate(
+      { burn: { ...BURN, limitReached: true }, series: BURN_SERIES },
+      OPTIONS,
+    ),
+    emptyRepos: renderRepoBars({ bars: [], home: "" }, OPTIONS),
+    emptyBurn: renderBurnRate({ burn: { ...BURN, last: null }, series: undefined }, OPTIONS),
     emptyCoverage: renderCoverage([], OPTIONS),
     emptyGauge: renderGauge([], OPTIONS),
     emptySeries: renderWindowSeries({ ...SERIES, points: [], hits: [] }, OPTIONS),

@@ -12,6 +12,7 @@
  * - `viewer/html-data.ts` exports `loadHtmlData`, typed {@link LoadHtmlData}.
  * - `viewer/html-charts.ts` exports `renderCoverage`, `renderGauge`, `renderWindowSeries`,
  *   `renderLockouts`, `renderModelBars`, and `renderMonthBars`, each typed {@link RenderChart}.
+ *   Step G2.1 (D-084) adds `renderRepoBars` and `renderBurnRate`, and the page's tabs.
  * - `viewer/html.ts` exports `renderHtmlReport`, typed {@link RenderHtmlReport}.
  * - `viewer/save.ts` gains an optional `html` argument and `SavedReport.htmlPath` (G1.4).
  *
@@ -107,6 +108,38 @@ export interface WindowSeries {
   readonly hits: readonly SeriesHit[];
 }
 
+/** Which plan period something falls in, as `obs_interruptions_by_plan` names it (D-075, step G2.2). */
+export interface PlanPeriodRef {
+  /** `plan` inside an entered plan's months, `none` before the first, `unknown` with no time. */
+  readonly kind: "plan" | "none" | "unknown";
+  /** First local month the plan applies; null for `none` and `unknown`. */
+  readonly fromMonth: string | null;
+  /** Last local month it applies; null while it still applies. */
+  readonly toMonth: string | null;
+  /** The month it stops applying (exclusive); for `none`, the first plan's month. */
+  readonly untilMonth: string | null;
+  /** The plan's name as entered; null for `none` and `unknown`. */
+  readonly planName: string | null;
+}
+
+/** One plan period's interruptions (D-075, step G2.2). */
+export interface PlanPeriodTotals {
+  /** Which period. */
+  readonly period: PlanPeriodRef;
+  /** Limit hits in it. */
+  readonly hits: number;
+  /** Lockout intervals whose first hit is in it. */
+  readonly lockouts: number;
+  /** Their elapsed lockout time in seconds, unrounded. */
+  readonly lockoutSeconds: number;
+  /** What its data covers; nulls for `unknown`. */
+  readonly span: Span;
+  /** The hits behind `hits`. */
+  readonly hitEvents: EventRef;
+  /** The hits merged into its lockouts, behind `lockouts` and `lockoutSeconds`. */
+  readonly lockoutEvents: EventRef;
+}
+
 /** One lockout interval: limit hit to reset, overlapping hits merged (D-023). */
 export interface LockoutBar {
   /** First hit of the interval. */
@@ -125,6 +158,8 @@ export interface LockoutBar {
   readonly events: EventRef;
   /** The first Claude Code request after the reset, behind `resetToNextRequestSeconds`; empty when none. */
   readonly nextRequestEvents: EventRef;
+  /** The plan period its first hit falls in (D-075); undefined while no plan has been entered. */
+  readonly period?: PlanPeriodRef;
 }
 
 /** The interruption counts the text report prints beside the lockouts, so the page states them too. */
@@ -167,6 +202,8 @@ export interface InterruptionTotals {
   readonly statusLineOnlyEvents: EventRef;
   /** What the counts cover: the session logs' span, as the text report states it. */
   readonly span: Span;
+  /** Per plan period, in the text report's order; empty while no plan has been entered (D-075). */
+  readonly byPlan: readonly PlanPeriodTotals[];
 }
 
 /** Readings captured after their window's reset: not counted in any window (D-024). */
@@ -186,6 +223,49 @@ export interface ModelBar {
   /** Output tokens, unrounded. */
   readonly outputTokens: number;
   /** The deduplicated requests behind the bar. */
+  readonly events: EventRef;
+}
+
+/** One repository's observed tokens, as `obs_usage_by_repo` groups them (D-010, D-028; step G2.1). */
+export interface RepoBar {
+  /** The repository root, or the working directory where none resolved; null with no `cwd` logged. */
+  readonly repository: string | null;
+  /** `repo`, `not_git`, `missing`, or `unresolved`, as `request_repositories` labels it. */
+  readonly kind: string;
+  /** Deduplicated requests. */
+  readonly requests: number;
+  /** Output tokens, unrounded. */
+  readonly outputTokens: number;
+  /** The deduplicated requests behind the bar. */
+  readonly events: EventRef;
+}
+
+/**
+ * One open usage window's burn rate, a projection (D-026; step G2.1): the window's average rate
+ * since it began, on the premise that its usage started at 0%, carried forward to the limit.
+ */
+export interface BurnWindow {
+  /** `five_hour` or `seven_day`. */
+  readonly window: "five_hour" | "seven_day";
+  /** The window's reset; with `window`, its identity (D-024), shared with its {@link WindowSeries}. */
+  readonly resetAtUtc: string;
+  /** When the window began: its reset minus the window's length. */
+  readonly windowStartUtc: string;
+  /** The last observed `used_percentage` the projection starts from; null when none. */
+  readonly last: number | null;
+  /** When that reading was observed (D-045); null when none. */
+  readonly lastAtUtc: string | null;
+  /** True when the last reading was already at or above 100%, so nothing is projected. */
+  readonly limitReached: boolean;
+  /** Projected percentage points per hour, unrounded; null when no rate can be formed. */
+  readonly ratePerHour: number | null;
+  /** When the projected line reaches 100%; null when it can't be projected. */
+  readonly projectedLimitAtUtc: string | null;
+  /** True when that projected time falls before the window's reset. */
+  readonly limitBeforeReset: boolean;
+  /** The status line span `proj_burn_rate` reports (principle 5). */
+  readonly span: Span;
+  /** The reading the projection starts from, as `nilometer explain burn-rate` lists it. */
   readonly events: EventRef;
 }
 
@@ -263,6 +343,12 @@ export interface HtmlReportData {
   readonly afterReset: AfterResetReadings;
   /** Models by output tokens, largest first. */
   readonly models: readonly ModelBar[];
+  /** Repositories by output tokens, largest first, as the text report orders them (step G2.1). */
+  readonly repos: readonly RepoBar[];
+  /** The home directory repository paths are shortened against (`~`), as the text report does; "" for none. */
+  readonly home: string;
+  /** Open windows' burn rates, projected (below the seam), as the text report lists them (step G2.1). */
+  readonly burn: readonly BurnWindow[];
   /** Months in order, projected (below the seam). */
   readonly months: readonly MonthBar[];
   /** The notes under the monthly amounts, from the same projected views as the text report. */
@@ -279,6 +365,8 @@ export interface HtmlMeta {
   readonly timeZone: string;
   /** When the report is produced; fixed in tests. */
   readonly generatedAt: Date;
+  /** The home directory, so repository paths print as `~/...` as in the text report; omitted, paths print in full. */
+  readonly home?: string;
 }
 
 /**
@@ -302,6 +390,22 @@ export interface ChartOptions {
   readonly timeZone: string;
   /** The SVG `viewBox` width; the page scales it to its container. */
   readonly width: number;
+}
+
+/** What the repository chart draws: the bars, and the home directory their labels shorten against. */
+export interface RepoChartInput {
+  /** Repositories by output tokens, largest first. */
+  readonly bars: readonly RepoBar[];
+  /** The home directory, as {@link HtmlReportData.home}. */
+  readonly home: string;
+}
+
+/** What one burn-rate chart draws: the projection, and the observed readings it starts from. */
+export interface BurnChartInput {
+  /** The open window's projection. */
+  readonly burn: BurnWindow;
+  /** The window's counted readings, drawn as observed; undefined when the data has none for it. */
+  readonly series: WindowSeries | undefined;
 }
 
 /**

@@ -346,7 +346,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 
 ## D-021: "Mid-task" is decided by what the stopped request was answering (2026-09-13)
 
-- **Status:** accepted
+- **Status:** accepted. **Refined 2026-10-13 by [D-076](decisions.md):** the parent chain is followed past attachment lines of known metadata types.
 - **Context:** The README counts mid-task interruptions: a limit that stopped the model inside an agentic loop rather than at a turn boundary. *Observed (2026-09-13, Claude Code 2.1.196–2.1.269):* every log line carries `uuid` and `parentUuid`. A synthetic error line's parent is the message the failed request was answering. Of the 11 `isApiErrorMessage` lines on disk, the one `rate_limit` line and 2 `server_error` lines had a parent `user` line whose content was a `tool_result` block. 7 had a parent prompt (text content). 1 had an assistant parent. User prompt lines carry `origin.kind` (`human`, `task-notification`, or `coordinator`); tool results carry no `origin`.
 - **Options:**
   - (a) The previous line in the file ended in `tool_use`. Line order interleaves subagents and metadata lines, so the previous line is often unrelated.
@@ -361,7 +361,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 
 ## D-022: Resumption is reported as activity; auto-resume is not inferred (2026-09-13)
 
-- **Status:** accepted, provisional. Revisit at the first limit hit logged after the hook is installed. **Re-inspected 2026-09-18** and unchanged: the only hit on record is still the 2.1.214 one described below, and the source log has since been deleted by Claude Code's 30-day cleanup, so it survives only because ingestion copies raw lines into the database. Inspecting it again needed no file. Structure, for the next reader: `type: "assistant"`, `isApiErrorMessage: true`, `error: "rate_limit"`, no `rate_limits` on the retry; the window reset 2.8 hours after the hit, and the session's next line came about seven hours after that reset, from a `user` line with `origin.kind: "human"` preceded by two `queue-operation` lines (classified `ignored_type`, not reported as unknown). **Re-inspected 2026-09-24, on the first hits after install** (Claude Code 2.1.281). Structure only:
+- **Status:** accepted, provisional. **Refined 2026-10-13 by [D-077](decisions.md):** the logged `auto-continuation` marker is shown as Claude Code's own resumption. Revisit at the first limit hit logged after the hook is installed. **Re-inspected 2026-09-18** and unchanged: the only hit on record is still the 2.1.214 one described below, and the source log has since been deleted by Claude Code's 30-day cleanup, so it survives only because ingestion copies raw lines into the database. Inspecting it again needed no file. Structure, for the next reader: `type: "assistant"`, `isApiErrorMessage: true`, `error: "rate_limit"`, no `rate_limits` on the retry; the window reset 2.8 hours after the hit, and the session's next line came about seven hours after that reset, from a `user` line with `origin.kind: "human"` preceded by two `queue-operation` lines (classified `ignored_type`, not reported as unknown). **Re-inspected 2026-09-24, on the first hits after install** (Claude Code 2.1.281). Structure only:
   - **A marker exists for Claude Code's own resumption.** After the reset it writes a `user` line with `isMeta: true` and `origin.kind: "auto-continuation"`, preceded by a `queue-operation` enqueue and dequeue and a `system` line of subtype `informational`. Seen in every session that resumed, each within two minutes of the reset.
   - **Work a background workflow restarts carries no marker.** After a reset, new subagent transcripts began within a minute, their first lines shaped exactly like those written before the hit. The transcripts that hit never continued.
   - **The hit lines carry more than in 2.1.214:** `apiErrorStatus: 429`, and a `quotaLimits` object with `rateLimitType`, `resetsAt`, `status`, `overageStatus`, and `overageDisabledReason`. Its `resetsAt` matched the reset parsed from the message text on every hit. Ingestion doesn't read it yet.
@@ -422,7 +422,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 
 ## D-025: Unattributed usage counts increases between readings with no Claude Code request in between (2026-09-13)
 
-- **Status:** accepted, provisional. The falsifier below runs on the first real spool data (the P1.3 live check, then weeks of real use).
+- **Status:** accepted, provisional. The falsifier below runs on the first real spool data (the P1.3 live check, then weeks of real use). **Settled 2026-10-13 by [D-079](decisions.md):** zero in all 49 windows of Phase 8, so the metric leaves the report; the view stays.
 - **Context:** `rate_limits` is account-wide, so the web app, mobile, and Claude Design consume the same budget. They leave nothing on disk. The status line is only captured when Claude Code runs, and how quickly a payload's percentage reflects the request just made isn't observed yet. Tokens can't be converted to percentage points without inferring limits (D-009).
 - **Options:**
   - (a) Percentage change minus the Claude Code tokens in between, converted to percent. That infers limits; rejected by D-009.
@@ -548,7 +548,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 
 ## D-031: The scope stays retrospective; live updating stays out until weeks of real use are reviewed (2026-09-13)
 
-- **Status:** accepted for now. Revisit after several weeks of real use.
+- **Status:** accepted for now. Revisit after several weeks of real use. **Revisited 2026-10-13 ([D-074](decisions.md)):** the live features are dropped, and combining data from several machines is the one v2 candidate.
 - **Context:** Usage that updates in real time ("95% remaining; resets in 1h") across devices was requested on 2026-09-13, and a plan was drafted: a status bar display, `nilometer watch`, a tray app, a background agent, and multi-device sync. Reconsidered the same day: does that fit the tool this set out to be? The README's purpose is the plan-fit question in both directions (interruptions, headroom, where usage goes), answered from evidence gathered over weeks. It sets "one screen, no daemon, no desktop app, no live updating; every metric is retrospective."
 - **Options:**
   - (a) Build that plan now.
@@ -1036,7 +1036,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 
 ## D-070: The GUI is a static HTML report, built before the Phase 8 review (2026-09-25)
 
-- **Status:** accepted. An early exception to [D-031](decisions.md)'s hold on a GUI, which deferred it to the Phase 8 review.
+- **Status:** accepted. An early exception to [D-031](decisions.md)'s hold on a GUI, which deferred it to the Phase 8 review. **The review (2026-10-13, [D-074](decisions.md)) kept the page as the main view; [D-084](decisions.md) organizes it in tabs.**
 - **Context:** Using the report for a week and a half answered the question the review would have asked: the tables were correct but hard to read at a glance, while a single hand-drawn chart of one lockout made the data clear at once. The concepts drawn on 2026-09-18 (usage windows as graduated columns, a seam between observed and projected, every figure opening its events) and the principles constrain what any interface may draw. How it's delivered was the open part.
 - **Options for delivery:**
   - (a) **A static HTML report,** `nilometer report --save --html`. Chosen.
@@ -1110,3 +1110,176 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
     - On real data the export went from 381 findings to 0.
     - Two real repository names written into a carried file were still flagged.
   - **A private project kept outside git is no longer caught automatically.** It needs a denylist line. The cost is accepted, because the alternative fails on every ordinary folder name.
+
+## D-074: The Phase 8 review: what a month of use decided (2026-10-13)
+
+- **Status:** accepted. The review that [D-031](decisions.md) and [D-070](decisions.md) deferred to. Refines both.
+- **Context:** v1 ran for 30 days on real use, from 2026-09-13 to 2026-10-13, on two Macs in turn (D-072) and a Windows PC. On the maintainer's data at the review:
+  - 31 limit hits across 6 lockouts. 1 hit came on the plan before the upgrade; 30 came after, 4 of their 5 lockouts in the last three days.
+  - 11,361 status line readings and about 23,000 requests.
+  - Weekly passes 1 and 2: every audit passed, and `verify` matched ccusage on every day both tools can see, on both platforms.
+- **What the maintainer reported:**
+  - **The page, not the numbers.** They read the HTML page's charts, not the text report or the ingest output. That was the reason for building the page (D-070).
+  - **No live view.** Claude's own `/usage` already shows live percentages, and this tool exists to show what `/usage` can't: what happened across weeks.
+- **Decisions:**
+  - **The HTML page stays, and becomes the main view.** D-070 left whether the page stays, grows, or goes to this review. A change to a metric is done only when it shows on the page, not only in the text report. The page gets tabs ([D-084](decisions.md)).
+  - **Changes to headline numbers, each in its own entry:**
+    - limit hits split by plan period ([D-075](decisions.md))
+    - a hit's position read past attachment lines ([D-076](decisions.md))
+    - Claude Code's own resumption shown ([D-077](decisions.md))
+    - status-line-only lockouts built from counted readings ([D-078](decisions.md))
+  - **Unattributed usage leaves the report** ([D-079](decisions.md)).
+  - **Found during the phase, each in its own entry:**
+    - refused-and-retried requests become their own event class ([D-080](decisions.md))
+    - `report` warns when the status line's hook file is missing ([D-081](decisions.md))
+    - `report --html --open` ([D-082](decisions.md))
+    - a window is open only until its reset time, and "open" says as of which reading ([D-083](decisions.md))
+  - **Not now:**
+    - **Saying a lockout "wasn't total"** (one subagent got responses during one lockout): seen once, cause unknown.
+    - **A warning that recorded days aren't representative:** the days without readings held about 3% of requests from 2026-09-14 to 10-12, so the bias is small. The finding is recorded; no warning is shown.
+    - **Main session against subagents:** it describes how someone works, not their subscription. Stays in the backlog.
+    - **Repository aliases or a move command** (D-028, D-072): one move so far. Stays in the backlog.
+    - **Other uses for the tool** (a separate notes file): no action.
+  - **The plan for v2 ([D-031](decisions.md)):**
+    - The live features are dropped: the status bar display, `watch`, the tray app, and the background agent. Nothing in a month of use called for them, and `/usage` covers live state.
+    - **Combining data from several machines** is the one v2 candidate. A machine move (D-072) and a PC whose data never meets the Mac's both showed the need.
+    - The public release has already happened (D-047, D-054).
+  - **The `explain` criterion is met through the page.** "Every number checked once with `explain`" becomes "every kind of chart clicked through once, and the page checked against the text report on the same data", because the page is how the numbers are read.
+- **Consequences:**
+  - **Phase 8 closes on its use period.** Its remaining checks finish by 2026-10-26: weekly passes 3 and 4, the three new line types, and the chart click-through.
+  - **The changes are built page first.** Tabs come first, because the other changes need somewhere to appear.
+
+## D-075: Limit hits are counted per plan period (2026-10-13)
+
+- **Status:** accepted, not built. From the Phase 8 review (D-074).
+- **Context:** The plan price table already records which plan applied from which month (D-027), but only the API-list-price projection reads it. The interruption metrics span from the oldest backfilled log (D-004), so "31 limit hits across 6 lockouts" mixes 1 hit on the plan before an upgrade with 30 after it. Principle 5 holds, since the date range is shown, but the number still misleads, because the plan changed inside that range.
+- **Options:**
+  - (a) Keep one count, and add the plan change to the span note. Rejected: the reader still has to split the number in their head.
+  - (b) **Count hits, lockouts, and elapsed lockout time per plan period, using the periods `plan-price set` already records.** Hits before the first entered plan form their own period, labelled "no plan entered". Chosen.
+  - (c) Ask for plan dates separately. Rejected: a second place to enter the same fact.
+- **Decision:** (b). Each plan period is a row with its own span. A lockout that crosses a period boundary belongs to the period its first hit falls in, so it is never split or counted twice.
+- **Consequences:** plan periods are months (D-027), so a mid-month upgrade is placed in the month it was entered for. The span note says so. The page draws the periods as separate lanes on the interruptions timeline.
+- **Built 2026-10-13 (step G2.2), with one judgment made while building:** the metric-structure test forbade any observed view from reading `plan_prices`, even indirectly, because it holds prices.
+  - **Options:**
+    - (a) Drop `plan_prices` from the guard's list. Rejected: an observed view could then read a price.
+    - (b) Copy plan names into a table of their own. Rejected: two places to enter one fact.
+    - (c) **A helper view, `plan_periods`, that reads only `plan_prices`' months and plan names.** The guard lets an observed view reach `plan_prices` through `plan_periods` and nowhere else. A test pins `plan_periods` to `plan_prices` alone and fails if it reads `usd_per_month` or selects `*`. Chosen.
+  - **Proof:** a synthetic observed view that reads `plan_prices` directly is still reported as a leak.
+  - **What it adds:**
+    - `obs_interruptions_by_plan`, beside the tagged events in `obs_limit_hits_by_plan_events` and `obs_lockout_by_plan_events`, with `explain by-plan`.
+    - Hits with no time count in a "time unknown" row, so the rows always add up to the totals. On real data: 31 hits and 11 h 20 m split as 1 hit and 2 h 48 m on the plan before the upgrade, and 30 hits and 8 h 32 m after it.
+  - **Shown only once a plan is entered:** before that, every row would be "no plan entered" and repeat the totals.
+
+## D-076: A limit hit's position looks past attachment lines (2026-10-13)
+
+- **Status:** accepted, not built. Refines [D-021](decisions.md). From the Phase 8 review (D-074).
+- **Context:** D-021 reads only a hit's direct parent. Newer Claude Code versions insert `attachment` lines between a request and what it answered: token reminders, memory, queued commands. By the end of Phase 8, 24 of 31 hits were "position unknown", which made the mid-task count (1) close to meaningless. Following each unknown hit's parent chain past attachment lines:
+  - 19 land on a tool result (mid-task)
+  - 3 land on a prompt (turn start)
+  - 2 land on a meta line and stay unknown
+
+  14 attachment types appeared in those chains, and `total_tokens_reminder` was the most common.
+- **Options:**
+  - (a) Keep D-021 as it is. Rejected: "unknown" swallows most hits.
+  - (b) Walk past every attachment line. Rejected as stated: some attachment types may be the input the request answered, not metadata about it. `queued_command` looks like one.
+  - (c) **Walk past attachment types known to be metadata. Classify each type seen in the logs as pass-through or as ending the walk, and treat a type not yet classified as ending it, with the position unknown.** Chosen.
+- **Decision:** (c). A new attachment type therefore can only leave a hit unknown; it can never quietly move one to mid-task. Each hit records how many attachment lines were passed, so `explain` shows the walk.
+- **Consequences:**
+  - Before building, every attachment type in the logs is checked by structure (keys and type only) and listed with its classification. `queued_command` gets a decision of its own.
+  - A fixture covers a hit behind one attachment, behind several, and behind an unclassified type.
+  - The mid-task count is expected to change sharply, so the change gets its own audit on real data.
+
+## D-077: Claude Code's own resumption after a limit hit is shown (2026-10-13)
+
+- **Status:** accepted, not built. Refines [D-022](decisions.md), which said a structured marker would need its own ADR. From the Phase 8 review (D-074).
+- **Context:** D-022 found on 2026-09-24 that Claude Code marks its own resumption with an `isMeta` user line of `origin.kind: "auto-continuation"`. By the end of Phase 8 there were 6 such lines, every one within an hour after a limit hit's reset in the same session. The report still says only "reset to next Claude Code request", which doesn't tell the reader who continued.
+- **Options:**
+  - (a) Keep reporting the next request only. Rejected: the marker is structured and observed, so leaving it out drops information (principle 1).
+  - (b) Label any quick continuation as automatic. Rejected: that infers from timing, which D-022 rejected.
+  - (c) **Show the marker where it was logged: "resumed by Claude Code (logged auto-continuation)". Otherwise show the next request as now.** Chosen.
+- **Decision:** (c). Only the logged marker earns the label. A background workflow restarting its subagents leaves no marker (D-022), so it stays unlabelled.
+- **Consequences:** "Sessions not resumed" is unchanged. The page shows the marker on the lockout timeline.
+
+## D-078: A status-line-only lockout starts from a counted reading (2026-10-13)
+
+- **Status:** accepted, not built. Refines [D-023](decisions.md) and [D-024](decisions.md). Found 2026-09-25 by the G1 verifier, and decided at the Phase 8 review (D-074).
+- **Context:** `status_limit_groups` builds hits seen only in the status line from every reading, including readings observed after their own window's reset (the payload lag D-024 describes). A group whose first at-limit reading came after the reset draws a lockout of 0 s, from a hit to a reset it already passed.
+- **Options:**
+  - (a) Keep it and explain the 0 s. Rejected: a lockout that never happened is not an observation.
+  - (b) **Build the groups from counted readings only (`after_reset = 0`).** Chosen. It's the rule every other window metric already follows.
+- **Decision:** (b), with a scenario test: an at-limit reading after its reset makes no group; one before it makes a group, as now.
+- **Consequences:** no current real data changes. Every real hit so far is in the logs, and none is seen only in the status line.
+
+## D-079: Unattributed usage leaves the report (2026-10-13)
+
+- **Status:** accepted, not built. Settles [D-025](decisions.md)'s falsifier in the direction [D-044](decisions.md) predicted. From the Phase 8 review (D-074).
+- **Context:** D-044 showed that every fresh status line reading follows a request in its own session, so a rise "with no Claude Code request in between" can hardly be seen from status line data. Over Phase 8: 49 windows, the metric 0 in every one, and only 12 of 8,738 reading pairs with no request between them.
+- **Options:**
+  - (a) Keep it, relabelled. Rejected: a number that can't be nonzero tells the reader nothing, and a relabel doesn't change that.
+  - (b) **Remove it from the report and the page.** Keep the view, so `explain unattributed` still works for anyone checking this decision. Chosen.
+  - (c) Drop the view too. Rejected: the view is what shows the metric is always zero.
+- **Decision:** (b). The README keeps the point in "What this cannot see": usage from the web, mobile, and other machines is in the account-wide percentages, and nothing local can separate it out.
+- **Consequences:** the README's metric table and roadmap entry for unattributed usage are updated when this is built.
+
+## D-080: A request refused by one model and retried by another is its own event (2026-10-13)
+
+- **Status:** accepted, not built. Found in Phase 8 weekly pass 2. From the Phase 8 review (D-074).
+- **Context:** Claude Code writes a `system` line with subtype `model_refusal_fallback` when a model refuses a request and another model retries it. It names `originalModel`, `fallbackModel`, `requestId`, and a refusal category. On real data there were 4 such lines, and none of their `requestId`s appears on any request line. So if a refused request used budget, no token record of it exists, and ccusage can't see it either. Today the line is classed `ignored_type`.
+- **Options:**
+  - (a) Leave it ignored. Rejected: it is the only place the refusal is recorded.
+  - (b) Price the refused request. Rejected: no token count exists, so any number would be invented (principle 1).
+  - (c) **Class it as an event (like `api_error`), keeping both models and the `requestId`, and count it in the ingest report.** Chosen.
+- **Decision:** (c). Whether the report shows a count ("requests refused and retried with another model") is decided when there's more than one week of data.
+- **Consequences:** a fixture with a fallback line, a request line from the fallback model, and no line from the refused request. The refusal category is stored but never shown on the page.
+
+## D-081: `report` warns when the status line's hook file is missing (2026-10-13)
+
+- **Status:** accepted, not built. Found in the D-072 move. From the Phase 8 review (D-074).
+- **Context:** After a machine move, `settings.json` pointed at a hook path that didn't exist on the new machine. The status line ran nothing for about two days. `hook-errors.log` can't record a hook that never starts, and the report only showed that no new readings had arrived, which looks the same as working in the VS Code extension (D-029).
+- **Options:**
+  - (a) Check in `ingest`. Rejected: ingest is often run from cron, where nobody reads the output.
+  - (b) **Check in `report`: read `statusLine.command` from `settings.json`. If it carries the hook marker and names a hook file that doesn't exist, print a warning above the report and on the page.** Chosen.
+  - (c) Re-point the hook automatically. Rejected: `settings.json` changes only through `init`, with a backup.
+- **Decision:** (b). The warning names the fix (`nilometer init`). The settings file is read, never written. A file that's missing or unparsable gives no warning; the check simply doesn't apply.
+- **Consequences:** a test for a missing hook, a present hook, and a non-Nilometer status line.
+
+## D-082: `report --html --open` opens the page it wrote (2026-10-13)
+
+- **Status:** accepted, not built. From the Phase 8 review (D-074).
+- **Context:** The page is the main view (D-074), but `report --save --html` only writes the file. One user expected it to open.
+- **Options:**
+  - (a) Always open it. Rejected: `report` also runs in scripts and over SSH, where a browser can't open.
+  - (b) **An `--open` flag: open the saved page with the platform's opener (`open`, `xdg-open`, `start`).** Chosen.
+- **Decision:** (b). If the opener fails, the command prints the page's path and still succeeds.
+- **Consequences:** the opener is injected, so tests never launch a browser.
+
+## D-083: A window is open until its reset time, and "open" says as of which reading (2026-10-13)
+
+- **Status:** accepted, not built. Found on the Windows PC in Phase 8 weekly pass 2. From the Phase 8 review (D-074).
+- **Context:** `window_open` compares a window's `resets_at` with the latest status line reading, not with the time the report runs (`009_headroom.sql`, `014_observed_readings.sql`). When readings stop, every window that reset after the last one stays "open". On the PC, which has run only VS Code sessions since 2026-10-07, a weekly window that reset on 2026-10-11 still read "open" on 2026-10-13.
+- **Options:**
+  - (a) Compare with the report's own time. It needs the time passed into the query, because a view can't read the clock reproducibly.
+  - (b) Keep the rule, and label it "open at the last reading (date)".
+  - (c) **Both.** Chosen.
+- **Decision:** (c).
+  - A window whose reset time is before the report's time is never open.
+  - An open window says which reading it is open as of.
+  - The report's time is a query parameter, so two runs on the same data and the same time give the same output.
+- **Consequences:** burn rate, which projects only open windows, uses the same rule. A test covers readings that stop before a reset.
+
+## D-084: The HTML page is organized in tabs (2026-10-13)
+
+- **Status:** accepted, not built. Refines [D-070](decisions.md). From the Phase 8 review (D-074).
+- **Context:** The page is one long scroll: four charts and about a hundred event lists. Usage by repository and burn rate appear only in the text report, so a reader of the page never sees them. D-075 to D-077 and D-083 add to what the page has to show.
+- **Options:**
+  - (a) Keep one page and add links that jump to each section. Less to build, and nothing is hidden. Rejected: the page keeps growing, and the reader wants one chart at a time.
+  - (b) **Tabs: an overview first, then one tab per chart, with observed and projected in separate groups.** Chosen.
+  - (c) Several HTML files. Rejected: one self-contained file was a promise in D-070.
+- **Decision:** (b).
+  - **The observed tabs come first:** Overview, Usage windows, Interruptions, By model, By repository.
+  - **The projected tabs come after a visible gap, styled apart:** Burn rate, API list price. The page never opens on a projected tab (principle 2).
+  - **The overview opens first.** It shows a small version of each observed chart with its span, and each one opens its tab.
+  - **Each tab states its own span** (principle 5).
+  - **Hidden content stays in the page.** Tabs hide, they don't remove, so the file still works offline with no network requests, and printing shows every tab.
+  - **Tabs follow the ARIA tabs pattern:** `tablist`, `tab`, and `tabpanel` roles, arrow keys between tabs.
+- **Consequences:** every rule D-070's tests enforce applies to every tab, including the banned-phrase guard over hidden text and events behind every bar, column, and point. The snapshot test is updated deliberately, once.

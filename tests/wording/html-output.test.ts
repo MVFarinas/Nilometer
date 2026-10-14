@@ -102,6 +102,14 @@ const FULL: HtmlReportData = {
       resetAfterCoverage: false,
       events: [8],
       nextRequestEvents: [10],
+      // Drawn in a lane, so the lane heading's wording is guarded too (D-075).
+      period: {
+        kind: "plan",
+        fromMonth: "2026-09",
+        toMonth: null,
+        untilMonth: null,
+        planName: "Max",
+      },
     },
   ],
   interruptions: {
@@ -125,11 +133,157 @@ const FULL: HtmlReportData = {
     loggedEvents: [8, 9, 16],
     statusLineOnlyEvents: [],
     span: { from: at("10:00:00"), to: at("13:05:10") },
+    // Every period name and month form the page can print (D-075, step G2.2).
+    byPlan: [
+      {
+        period: {
+          kind: "none",
+          fromMonth: null,
+          toMonth: "2026-06",
+          untilMonth: "2026-07",
+          planName: null,
+        },
+        hits: 0,
+        lockouts: 0,
+        lockoutSeconds: 0,
+        span: { from: at("10:00:00"), to: at("10:00:00") },
+        hitEvents: [],
+        lockoutEvents: [],
+      },
+      {
+        period: {
+          kind: "plan",
+          fromMonth: "2026-07",
+          toMonth: "2026-08",
+          untilMonth: "2026-09",
+          planName: "Pro",
+        },
+        hits: 0,
+        lockouts: 0,
+        lockoutSeconds: 0,
+        span: { from: at("10:00:00"), to: at("10:00:00") },
+        hitEvents: [],
+        lockoutEvents: [],
+      },
+      {
+        period: {
+          kind: "plan",
+          fromMonth: "2026-09",
+          toMonth: null,
+          untilMonth: null,
+          planName: "Max",
+        },
+        hits: 2,
+        lockouts: 1,
+        lockoutSeconds: 3600,
+        span: { from: at("10:00:05"), to: at("13:05:10") },
+        hitEvents: [8, 9],
+        lockoutEvents: [8],
+      },
+      {
+        period: {
+          kind: "unknown",
+          fromMonth: null,
+          toMonth: null,
+          untilMonth: null,
+          planName: null,
+        },
+        hits: 1,
+        lockouts: 0,
+        lockoutSeconds: 0,
+        span: { from: null, to: null },
+        hitEvents: [16],
+        lockoutEvents: [],
+      },
+    ],
   },
   afterReset: { count: 1, events: [15] },
   models: [
     { model: "claude-opus-5", requests: 3, outputTokens: 360, events: [4, 6, 10] },
     { model: "claude-sonnet-5", requests: 1, outputTokens: 100, events: [2] },
+  ],
+  // Twelve rows, so the remainder bar and its legend are drawn, one directory gone and one request
+  // with no cwd, so every repository line and legend key the page can print is guarded (step G2.1).
+  repos: [
+    {
+      repository: "/home/example/alpha",
+      kind: "repo",
+      requests: 1,
+      outputTokens: 120,
+      events: [2],
+    },
+    {
+      repository: "/home/example/gone",
+      kind: "missing",
+      requests: 1,
+      outputTokens: 110,
+      events: [4],
+    },
+    { repository: null, kind: "unresolved", requests: 1, outputTokens: 100, events: [6] },
+    ...Array.from({ length: 9 }, (_, i) => ({
+      repository: `/home/example/r${String(i)}`,
+      kind: "not_git",
+      requests: 1,
+      outputTokens: 90 - i,
+      events: [10],
+    })),
+  ],
+  home: "/home/example",
+  // Every sentence describeBurnRate can produce: limit before the reset, after it, already
+  // reached, and with no projected time.
+  burn: [
+    {
+      window: "seven_day",
+      resetAtUtc: "2026-09-10T00:00:00.000Z",
+      windowStartUtc: "2026-09-03T00:00:00.000Z",
+      last: 16,
+      lastAtUtc: at("13:05:10"),
+      limitReached: false,
+      ratePerHour: 1.2,
+      projectedLimitAtUtc: "2026-09-06T09:47:17.500Z",
+      limitBeforeReset: true,
+      span: { from: at("10:00:05"), to: at("13:05:10") },
+      events: [13],
+    },
+    {
+      window: "five_hour",
+      resetAtUtc: at("18:00:00"),
+      windowStartUtc: at("13:00:00"),
+      last: 2,
+      lastAtUtc: at("13:05:10"),
+      limitReached: false,
+      ratePerHour: 10,
+      projectedLimitAtUtc: at("23:00:00"),
+      limitBeforeReset: false,
+      span: { from: at("10:00:05"), to: at("13:05:10") },
+      events: [13],
+    },
+    {
+      window: "five_hour",
+      resetAtUtc: at("17:00:00"),
+      windowStartUtc: at("12:00:00"),
+      last: 103,
+      lastAtUtc: at("12:30:00"),
+      limitReached: true,
+      ratePerHour: 206,
+      projectedLimitAtUtc: null,
+      limitBeforeReset: false,
+      span: { from: at("10:00:05"), to: at("13:05:10") },
+      events: [13],
+    },
+    {
+      window: "five_hour",
+      resetAtUtc: at("16:00:00"),
+      windowStartUtc: at("11:00:00"),
+      last: 0,
+      lastAtUtc: at("11:00:00"),
+      limitReached: false,
+      ratePerHour: null,
+      projectedLimitAtUtc: null,
+      limitBeforeReset: false,
+      span: { from: at("10:00:05"), to: at("13:05:10") },
+      events: [13],
+    },
   ],
   months: [
     {
@@ -193,9 +347,12 @@ const EMPTY: HtmlReportData = {
     loggedEvents: [],
     statusLineOnlyEvents: [],
     span: { from: null, to: null },
+    byPlan: [],
   },
   afterReset: { count: 0, events: [] },
   models: [],
+  repos: [],
+  burn: [],
   months: [],
   files: [],
   events: {},
@@ -208,6 +365,15 @@ const HOSTILE_PATH = "-evil/</script><script>alert(1)</script><!--.jsonl";
 const HOSTILE: HtmlReportData = {
   ...FULL,
   models: [{ model: "</script><b>x</b>", requests: 1, outputTokens: 1, events: [2] }],
+  repos: [
+    {
+      repository: "/home/example/</script><b>x</b>",
+      kind: "repo",
+      requests: 1,
+      outputTokens: 1,
+      events: [2],
+    },
+  ],
   files: [HOSTILE_PATH, "status-line/readings.jsonl"],
 };
 
@@ -430,25 +596,57 @@ describe.each(REPORTS)("the %s HTML report", (_name, data) => {
     expect(networkReferences(html)).toEqual([]);
   });
 
-  it("(c) places every observed section above the seam and the monthly amounts below it", () => {
+  it("(c) places every observed section above the seam and every projected one below it", () => {
     const seam = html.indexOf('id="nm-seam"');
     expect(seam).toBeGreaterThan(0);
-    for (const id of ["nm-coverage", "nm-observed", "nm-gauge", "nm-lockouts", "nm-models"]) {
+    const observed = [
+      "nm-coverage",
+      "nm-observed",
+      "nm-gauge",
+      "nm-lockouts",
+      "nm-models",
+      "nm-repos",
+    ];
+    for (const id of [
+      ...observed,
+      "nm-card-windows",
+      "nm-card-interruptions",
+      "nm-card-models",
+      "nm-card-repos",
+    ]) {
       const index = html.indexOf(`id="${id}"`);
       expect({ id, aboveSeam: index > 0 && index < seam }).toEqual({ id, aboveSeam: true });
     }
-    expect(html.indexOf('id="nm-months"')).toBeGreaterThan(seam);
-    // Nothing above the seam calls itself a projection or an estimate (principle 2).
-    expect(visibleText(html.slice(0, seam))).not.toMatch(/project|estimat/i);
+    for (const id of ["nm-burn", "nm-months"]) {
+      expect({ id, belowSeam: html.indexOf(`id="${id}"`) > seam }).toEqual({ id, belowSeam: true });
+    }
+    // The tab bar is navigation, not content: it names the projected tabs, in their own labeled
+    // group after the observed one (D-084), and is the one place above the seam that may.
+    const nav = /<nav class="nm-tabbar"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? "";
+    expect(nav.indexOf("nm-tabgroup-observed")).toBeGreaterThan(0);
+    expect(nav.indexOf("nm-tabgroup-projected")).toBeGreaterThan(
+      nav.indexOf("nm-tabgroup-observed"),
+    );
+    expect(visibleText(nav.slice(nav.indexOf("nm-tabgroup-projected")))).toContain(
+      HTML_LABELS.projectedGroup,
+    );
+    // Nothing else above the seam calls itself a projection or an estimate (principle 2).
+    expect(visibleText(html.slice(0, seam).replace(nav, ""))).not.toMatch(/project|estimat/i);
     expect(visibleText(html.slice(seam))).toContain(LABELS.projected);
   });
 
   it("(d) states a span in every chart section and every window's series", () => {
     const sections = html.split('<section class="panel nm-chart"').slice(1);
-    // Coverage, gauge, lockouts, models, months.
-    expect(sections).toHaveLength(5);
+    // Coverage, gauge, lockouts, models, repositories, burn rate, months (D-084).
+    expect(sections).toHaveLength(7);
     const span = /<p class="span">Covers: [^<]*(\d{4}-\d{2}-\d{2} \d{2}:\d{2} to|no data yet)/;
     for (const part of sections) {
+      expect(part).toMatch(span);
+    }
+    // Each overview card states its own span too (principle 5).
+    const cards = html.split('<section class="panel nm-card nm-chart"').slice(1);
+    expect(cards).toHaveLength(4);
+    for (const part of cards) {
       expect(part).toMatch(span);
     }
     for (const part of html.split('<details class="nm-series"').slice(1)) {
