@@ -124,6 +124,7 @@ describe("readResult", () => {
           synthetic_other: 0,
           request: 0,
           retry_notice: 0,
+          model_fallback: 0,
           ignored_type: 0,
         },
         malformed: [],

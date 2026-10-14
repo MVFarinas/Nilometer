@@ -1424,6 +1424,8 @@ export function burnRow(burn: BurnWindow): BurnRateRow {
     last_used_percentage: burn.last,
     last_reading_at_utc: burn.lastAtUtc,
     window_open: 1,
+    // The page loads only windows still open at the report's time (D-083).
+    open_at_report: 1,
     limit_reached: burn.limitReached ? 1 : 0,
     projected_percentage_points_per_hour: burn.ratePerHour,
     projected_limit_at_utc: burn.projectedLimitAtUtc,

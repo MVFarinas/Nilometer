@@ -320,11 +320,12 @@ function loadCoverage(db: Db): CoverageRow[] {
 /**
  * Loads every window instance with at least one counted reading, with its readings and limit hits.
  * @param db - Open, migrated database.
+ * @param at - The page's time in Unix seconds: a window is open only until its reset, as of it (D-083).
  * @returns One row per window instance, oldest reset first; empty with no counted reading.
  * @see D-024 for what a window instance is and which readings count, D-045 for observed times,
  * {@link PLACED_HITS} for which hits a window holds.
  */
-function loadWindows(db: Db): WindowSqlRow[] {
+function loadWindows(db: Db, at: number): WindowSqlRow[] {
   return db
     .prepare(
       `WITH ${PLACED_HITS},
@@ -351,7 +352,9 @@ function loadWindows(db: Db): WindowSqlRow[] {
          WHERE r.after_reset = 0
          GROUP BY r.window, r.resets_at
        )
-       SELECT h.window, h.reset_at_utc, h.window_open,
+       -- Open only until its reset, as of the page's time (D-083), as the text report reads it.
+       SELECT h.window, h.reset_at_utc,
+         (h.window_open = 1 AND unixepoch(h.reset_at_utc, 'subsec') > :at) AS window_open,
          p.peak_used_percentage, p.peak_reading_at_utc, p.peak_reading_raw_line_id,
          h.last_used_percentage, h.last_reading_at_utc, h.last_reading_raw_line_id,
          h.readings,
@@ -368,7 +371,7 @@ function loadWindows(db: Db): WindowSqlRow[] {
        WHERE h.readings > 0
        ORDER BY h.reset_at_utc, h.window`,
     )
-    .all() as WindowSqlRow[];
+    .all({ at }) as WindowSqlRow[];
 }
 
 /**
@@ -747,10 +750,11 @@ function loadRepos(db: Db): RepoBar[] {
  * (step G2.1). Read by its own function from its own view, never mixed into observed rows
  * (principle 2).
  * @param db - Open, migrated database.
+ * @param at - The page's time in Unix seconds: only windows still open at it are projected (D-083).
  * @returns Open windows in the text report's order: latest reset first, then by window.
  * @see D-026 for the premise, D-024 for what an open window is.
  */
-function loadBurn(db: Db): BurnWindow[] {
+function loadBurn(db: Db, at: number): BurnWindow[] {
   const rows = db
     .prepare(
       // The same join explain burn-rate uses for the reading behind each projection, and the same
@@ -761,10 +765,11 @@ function loadBurn(db: Db): BurnWindow[] {
          h.last_reading_raw_line_id
        FROM proj_burn_rate b
        JOIN obs_window_headroom h ON h.window = b.window AND h.reset_at_utc = b.reset_at_utc
-       WHERE b.window_open = 1
+       -- Open at the page's time too: a window that has reset has nothing to project (D-083).
+       WHERE b.window_open = 1 AND unixepoch(b.reset_at_utc, 'subsec') > :at
        ORDER BY b.reset_at_utc DESC, b.window`,
     )
-    .all() as BurnSqlRow[];
+    .all({ at }) as BurnSqlRow[];
   return rows.map((row) => ({
     window: row.window,
     resetAtUtc: row.reset_at_utc,
@@ -933,7 +938,9 @@ export const loadHtmlData: LoadHtmlData = (
   meta: HtmlMeta,
   loaded?: LoadedReport,
 ): HtmlReportData => {
-  const windows = loadWindows(db);
+  // The page's own time, in Unix seconds: "open" is as of it (D-083).
+  const at = meta.generatedAt.getTime() / 1000;
+  const windows = loadWindows(db, at);
   const gauge = windows.map(toGauge);
   const series = windows.map(toSeries);
   const interruptions = loadInterruptions(db, loaded?.observed);
@@ -943,7 +950,7 @@ export const loadHtmlData: LoadHtmlData = (
   const models = loadModels(db);
   const repos = loadRepos(db);
   // Projections are read by their own function from their own view, never mixed into the rows above.
-  const burn = loadBurn(db);
+  const burn = loadBurn(db, at);
   const months = loadMonths(db);
   const priceNotes = loadPriceNotes(db);
   const referenced = [
@@ -982,6 +989,7 @@ export const loadHtmlData: LoadHtmlData = (
     models,
     repos,
     home: meta.home ?? "",
+    missingHookPath: meta.missingHookPath ?? null,
     burn,
     months,
     priceNotes,

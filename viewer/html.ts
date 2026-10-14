@@ -441,10 +441,24 @@ function renderHeader(data: HtmlReportData): string {
   const zone = data.timeZone;
   const ingest = data.lastIngestAt === null ? "none yet" : formatInstant(data.lastIngestAt, zone);
   const meta = `Times are in ${zone}. Last ingest: ${ingest}. Report produced: ${formatInstant(data.generatedAtUtc, zone)}.`;
+  // The text report's wording, above the privacy note: readings stop until it's fixed (D-081).
+  const hook =
+    data.missingHookPath === null
+      ? []
+      : [
+          '<div class="hook-warning" role="note">',
+          para(LABELS.hookMissing),
+          para(
+            `${LABELS.hookMissingPath}: ${displayPath(data.missingHookPath, data.home)}`,
+            "meta",
+          ),
+          "</div>",
+        ];
   return [
     '<header class="nm-head">',
     `<h1>${escapeHtml(LABELS.title)}</h1>`,
     para(meta, "meta"),
+    ...hook,
     para(HTML_LABELS.privacy, "privacy"),
     "</header>",
   ].join("\n");
@@ -660,6 +674,8 @@ function renderGaugeSection(data: HtmlReportData, options: ChartOptions): string
       ]),
       plot(renderGauge(data.gauge, options)),
       para(`${LABELS.windowsCaveat} ${HTML_LABELS.over100}`),
+      // What "open" means, as the text report says it (D-083).
+      para(LABELS.openNote),
       ...notes,
       para(HTML_LABELS.seriesHint, "nm-hint"),
       `<div class="nm-series-list">\n${data.series.map((s) => renderSeries(s, options)).join("\n")}\n</div>`,
@@ -1433,6 +1449,7 @@ p { margin: 0; }
 .nm-head { display: grid; gap: 6px; }
 .meta, .span, .note { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .privacy { font-size: 13px; color: var(--ink-2); }
+.hook-warning { display: grid; gap: 4px; border-left: 3px solid var(--ink); padding: 8px 12px; background: var(--surface); font-weight: 600; }
 .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--water); font-weight: 600; }
 .nm-part { display: grid; gap: 28px; }
 .panel { display: grid; gap: 10px; background: var(--surface); border-radius: 10px; padding: 18px 20px; min-width: 0; }

@@ -59,6 +59,10 @@ export interface EventResult {
   readonly reset_text: string | null;
   readonly quota_window: string | null;
   readonly quota_resets_at: string | null;
+  /** Model fallbacks only (D-080): the model that refused, the one that retried, and the refused request. */
+  readonly fallback_original_model: string | null;
+  readonly fallback_model: string | null;
+  readonly fallback_request_id: string | null;
 }
 
 /** The report section. */
@@ -93,6 +97,7 @@ const CLASSES = [
   "synthetic_other",
   "request",
   "retry_notice",
+  "model_fallback",
   "ignored_type",
 ] as const;
 
@@ -194,7 +199,8 @@ export function readResult(db: Db): IngestResult {
       .prepare(
         `SELECT x.class, p.session_id, p.timestamp_raw, f.relative_path, l.line_number,
                 x.error, x.api_error_status, x.window, x.reset_text,
-                x.quota_window, x.quota_resets_at_utc
+                x.quota_window, x.quota_resets_at_utc,
+                x.fallback_original_model, x.fallback_model, x.fallback_request_id
          FROM events x JOIN parsed_lines p ON p.raw_line_id = x.raw_line_id ${POSITION_JOIN}
          ${CANONICAL_ORDER}`,
       )
@@ -210,6 +216,9 @@ export function readResult(db: Db): IngestResult {
       reset_text: string | null;
       quota_window: string | null;
       quota_resets_at_utc: string | null;
+      fallback_original_model: string | null;
+      fallback_model: string | null;
+      fallback_request_id: string | null;
     }[]
   ).map((row): EventResult => ({
     class: row.class,
@@ -223,6 +232,10 @@ export function readResult(db: Db): IngestResult {
     reset_text: row.reset_text,
     quota_window: row.quota_window,
     quota_resets_at: row.quota_resets_at_utc,
+    // The refusal category is stored but never shown (D-080), so it isn't part of this output.
+    fallback_original_model: row.fallback_original_model,
+    fallback_model: row.fallback_model,
+    fallback_request_id: row.fallback_request_id,
   }));
 
   return {

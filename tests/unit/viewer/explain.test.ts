@@ -16,7 +16,7 @@ import {
   renderExplanation,
   resum,
 } from "../../../viewer/explain.js";
-import { OBSERVED_VIEWS, PROJECTED_VIEWS } from "../../../viewer/queries.js";
+import { EXPLAIN_ONLY_VIEWS, OBSERVED_VIEWS, PROJECTED_VIEWS } from "../../../viewer/queries.js";
 import { ingest } from "../core/metrics/helpers.js";
 import { FIXTURE_TIME_ZONE, buildReportFixture } from "./fixture.js";
 
@@ -39,7 +39,10 @@ describe("explain on the report fixture", () => {
 
   it("explains a metric for every metric view the report reads", () => {
     // Headroom and peak share a table row; each other view is one metric.
-    expect(METRIC_NAMES).toHaveLength(OBSERVED_VIEWS.length - 1 + PROJECTED_VIEWS.length - 1 + 1);
+    // Views the report no longer shows keep their explain metric (D-079).
+    expect(METRIC_NAMES).toHaveLength(
+      OBSERVED_VIEWS.length - 1 + PROJECTED_VIEWS.length - 1 + 1 + EXPLAIN_ONLY_VIEWS.length,
+    );
   });
 
   it.each(METRIC_NAMES)("re-sums %s from its events to exactly the reported numbers", (metric) => {

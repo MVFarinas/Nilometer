@@ -509,6 +509,8 @@ describe("loadHtmlData on the report fixture (fixture.ts buildReportFixture)", (
     //   five_hour 2026-09-02 22:00: capture 18:00 (b2 at 15:00 is before the 17:00 start).
     //   seven_day 2026-09-07 00:00: 15:00 (b2), and 18:30 and 19:00 in session st, which has no logs.
     // Open: the last capture is 2026-09-02 19:00, before the 22:00 and 09-07 resets but after 17:00.
+    // The page's time (HTML_FIXTURE_META) is 2026-09-03 14:00, after the 22:00 reset too, so that
+    // window reads reset (D-083): open only until its reset, as of the page's time.
     // c2 at 2026-09-02 20:00 reads "resets Sep 6, 7pm", a wording D-023 doesn't resolve, so its
     // reset is unknown; its time is in the weekly span (2026-08-31 00:00, 2026-09-07 00:00].
     // a4 (2026-09-01 14:00:30) is before both 5-hour spans, (12:00, 17:00] and (17:00, 22:00].
@@ -516,7 +518,7 @@ describe("loadHtmlData on the report fixture (fixture.ts buildReportFixture)", (
       data.gauge.map((g) => [g.window, g.resetAtUtc, g.open, g.limitHits, g.hitEvents]),
     ).toEqual([
       ["five_hour", "2026-09-02T17:00:00.000Z", false, 0, []],
-      ["five_hour", "2026-09-02T22:00:00.000Z", true, 0, []],
+      ["five_hour", "2026-09-02T22:00:00.000Z", false, 0, []],
       ["seven_day", "2026-09-07T00:00:00.000Z", true, 1, [id["c2"]]],
     ]);
     expect(data.series.map((s) => s.hits)).toEqual([
@@ -1020,12 +1022,13 @@ describe.each(CROSS_CHECK)(
       ).map((row) => row.id);
 
     it("shows the same window numbers as loadObserved, for every window with a counted reading", () => {
-      const observed = loadObserved(db)
+      const observed = loadObserved(db, HTML_FIXTURE_META.generatedAt)
         .windows.filter((w) => w.readings > 0)
         .map((w) => ({
           window: w.window,
           resetAtUtc: w.reset_at_utc,
-          open: w.window_open === 1,
+          // The text report's status: open only until its reset, as of the same time (D-083).
+          open: w.open_at_report === 1,
           peak: w.peak_used_percentage,
           last: w.last_used_percentage,
           lastAtUtc: w.last_reading_at_utc,
@@ -1048,7 +1051,7 @@ describe.each(CROSS_CHECK)(
     });
 
     it("adds the columns' hits and the hits in no column up to obs_limit_hits", () => {
-      const hits = loadObserved(db).limitHits;
+      const hits = loadObserved(db, HTML_FIXTURE_META.generatedAt).limitHits;
       const inColumns = data.gauge.reduce((sum, g) => sum + g.limitHits, 0);
       expect(inColumns + data.interruptions.hitsInNoColumn).toBe(hits.hits);
       data.gauge.forEach((g, index) => {
@@ -1071,7 +1074,7 @@ describe.each(CROSS_CHECK)(
     });
 
     it("states the interruption totals of obs_limit_hits and obs_lockout_time", () => {
-      const { limitHits, lockout } = loadObserved(db);
+      const { limitHits, lockout } = loadObserved(db, HTML_FIXTURE_META.generatedAt);
       const totals = data.interruptions;
       expect([
         totals.hits,
@@ -1114,12 +1117,15 @@ describe.each(CROSS_CHECK)(
     it("gives the same data when it reuses what the text report already read", () => {
       // The command passes readReport's rows so the costliest views run once (D-070); reusing
       // them must change nothing.
-      const loaded = { observed: loadObserved(db), projected: loadProjected(db) };
+      const loaded = {
+        observed: loadObserved(db, HTML_FIXTURE_META.generatedAt),
+        projected: loadProjected(db, HTML_FIXTURE_META.generatedAt),
+      };
       expect(loadHtmlData(db, HTML_FIXTURE_META, loaded)).toEqual(data);
     });
 
     it("counts the notes under the monthly amounts as the text report does, each with its requests", () => {
-      const { rateReadings, apiListPrice } = loadProjected(db);
+      const { rateReadings, apiListPrice } = loadProjected(db, HTML_FIXTURE_META.generatedAt);
       const notes = data.priceNotes;
       expect(notes.rateReadings.map((r) => [r.verifiedOn, r.pricedBeforeVerifiedRequests])).toEqual(
         rateReadings.map((r) => [r.verified_on, r.priced_before_verified_requests]),
@@ -1145,7 +1151,7 @@ describe.each(CROSS_CHECK)(
     });
 
     it("gives each split count its own hits, and each set of splits divides every hit once", () => {
-      const { limitHits } = loadObserved(db);
+      const { limitHits } = loadObserved(db, HTML_FIXTURE_META.generatedAt);
       const totals = data.interruptions;
       // Each list is exactly the view's rows for that split, independently selected here.
       /**
@@ -1193,7 +1199,7 @@ describe.each(CROSS_CHECK)(
     });
 
     it("counts the readings after their reset as the text report sums them", () => {
-      const windows = loadObserved(db).windows;
+      const windows = loadObserved(db, HTML_FIXTURE_META.generatedAt).windows;
       expect(data.afterReset.count).toBe(
         windows.reduce((sum, w) => sum + w.readings_after_reset, 0),
       );
@@ -1201,8 +1207,8 @@ describe.each(CROSS_CHECK)(
     });
 
     it("shows the same lockouts, models, months, and spans as loadObserved and loadProjected", () => {
-      const observed = loadObserved(db);
-      const projected = loadProjected(db);
+      const observed = loadObserved(db, HTML_FIXTURE_META.generatedAt);
+      const projected = loadProjected(db, HTML_FIXTURE_META.generatedAt);
       expect(
         data.lockouts.map((bar) => [bar.lockedFromUtc, bar.lockedUntilUtc, bar.seconds]),
       ).toEqual(
@@ -1261,7 +1267,7 @@ describe.each(CROSS_CHECK)(
         ]),
       ).toEqual(
         projected.burnRate
-          .filter((row) => row.window_open === 1)
+          .filter((row) => row.open_at_report === 1)
           .map((row) => [
             row.window,
             row.reset_at_utc,
@@ -1422,6 +1428,8 @@ describe("loadHtmlData at the edges", () => {
       // home given in the meta, so paths would print in full.
       repos: [],
       home: "",
+      // D-081: no hook finding in the meta, so no warning.
+      missingHookPath: null,
       burn: [],
       months: [],
       // No priced request, so no reading date has requests before it and none is a lower bound.
@@ -1429,6 +1437,18 @@ describe("loadHtmlData at the edges", () => {
       files: [],
       events: {},
     });
+    db.close();
+  });
+
+  it("carries the text report's hook finding to the page unchanged (D-081)", () => {
+    const db = openDatabase(":memory:", join(ROOT, "core/schema"));
+    const gone = "/home/example/old/hooks/statusline.sh";
+    expect(loadHtmlData(db, { ...HTML_FIXTURE_META, missingHookPath: gone }).missingHookPath).toBe(
+      gone,
+    );
+    expect(loadHtmlData(db, { ...HTML_FIXTURE_META, missingHookPath: null }).missingHookPath).toBe(
+      null,
+    );
     db.close();
   });
 
@@ -1445,7 +1465,7 @@ describe("loadHtmlData at the edges", () => {
         resets: "2026-09-03T14:00:00Z",
       },
     ]);
-    const windows = loadObserved(db).windows;
+    const windows = loadObserved(db, HTML_FIXTURE_META.generatedAt).windows;
     expect(windows.map((w) => [w.readings, w.readings_after_reset])).toEqual([[0, 1]]);
     const data = loadHtmlData(db, HTML_FIXTURE_META);
     expect(data.gauge).toEqual([]);

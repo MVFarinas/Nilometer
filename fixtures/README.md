@@ -50,7 +50,8 @@ These restate `decisions.md` D-001, D-004, D-007, D-019 and the `ingest-session-
 | 4 | `synthetic_other` | `message.model === "<synthetic>"` |
 | 5 | `request` | `type === "assistant"` and `message.usage` is an object |
 | 6 | `retry_notice` | `type === "system"` and `subtype === "api_error"` |
-| 7 | `ignored_type` | anything else |
+| 7 | `model_fallback` | `type === "system"` and `subtype === "model_refusal_fallback"` (D-080) |
+| 8 | `ignored_type` | anything else |
 
 ### Requests
 
@@ -74,7 +75,7 @@ For each `request` line (every one, before dedup; report fields below apply to a
 
 ### Events
 
-Classes 2, 3, 4, and 6 each produce one event per line, with no dedup. Fields:
+Classes 2, 3, 4, 6, and 7 each produce one event per line, with no dedup. Fields:
 - `class`, `session_id`, `timestamp`, `file`, `line`
 - **`error`:** the top-level `error` when it's a string, else null. For `retry_notice` lines `error` is an object, so this is null.
 - **`api_error_status`:** `apiErrorStatus` when it's a number (checked first, for every class); otherwise, for `retry_notice` only, `error.status` when it's a number; else null.
@@ -87,6 +88,7 @@ Classes 2, 3, 4, and 6 each produce one event per line, with no dedup. Fields:
 
 The text is: the concatenation of every string `message.content[].text` when `content` is a list; `content` itself when it's a string; otherwise empty.
 
+- **`fallback_original_model`, `fallback_model`, `fallback_request_id`:** present on every event, null except on `model_fallback` lines (D-080), where each is `originalModel`, `fallbackModel`, or `requestId` when that member is a string, else null. The line's `apiRefusalCategory` is stored but not part of this output, since it's never shown.
 - **`quota_window` and `quota_resets_at`:** present on every event, null except on `limit_hit` lines whose `quotaLimits` is an object. Claude Code writes that object on limit hits from some version after 2.1.214 (observed on 2.1.281, D-067); older lines have none.
   - **`quota_window`:** `quotaLimits.rateLimitType` when it is exactly `"five_hour"` or `"seven_day"`; else `null`.
   - **`quota_resets_at`:** `quotaLimits.resetsAt` when it is a JSON number (not a boolean) that is whole, greater than 0, and at most `253402300799` (9999-12-31T23:59:59Z), read as seconds since the Unix epoch and written `YYYY-MM-DDTHH:MM:SS.000Z` in UTC; else `null`.
@@ -139,7 +141,7 @@ The text is: the concatenation of every string `message.content[].text` when `co
     "totals_by_day_utc": { "2026-09-01": { "claude-sonnet-5": { "requests": 1, "...": "same fields" } } },
     "events": [],
     "report": {
-      "lines": { "malformed": 0, "limit_hit": 0, "api_error": 0, "synthetic_other": 0, "request": 3, "retry_notice": 0, "ignored_type": 1 },
+      "lines": { "malformed": 0, "limit_hit": 0, "api_error": 0, "synthetic_other": 0, "request": 3, "retry_notice": 0, "model_fallback": 0, "ignored_type": 1 },
       "malformed": [],
       "ignored_types": { "user": 1 },
       "unkeyed_requests": 0,

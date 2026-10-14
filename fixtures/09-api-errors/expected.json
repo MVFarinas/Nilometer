@@ -56,7 +56,10 @@
         "window": null,
         "reset_text": null,
         "quota_window": null,
-        "quota_resets_at": null
+        "quota_resets_at": null,
+        "fallback_original_model": null,
+        "fallback_model": null,
+        "fallback_request_id": null
       },
       {
         "class": "api_error",
@@ -69,7 +72,10 @@
         "window": null,
         "reset_text": null,
         "quota_window": null,
-        "quota_resets_at": null
+        "quota_resets_at": null,
+        "fallback_original_model": null,
+        "fallback_model": null,
+        "fallback_request_id": null
       },
       {
         "class": "api_error",
@@ -82,7 +88,10 @@
         "window": null,
         "reset_text": null,
         "quota_window": null,
-        "quota_resets_at": null
+        "quota_resets_at": null,
+        "fallback_original_model": null,
+        "fallback_model": null,
+        "fallback_request_id": null
       },
       {
         "class": "synthetic_other",
@@ -95,7 +104,10 @@
         "window": null,
         "reset_text": null,
         "quota_window": null,
-        "quota_resets_at": null
+        "quota_resets_at": null,
+        "fallback_original_model": null,
+        "fallback_model": null,
+        "fallback_request_id": null
       }
     ],
     "report": {
@@ -106,6 +118,7 @@
         "synthetic_other": 1,
         "request": 1,
         "retry_notice": 0,
+        "model_fallback": 0,
         "ignored_type": 0
       },
       "malformed": [],

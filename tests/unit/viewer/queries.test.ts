@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { Db } from "../../../core/db/database.js";
 import {
+  EXPLAIN_ONLY_VIEWS,
   OBSERVED_VIEWS,
   PROJECTED_VIEWS,
   lastIngestAt,
@@ -31,7 +32,14 @@ describe("the viewer's query lists", () => {
         (name.startsWith("obs_") || name.startsWith("proj_")) &&
         !/_events$|_interval_hits$/.test(name),
     );
-    expect([...metrics].sort()).toEqual([...OBSERVED_VIEWS, ...PROJECTED_VIEWS].sort());
+    // A view the report stopped showing is listed by name with its decision (D-079), so leaving
+    // one off the screen is never silent.
+    expect([...metrics].sort()).toEqual(
+      [...OBSERVED_VIEWS, ...PROJECTED_VIEWS, ...EXPLAIN_ONLY_VIEWS].sort(),
+    );
+    expect(
+      EXPLAIN_ONLY_VIEWS.filter((view) => (OBSERVED_VIEWS as readonly string[]).includes(view)),
+    ).toEqual([]);
   });
 });
 

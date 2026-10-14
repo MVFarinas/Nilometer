@@ -27,6 +27,7 @@ import {
   describeVerify,
   describeUninstall,
   HTML_NEEDS_SAVE,
+  OPEN_NEEDS_HTML,
   TERMINAL_ONLY_NOTE,
   report,
   runCli,
@@ -45,6 +46,8 @@ import { loadHtmlData } from "../../../viewer/html-data.js";
 import { NoDatabaseError, withReportDatabase } from "../../../viewer/report.js";
 import { PriceTableError } from "../../../core/pricing/prices.js";
 import { SettingsError } from "../../../core/settings/settings-file.js";
+import { buildHookCommand } from "../../../core/settings/statusline.js";
+import { LABELS } from "../../../viewer/render.js";
 
 /** This repository's root, which contains hooks/statusline.sh. */
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -84,6 +87,10 @@ function testDeps(env: Record<string, string> = {}): {
       print: (line) => out.push(line),
       printError: (line) => err.push(line),
       timeZone: "America/Chicago",
+      // A test that reaches the real opener would launch a browser (D-082); fail it instead.
+      openPage: () => {
+        throw new Error("a test reached the real page opener");
+      },
     },
     out,
     err,
@@ -189,6 +196,7 @@ describe("describeIngest", () => {
       unkeyedRequests: 2,
       limitHits: 4,
       otherEvents: 5,
+      modelFallbacks: 2,
       malformedLines: 6,
       statusReadings: 7,
       malformedReadings: 8,
@@ -204,7 +212,7 @@ describe("describeIngest", () => {
     expect(describeIngest(outcome)).toEqual([
       "Log roots read: /h/.claude, /alt",
       "This run: 2 session logs and the status line spool, 40 complete lines read, 30 new, 1 rewritten files reread.",
-      "Stored: 12 requests (2 without IDs), 4 limit hits, 5 other error or retry events; requests stored from 2026-09-01T00:00:00.000Z to 2026-09-02T00:00:00.000Z (UTC).",
+      "Stored: 12 requests (2 without IDs), 4 limit hits, 5 other error or retry events, 2 requests refused and retried with another model; requests stored from 2026-09-01T00:00:00.000Z to 2026-09-02T00:00:00.000Z (UTC).",
       "Status line: 7 readings, 8 undecodable spool lines, 9 flagged window values, 11 hook append failures.",
       "Reported for review: 6 malformed log lines.",
       "Database: /d/usage.db",
@@ -258,6 +266,7 @@ describe("describeIngest wording", () => {
         unkeyedRequests: 0,
         limitHits: 0,
         otherEvents: 0,
+        modelFallbacks: 0,
         malformedLines: 0,
         statusReadings: 0,
         malformedReadings: 0,
@@ -978,6 +987,121 @@ describe("runCli", () => {
       renderHtmlReport(loadHtmlData(db, { timeZone: "America/Chicago", generatedAt: deps.now() })),
     );
     expect(readFileSync(join(reports, "report_2026-09-13_070000.html"), "utf8")).toBe(expected);
+  });
+
+  it("warns in the text, JSON, and page when the status line's hook file is missing, writing no settings (D-081)", () => {
+    const { deps, out } = testDeps();
+    ingestFixture06(deps);
+    // Settings as init would leave them, pointing at a checkout that has since moved.
+    const settingsPath = join(deps.home, ".claude", "settings.json");
+    const gone = join(deps.home, "gone", "hooks", "statusline.sh");
+    const settings = JSON.stringify({
+      statusLine: { type: "command", command: buildHookCommand(gone, "/data") },
+    });
+    writeFileSync(settingsPath, settings);
+    out.length = 0;
+    expect(runCli(["report", "--save", "--html"], deps)).toBe(0);
+    const text = out.join("\n");
+    expect(text).toContain(LABELS.hookMissing);
+    expect(text).toContain(`Missing hook file: ${join("~", "gone", "hooks", "statusline.sh")}`);
+    const reports = join(deps.home, ".local", "share", "nilometer", "reports");
+    const page = readFileSync(join(reports, "report_2026-09-13_070000.html"), "utf8");
+    expect(page).toContain('<div class="hook-warning" role="note">');
+    const saved = JSON.parse(
+      readFileSync(join(reports, "report_2026-09-13_070000.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(saved["missingHookPath"]).toBe(gone);
+    // Read only: the settings file is byte-for-byte what was written.
+    expect(readFileSync(settingsPath, "utf8")).toBe(settings);
+  });
+
+  it("checks the settings file under CLAUDE_CONFIG_DIR, where init would look (D-081)", () => {
+    const config = mkdtempSync(join(tmpdir(), "aua-cli-config-"));
+    const { deps, out } = testDeps({ CLAUDE_CONFIG_DIR: config });
+    mkdirSync(join(config, "projects"));
+    expect(runCli(["ingest"], deps)).toBe(0);
+    const gone = join(config, "gone", "statusline.sh");
+    writeFileSync(
+      join(config, "settings.json"),
+      JSON.stringify({ statusLine: { type: "command", command: buildHookCommand(gone, "/data") } }),
+    );
+    out.length = 0;
+    expect(runCli(["report"], deps)).toBe(0);
+    expect(out.join("\n")).toContain(LABELS.hookMissing);
+    // The home directory's settings aren't the ones Claude Code reads here.
+    expect(existsSync(join(deps.home, ".claude", "settings.json"))).toBe(false);
+  });
+
+  it("opens the saved page with --open, passing its full path once (D-082)", () => {
+    const base = testDeps();
+    ingestFixture06(base.deps);
+    const opened: string[] = [];
+    const deps: CliDeps = {
+      ...base.deps,
+      openPage: (path) => {
+        opened.push(path);
+        return { opened: true };
+      },
+    };
+    base.out.length = 0;
+    base.err.length = 0;
+    expect(runCli(["report", "--save", "--html", "--open"], deps)).toBe(0);
+    const page = join(
+      deps.home,
+      ".local",
+      "share",
+      "nilometer",
+      "reports",
+      "report_2026-09-13_070000.html",
+    );
+    expect(opened).toEqual([page]);
+    expect(existsSync(page)).toBe(true);
+    // Nothing extra is printed when it opens: the Saved line already names the page.
+    expect(base.out.at(-1)).toMatch(/^Saved: .*report_2026-09-13_070000\.html$/);
+    expect(base.err).toEqual([]);
+  });
+
+  it("prints where the page is and still succeeds when it can't be opened, keeping --json stdout pure", () => {
+    const base = testDeps();
+    ingestFixture06(base.deps);
+    const deps: CliDeps = {
+      ...base.deps,
+      openPage: () => ({ opened: false, reason: "xdg-open exited with 3" }),
+    };
+    const shown = join("~", ".local", "share", "nilometer", "reports");
+    for (const [args, name] of [
+      [["report", "--save", "--html", "--open"], "report_2026-09-13_070000.html"],
+      [["report", "--json", "--save", "--html", "--open"], "report_2026-09-13_070000-2.html"],
+    ] as const) {
+      base.out.length = 0;
+      base.err.length = 0;
+      expect(runCli([...args], deps)).toBe(0);
+      expect(base.err.at(-1)).toBe(
+        `Couldn't open the page (xdg-open exited with 3). It's saved at ${join(shown, name)}`,
+      );
+      expectNoBannedWording(base.err);
+    }
+    // The --json run's stdout is one JSON document and nothing else.
+    expect(() => JSON.parse(base.out.join("\n")) as unknown).not.toThrow();
+  });
+
+  it("refuses --open without --save --html before opening anything", () => {
+    const fresh = testDeps();
+    for (const args of [
+      ["report", "--open"],
+      ["report", "--save", "--open"],
+      ["report", "--html", "--open"],
+      ["report", "--json", "--open"],
+    ]) {
+      fresh.err.length = 0;
+      expect(runCli(args, fresh.deps)).toBe(1);
+      expect(fresh.err).toEqual([OPEN_NEEDS_HTML]);
+      expect(fresh.out).toEqual([]);
+    }
+    // Nothing was created, not even the data directory.
+    expect(existsSync(join(fresh.deps.home, ".local"))).toBe(false);
+    expect(OPEN_NEEDS_HTML).toMatch(/--save --html/);
+    expectNoBannedWording([OPEN_NEEDS_HTML]);
   });
 
   it.skipIf(!HAS_POSIX_MODES)("writes the HTML page readable only by the owner", () => {

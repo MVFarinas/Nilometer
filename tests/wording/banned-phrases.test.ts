@@ -40,6 +40,8 @@ function inputFor(db: Db): ReportInput {
     lastIngestAt: "2026-09-13T00:00:00.000Z",
     databasePath: "/home/example/.local/share/nilometer/usage.db",
     home: "/home/example",
+    // A missing hook, so the warning's wording is checked too (D-081).
+    missingHookPath: "/home/example/nilometer/hooks/statusline.sh",
   };
 }
 

@@ -353,6 +353,8 @@ export interface HtmlReportData {
   readonly repos: readonly RepoBar[];
   /** The home directory repository paths are shortened against (`~`), as the text report does; "" for none. */
   readonly home: string;
+  /** The hook file the status line names when it doesn't exist (D-081); null otherwise. */
+  readonly missingHookPath: string | null;
   /** Open windows' burn rates, projected (below the seam), as the text report lists them (step G2.1). */
   readonly burn: readonly BurnWindow[];
   /** Months in order, projected (below the seam). */
@@ -373,6 +375,8 @@ export interface HtmlMeta {
   readonly generatedAt: Date;
   /** The home directory, so repository paths print as `~/...` as in the text report; omitted, paths print in full. */
   readonly home?: string;
+  /** The status line's missing hook file, as the text report found it (D-081); omitted or null, none. */
+  readonly missingHookPath?: string | null | undefined;
 }
 
 /**

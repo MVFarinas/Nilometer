@@ -1,7 +1,7 @@
 /**
  * @file Unit tests for viewer/report.ts (docs/development.md P7.1).
  */
-import { chmodSync, existsSync, mkdtempSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { HAS_POSIX_MODES } from "../../setup/platform.js";
 
 import { runIngestCommand } from "../../../core/ingest/command.js";
+import { buildHookCommand } from "../../../core/settings/statusline.js";
 import {
   NoDatabaseError,
   loadReport,
@@ -85,6 +86,40 @@ describe("loadReport", () => {
       "claude-opus-5",
       "claude-sonnet-5",
     ]);
+    // No settings path given: the hook was not checked, which is not the same as present.
+    expect(input.missingHookPath).toBeUndefined();
+  });
+
+  it("names the hook file the status line runs when it's gone, and nothing when it's there (D-081)", () => {
+    const home = mkdtempSync(join(tmpdir(), "aua-report-hook-"));
+    runIngestCommand({
+      home,
+      env: { CLAUDE_CONFIG_DIR: join(ROOT, "fixtures", "06-mixed-models") },
+      full: false,
+      packageRoot: ROOT,
+      now: () => new Date("2026-09-13T00:00:00Z"),
+    });
+    const settingsPath = join(home, "settings.json");
+    const options = { home, env: {}, packageRoot: ROOT, timeZone: "UTC", settingsPath };
+    /**
+     * Points the status line at a hook path, as init would write it.
+     * @param hook - The hook path.
+     */
+    const point = (hook: string): void => {
+      const command = buildHookCommand(hook, "/data");
+      writeFileSync(settingsPath, JSON.stringify({ statusLine: { type: "command", command } }));
+    };
+    const gone = join(home, "moved", "hooks", "statusline.sh");
+    point(gone);
+    expect(loadReport(options).missingHookPath).toBe(gone);
+    // The real hook in this checkout exists.
+    point(join(ROOT, "hooks", "statusline.sh"));
+    expect(loadReport(options).missingHookPath).toBeNull();
+    // Checked and no settings file: nothing to warn about.
+    rmSync(settingsPath);
+    expect(loadReport(options).missingHookPath).toBeNull();
+    // The check only reads: the settings file is never created.
+    expect(existsSync(settingsPath)).toBe(false);
   });
 });
 

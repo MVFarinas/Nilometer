@@ -37,13 +37,14 @@ import {
   runInit,
   runUninstall,
 } from "../core/install/install.js";
-import { SettingsError } from "../core/settings/settings-file.js";
+import { SettingsError, locateSettings } from "../core/settings/settings-file.js";
 import {
   CCUSAGE_VERSION,
   type VerifyResult,
   runCcusage,
   runVerify,
 } from "../core/verify/verify.js";
+import { type OpenResult, openPage } from "../core/util/open-page.js";
 import { METRIC_NAMES, UnknownMetricError, explain, renderExplanation } from "../viewer/explain.js";
 import { formatNumber } from "../viewer/format.js";
 import {
@@ -79,6 +80,11 @@ export interface CliDeps {
   readonly runCcusage?: () => string;
   /** IANA zone the report shows times in: the machine's zone (D-007). */
   readonly timeZone: string;
+  /**
+   * Opens a saved page for `report --open`; defaults to the platform's opener. Overridden in tests
+   * so they never launch a browser (D-082).
+   */
+  readonly openPage?: (path: string) => OpenResult;
 }
 
 /** Flags shared by `init` and `uninstall`. */
@@ -122,7 +128,16 @@ interface ReportFlags {
   readonly save?: boolean;
   /** `--html`: with `--save`, also write the self-contained HTML page beside them (D-070). */
   readonly html?: boolean;
+  /** `--open`: with `--save --html`, open the saved page (D-082). */
+  readonly open?: boolean;
 }
+
+/**
+ * Refusal for `--open` without both `--save` and `--html`: only a saved page exists to open (D-082).
+ * Checked first, so it names everything `--open` needs.
+ */
+export const OPEN_NEEDS_HTML =
+  "--open needs --save --html: only the saved HTML page can be opened. Nothing was changed.";
 
 /**
  * Refusal for `--html` without `--save`. The page is only ever written as a saved copy, never to
@@ -276,7 +291,7 @@ export function describeIngest(outcome: IngestCommandOutcome): string[] {
     // Logs and the spool are named apart: one log plus the spool read as "2 files" and looked
     // like a miscount to someone who had a single session log.
     `This run: ${run.logFiles} session ${run.logFiles === 1 ? "log" : "logs"}${run.spoolRead ? " and the status line spool" : ""}, ${run.linesRead} complete lines read, ${run.linesStored} new, ${run.filesRewritten} rewritten files reread.`,
-    `Stored: ${totals.requests} requests (${totals.unkeyedRequests} without IDs), ${totals.limitHits} limit hits, ${totals.otherEvents} other error or retry events; ${span}.`,
+    `Stored: ${totals.requests} requests (${totals.unkeyedRequests} without IDs), ${totals.limitHits} limit hits, ${totals.otherEvents} other error or retry events, ${totals.modelFallbacks} ${totals.modelFallbacks === 1 ? "request" : "requests"} refused and retried with another model; ${span}.`,
     `Status line: ${totals.statusReadings} readings, ${totals.malformedReadings} undecodable spool lines, ${totals.invalidWindows} flagged window values, ${totals.hookErrors} hook append failures.`,
     `Reported for review: ${totals.malformedLines} malformed log lines${run.unreadable === 0 ? "" : `, ${run.unreadable} files or folders that couldn't be read this run (skipped)`}.`,
     ...optionalLine(describeTightened(outcome.permissionsTightened)),
@@ -622,6 +637,24 @@ export function report(
 }
 
 /**
+ * Opens the page `report --save --html --open` saved (D-082).
+ * @param deps - Program dependencies; `openPage` defaults to the platform's opener.
+ * @param htmlPath - The saved page; always set when `--open` passed the flag check.
+ * @returns Nothing when it opened; otherwise one line saying why and where the page is.
+ */
+function openSaved(deps: CliDeps, htmlPath: string | undefined): string[] {
+  if (htmlPath === undefined) {
+    return [];
+  }
+  const opened = (deps.openPage ?? openPage)(htmlPath);
+  return opened.opened
+    ? []
+    : [
+        `Couldn't open the page (${opened.reason}). It's saved at ${displayPath(htmlPath, deps.home)}`,
+      ];
+}
+
+/**
  * Builds the command-line program.
  * @param deps - Program dependencies.
  * @param setExitCode - Receives the exit code chosen by the command that ran.
@@ -709,12 +742,16 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
       "also save a dated copy (text and JSON) in the data directory's reports folder",
     )
     .option("--html", "with --save, also write the report as a self-contained HTML page")
+    .option("--open", "with --save --html, open the saved page in your browser")
     .action((flags: ReportFlags) => {
       setExitCode(
         report(deps, () => {
           // Refused before the database is opened, so the bad combination changes nothing: not even
           // the owner-only tightening a read would do (D-043). Same exit code and stderr as any
           // other rejected input.
+          if (flags.open === true && (flags.html !== true || flags.save !== true)) {
+            return { exitCode: 1, lines: [], errors: [OPEN_NEEDS_HTML] };
+          }
           if (flags.html === true && flags.save !== true) {
             return { exitCode: 1, lines: [], errors: [HTML_NEEDS_SAVE] };
           }
@@ -725,10 +762,20 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
           const onTightened = (tightened: readonly string[]): void => {
             noteTightened(deps, tightened);
           };
-          const reportOptions = { ...toPlanDatabaseOptions(flags, deps), timeZone: deps.timeZone };
-          // One instant names the files and dates the page, so the page's "generated at" and its
-          // file name can't disagree. Taken only when saving, as before.
-          const at = flags.save === true ? deps.now() : undefined;
+          // One instant is the report's time (D-083: a window is open only until its reset, as
+          // of now), names the saved files, and dates the page, so none of them can disagree.
+          const reportedAt = deps.now();
+          const reportOptions = {
+            ...toPlanDatabaseOptions(flags, deps),
+            timeZone: deps.timeZone,
+            reportedAt,
+            // Where init would look, so the warning checks the same file it would fix (D-081).
+            settingsPath: locateSettings({
+              home: deps.home,
+              claudeConfigDir: deps.env["CLAUDE_CONFIG_DIR"],
+            }),
+          };
+          const at = flags.save === true ? reportedAt : undefined;
           const { input, html } = withReportDatabase(
             reportOptions,
             (db, databasePath) =>
@@ -747,7 +794,12 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
                           // The home directory shortens repository paths to ~/..., as in the text report.
                           loadHtmlData(
                             db,
-                            { timeZone: deps.timeZone, generatedAt: at, home: deps.home },
+                            {
+                              timeZone: deps.timeZone,
+                              generatedAt: at,
+                              home: deps.home,
+                              missingHookPath: read.missingHookPath,
+                            },
                             read,
                           ),
                         )
@@ -768,12 +820,15 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
             saved.htmlPath === undefined
               ? `Saved: ${textShown} and ${jsonShown}`
               : `Saved: ${textShown}, ${jsonShown}, and ${displayPath(saved.htmlPath, deps.home)}`;
+          // The page is saved either way; a machine with no browser (SSH, a script) isn't an error.
+          // Printed last, on stderr, so it follows the Saved line and --json stdout stays pure (D-082).
+          const notOpened = flags.open === true ? openSaved(deps, saved.htmlPath) : [];
           if (flags.json === true) {
             // stdout must stay pure JSON for tools reading it.
             deps.printError(note);
-            return { exitCode: 0, lines: [printed] };
+            return { exitCode: 0, lines: [printed], errors: notOpened };
           }
-          return { exitCode: 0, lines: [printed, "", note] };
+          return { exitCode: 0, lines: [printed, "", note], errors: notOpened };
         }),
       );
     });

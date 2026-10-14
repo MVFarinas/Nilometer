@@ -6,9 +6,10 @@
  * description of what changed. Reading and writing files is `settings-file.ts`'s job, so every
  * decision can be tested without touching a disk.
  */
+import { existsSync } from "node:fs";
 import { isAbsolute } from "node:path";
 
-import type { SettingsObject } from "./settings-file.js";
+import { type SettingsObject, type SettingsRead, readSettings } from "./settings-file.js";
 
 /**
  * Comment appended to the hook command. It identifies our entry even if the repository moves,
@@ -71,6 +72,69 @@ export function dataDirFromHookCommand(command: string): string | null {
     return null;
   }
   return quoted.replaceAll(`'\\''`, "'");
+}
+
+/**
+ * Reads the hook's own path out of a command {@link buildHookCommand} produced (D-081).
+ * @param command - A `statusLine.command` value.
+ * @returns The hook script's path, or `null` if the command isn't one of ours or can't be parsed.
+ * @example
+ * hookPathFromHookCommand("/bin/sh '/repo/hooks/statusline.sh' '/data' # nilometer-hook"); // "/repo/hooks/statusline.sh"
+ */
+export function hookPathFromHookCommand(command: string): string | null {
+  if (!command.includes(HOOK_MARKER)) {
+    return null;
+  }
+  // The same two quoted words dataDirFromHookCommand reads; the first is the hook.
+  const match = /^\/bin\/sh '((?:[^']|'\\'')*)' '((?:[^']|'\\'')*)' /.exec(command);
+  const quoted = match?.[1];
+  if (quoted === undefined) {
+    return null;
+  }
+  return quoted.replaceAll(`'\\''`, "'");
+}
+
+/** What `report` found about the status line hook (D-081). */
+export type HookCheck =
+  | { readonly kind: "present" }
+  | { readonly kind: "missing"; readonly hookPath: string }
+  | { readonly kind: "not_ours" }
+  | { readonly kind: "no_settings" };
+
+/**
+ * Checks whether the status line in settings runs this tool's hook from a file that exists (D-081).
+ *
+ * Read only: the settings file is never written here. A machine move or a deleted checkout leaves
+ * `statusLine.command` naming a hook that isn't there; Claude Code then runs nothing, and the
+ * hook's own error log can't record a hook that never starts.
+ * @param settingsPath - The settings file, located as `init` locates it.
+ * @param exists - File existence check, injectable for tests.
+ * @returns `missing` with the hook's path when the command is ours and its file is gone;
+ *   `present`, `not_ours`, or `no_settings` otherwise. An unreadable or invalid settings file is
+ *   `no_settings`: there is no command to check.
+ */
+export function checkHook(
+  settingsPath: string,
+  exists: (path: string) => boolean = existsSync,
+): HookCheck {
+  let read: SettingsRead;
+  try {
+    read = readSettings(settingsPath);
+  } catch {
+    return { kind: "no_settings" };
+  }
+  if (read.kind !== "ok") {
+    return { kind: "no_settings" };
+  }
+  const value = read.settings["statusLine"];
+  if (!isCommandEntry(value)) {
+    return { kind: "not_ours" };
+  }
+  const hookPath = hookPathFromHookCommand(value.command);
+  if (hookPath === null) {
+    return { kind: "not_ours" };
+  }
+  return exists(hookPath) ? { kind: "present" } : { kind: "missing", hookPath };
 }
 
 /**

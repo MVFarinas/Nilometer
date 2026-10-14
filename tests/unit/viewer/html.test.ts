@@ -195,6 +195,7 @@ const DATA: HtmlReportData = {
     { repository: null, kind: "unresolved", requests: 4, outputTokens: 460, events: [2, 4, 6, 10] },
   ],
   home: "",
+  missingHookPath: null,
   // Both windows open at the last reading (13:05:10), latest reset first, as the text report lists them.
   // 7-day: 16% after 13 h 5 m 10 s (47,110 s), so 16 / (47110 / 3600) points per hour, reaching
   // 100% at 2026-09-03 00:00 + 100 * 47110 / 16 s = 2026-09-06 09:47:17.5. 5-hour: 2% after 310 s,
@@ -438,6 +439,7 @@ function burnSentenceFor(burn: HtmlReportData["burn"][number]): string {
       last_used_percentage: burn.last,
       last_reading_at_utc: burn.lastAtUtc,
       window_open: 1,
+      open_at_report: 1,
       limit_reached: burn.limitReached ? 1 : 0,
       projected_percentage_points_per_hour: burn.ratePerHour,
       projected_limit_at_utc: burn.projectedLimitAtUtc,
@@ -516,6 +518,21 @@ describe("the header", () => {
 
   it("says none yet when nothing has been ingested", () => {
     expect(renderHtmlReport(EMPTY)).toContain("Last ingest: none yet.");
+  });
+
+  it("warns in the header when the status line's hook file is missing, in the text report's words (D-081)", () => {
+    const html = renderHtmlReport({
+      ...DATA,
+      home: "/home/example",
+      missingHookPath: "/home/example/old/hooks/statusline.sh",
+    });
+    const header = html.slice(html.indexOf('<header class="nm-head">'), html.indexOf("</header>"));
+    expect(header).toContain('<div class="hook-warning" role="note">');
+    expect(header).toContain(`<p class="caveat">${escapeHtml(LABELS.hookMissing)}</p>`);
+    expect(header).toContain('<p class="meta">Missing hook file: ~/old/hooks/statusline.sh</p>');
+    // Above the privacy note, so it's the first thing read after the times.
+    expect(header.indexOf("hook-warning")).toBeLessThan(header.indexOf('class="privacy"'));
+    expect(renderHtmlReport(DATA)).not.toContain('class="hook-warning"');
   });
 
   it("carries the privacy note, since the file holds session IDs and paths (README Privacy)", () => {

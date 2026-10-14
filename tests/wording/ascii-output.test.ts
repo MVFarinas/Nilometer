@@ -53,6 +53,8 @@ describe("everything the viewer prints is ASCII", () => {
         lastIngestAt: "2026-09-13T00:00:00Z",
         databasePath: "/home/example/.local/share/nilometer/usage.db",
         home: "/home/example",
+        // A missing hook, so the warning's wording is checked too (D-081).
+        missingHookPath: "/home/example/nilometer/hooks/statusline.sh",
       };
       expect(nonAscii(renderReport(input))).toEqual([]);
       expect(nonAscii(JSON.stringify(reportJson(input)))).toEqual([]);

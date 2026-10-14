@@ -20,6 +20,7 @@ export const LINE_CLASSES = [
   "synthetic_other",
   "request",
   "retry_notice",
+  "model_fallback",
   "ignored_type",
 ] as const;
 
@@ -118,6 +119,10 @@ export function classifyLine(line: LogObject | null): LineClass {
   }
   if (line["type"] === "system" && line["subtype"] === "api_error") {
     return "retry_notice";
+  }
+  // A request one model refused and another retried (D-080): the only record of the refusal.
+  if (line["type"] === "system" && line["subtype"] === "model_refusal_fallback") {
+    return "model_fallback";
   }
   return "ignored_type";
 }
@@ -401,12 +406,27 @@ export interface EventFields {
   readonly unknownErrorKey: string | null;
   /** For retry notices: whether `error.rateLimits` is present and not null. */
   readonly retryRateLimitsPresent: boolean;
+  /** For model fallbacks (D-080): what was refused and what retried it; nulls on other classes. */
+  readonly fallback: FallbackFields;
+}
+
+/** A model fallback's fields (D-080), each its log field when a string, else null. */
+export interface FallbackFields {
+  /** `originalModel`: the model that refused. */
+  readonly originalModel: string | null;
+  /** `fallbackModel`: the model that retried. */
+  readonly fallbackModel: string | null;
+  /** `requestId` of the refused request. */
+  readonly requestId: string | null;
+  /** `apiRefusalCategory`: stored, never shown. */
+  readonly refusalCategory: string | null;
 }
 
 /**
  * Extracts event fields from a line of an event class.
  * @param line - The parsed line.
- * @param lineClass - Its class: `limit_hit`, `api_error`, `synthetic_other`, or `retry_notice`.
+ * @param lineClass - Its class: `limit_hit`, `api_error`, `synthetic_other`, `retry_notice`, or
+ *   `model_fallback`.
  * @returns The event fields.
  */
 export function extractEvent(line: LogObject, lineClass: LineClass): EventFields {
@@ -437,7 +457,25 @@ export function extractEvent(line: LogObject, lineClass: LineClass): EventFields
       errorObject !== null &&
       Object.hasOwn(errorObject, "rateLimits") &&
       errorObject["rateLimits"] !== null,
+    fallback:
+      lineClass === "model_fallback"
+        ? {
+            originalModel: stringOrNull(line["originalModel"]),
+            fallbackModel: stringOrNull(line["fallbackModel"]),
+            requestId: stringOrNull(line["requestId"]),
+            refusalCategory: stringOrNull(line["apiRefusalCategory"]),
+          }
+        : { originalModel: null, fallbackModel: null, requestId: null, refusalCategory: null },
   };
+}
+
+/**
+ * Keeps a value only when it's a string.
+ * @param value - Any JSON value.
+ * @returns The string, or null for anything else, including a missing member.
+ */
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }
 
 /** How a line sits in its conversation, for interruption metrics (D-021, D-022). */

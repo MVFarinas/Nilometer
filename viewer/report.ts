@@ -8,6 +8,7 @@ import { type Db, openDatabase } from "../core/db/database.js";
 import { DATABASE_FILE } from "../core/ingest/command.js";
 import { resolveDataDir } from "../core/install/locations.js";
 import { securePrivateDataDir } from "../core/install/private-files.js";
+import { checkHook } from "../core/settings/statusline.js";
 import { lastIngestAt, loadObserved, loadProjected } from "./queries.js";
 import type { ReportInput } from "./render.js";
 
@@ -38,6 +39,13 @@ export interface ReportOptions {
   readonly packageRoot: string;
   /** IANA zone every time is shown in; month buckets in SQL use the process's zone (D-007). */
   readonly timeZone: string;
+  /**
+   * The report's own time: a window is open only until its reset as of this instant (D-083).
+   * Omitted, "open" is as of the last status line reading, as the views define it.
+   */
+  readonly reportedAt?: Date;
+  /** The Claude Code settings file to check the status line hook in (D-081); omitted, no check. */
+  readonly settingsPath?: string;
 }
 
 /** Where the report's database lives. */
@@ -87,13 +95,28 @@ export function withReportDatabase<T>(
  */
 export function readReport(db: Db, databasePath: string, options: ReportOptions): ReportInput {
   return {
-    observed: loadObserved(db),
-    projected: loadProjected(db),
+    observed: loadObserved(db, options.reportedAt),
+    projected: loadProjected(db, options.reportedAt),
     timeZone: options.timeZone,
     lastIngestAt: lastIngestAt(db),
     databasePath,
     home: options.home,
+    // Read only: settings are never written here (D-081).
+    missingHookPath: missingHook(options.settingsPath),
   };
+}
+
+/**
+ * Checks the status line hook, when there's a settings file to check (D-081).
+ * @param settingsPath - The settings file, or undefined to skip the check.
+ * @returns The missing hook's path; null when present or not ours; undefined when unchecked.
+ */
+function missingHook(settingsPath: string | undefined): string | null | undefined {
+  if (settingsPath === undefined) {
+    return undefined;
+  }
+  const check = checkHook(settingsPath);
+  return check.kind === "missing" ? check.hookPath : null;
 }
 
 /**

@@ -89,6 +89,7 @@
         "synthetic_other": 0,
         "request": 3,
         "retry_notice": 0,
+        "model_fallback": 0,
         "ignored_type": 0
       },
       "malformed": [],
@@ -211,6 +212,7 @@
         "synthetic_other": 0,
         "request": 4,
         "retry_notice": 0,
+        "model_fallback": 0,
         "ignored_type": 0
       },
       "malformed": [],

@@ -12,8 +12,10 @@ import {
   HOOK_MARKER,
   type StatusLineEntry,
   buildHookCommand,
+  checkHook,
   classifyStatusLine,
   dataDirFromHookCommand,
+  hookPathFromHookCommand,
   isCommandEntry,
   planInstall,
   planUninstall,
@@ -83,6 +85,74 @@ describe("dataDirFromHookCommand", () => {
     // Our marker, but not the shape init writes.
     expect(dataDirFromHookCommand(`my-script ${HOOK_MARKER}`)).toBeNull();
     expect(dataDirFromHookCommand(`/bin/sh '/only/one/word' ${HOOK_MARKER}`)).toBeNull();
+  });
+});
+
+describe("hookPathFromHookCommand", () => {
+  it("reads back the hook path buildHookCommand wrote, however it's spelled (D-081)", () => {
+    for (const hook of ["/repo/hooks/statusline.sh", "/a b/it's/statusline.sh", "/x'y/h.sh"]) {
+      expect(hookPathFromHookCommand(buildHookCommand(hook, "/data"))).toBe(hook);
+    }
+  });
+
+  it("returns null for a command that isn't ours or can't be parsed", () => {
+    expect(hookPathFromHookCommand("~/bin/status.sh")).toBeNull();
+    expect(hookPathFromHookCommand(`my-script ${HOOK_MARKER}`)).toBeNull();
+    expect(hookPathFromHookCommand(`/bin/sh '/only/one/word' ${HOOK_MARKER}`)).toBeNull();
+  });
+});
+
+describe("checkHook (D-081)", () => {
+  /**
+   * Writes a settings file with the given text into a fresh directory.
+   * @param text - The file's contents, or undefined for no file at all.
+   * @returns The settings path.
+   */
+  function settingsWith(text: string | undefined): string {
+    const path = join(mkdtempSync(join(tmpdir(), "aua-hook-check-")), "settings.json");
+    if (text !== undefined) {
+      writeFileSync(path, text);
+    }
+    return path;
+  }
+
+  /**
+   * Writes a settings file whose status line runs our hook.
+   * @param hook - The hook path the command names.
+   * @returns The settings path.
+   */
+  const ours = (hook: string): string =>
+    settingsWith(
+      JSON.stringify({ statusLine: { type: "command", command: buildHookCommand(hook, "/data") } }),
+    );
+
+  it("reports the hook's path when the status line runs our hook from a file that isn't there", () => {
+    const hook = join(mkdtempSync(join(tmpdir(), "aua-hook-gone-")), "statusline.sh");
+    expect(checkHook(ours(hook))).toEqual({ kind: "missing", hookPath: hook });
+  });
+
+  it("reports present when the hook file exists, on disk or by the injected check", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aua-hook-here-"));
+    const hook = join(dir, "statusline.sh");
+    writeFileSync(hook, "#!/bin/sh\n");
+    expect(checkHook(ours(hook))).toEqual({ kind: "present" });
+    expect(checkHook(ours("/nowhere/statusline.sh"), () => true)).toEqual({ kind: "present" });
+  });
+
+  it("leaves a status line that isn't ours alone, and one with no status line", () => {
+    expect(checkHook(settingsWith(JSON.stringify({ statusLine: FOREIGN })))).toEqual({
+      kind: "not_ours",
+    });
+    expect(checkHook(settingsWith(JSON.stringify({ model: "x" })))).toEqual({ kind: "not_ours" });
+    // Our marker, but not a command init writes: no hook path to check.
+    const marked = { statusLine: { type: "command", command: `my-script ${HOOK_MARKER}` } };
+    expect(checkHook(settingsWith(JSON.stringify(marked)))).toEqual({ kind: "not_ours" });
+  });
+
+  it("reports no settings for a missing, empty, or invalid file, without throwing", () => {
+    expect(checkHook(settingsWith(undefined))).toEqual({ kind: "no_settings" });
+    expect(checkHook(settingsWith(""))).toEqual({ kind: "no_settings" });
+    expect(checkHook(settingsWith("{ not json"))).toEqual({ kind: "no_settings" });
   });
 });
 

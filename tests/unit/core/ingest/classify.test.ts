@@ -98,7 +98,7 @@ describe("parseLine and small helpers", () => {
 });
 
 describe("classifyLine", () => {
-  it("lists the seven classes in precedence order", () => {
+  it("lists the eight classes in precedence order", () => {
     expect(LINE_CLASSES).toEqual([
       "malformed",
       "limit_hit",
@@ -106,6 +106,8 @@ describe("classifyLine", () => {
       "synthetic_other",
       "request",
       "retry_notice",
+      // D-080: before ignored_type, so a fallback line is no longer ignored.
+      "model_fallback",
       "ignored_type",
     ]);
   });
@@ -497,6 +499,12 @@ describe("extractEvent", () => {
       quota: { window: null, resetsAtUtc: null, unusable: [] },
       unknownErrorKey: null,
       retryRateLimitsPresent: false,
+      fallback: {
+        originalModel: null,
+        fallbackModel: null,
+        requestId: null,
+        refusalCategory: null,
+      },
     });
   });
 
@@ -527,6 +535,12 @@ describe("extractEvent", () => {
       error: null,
       apiErrorStatus: 429,
       retryRateLimitsPresent: false,
+      fallback: {
+        originalModel: null,
+        fallbackModel: null,
+        requestId: null,
+        refusalCategory: null,
+      },
     });
   });
 
@@ -614,5 +628,49 @@ describe("extractLinks", () => {
       }),
     ).toEqual({ uuid: null, parentUuid: null, originKind: null, userContent: null, isMeta: false });
     expect(extractLinks({ origin: { kind: 3 } }).originKind).toBeNull();
+  });
+});
+
+describe("model fallbacks (D-080, step G2.8)", () => {
+  /** A system line as Claude Code writes it when one model refuses and another retries. */
+  const FALLBACK: LogObject = {
+    type: "system",
+    subtype: "model_refusal_fallback",
+    sessionId: "s1",
+    originalModel: "claude-opus-5",
+    fallbackModel: "claude-sonnet-5",
+    requestId: "req_refused",
+    apiRefusalCategory: "synthetic-category",
+  };
+
+  it("classifies the line as a model fallback, after the retry-notice rule", () => {
+    expect(classifyLine(FALLBACK)).toBe("model_fallback");
+    // Any other system subtype stays ignored.
+    expect(classifyLine({ ...FALLBACK, subtype: "informational" })).toBe("ignored_type");
+  });
+
+  it("extracts both models, the refused request, and the stored refusal category", () => {
+    expect(extractEvent(FALLBACK, "model_fallback").fallback).toEqual({
+      originalModel: "claude-opus-5",
+      fallbackModel: "claude-sonnet-5",
+      requestId: "req_refused",
+      refusalCategory: "synthetic-category",
+    });
+  });
+
+  it("reads a missing or non-string member as null, never as text", () => {
+    const odd: LogObject = {
+      ...FALLBACK,
+      originalModel: 7,
+      fallbackModel: null,
+      apiRefusalCategory: {},
+    };
+    delete (odd as Record<string, unknown>)["requestId"];
+    expect(extractEvent(odd, "model_fallback").fallback).toEqual({
+      originalModel: null,
+      fallbackModel: null,
+      requestId: null,
+      refusalCategory: null,
+    });
   });
 });

@@ -14,6 +14,7 @@ It implements the rules written in ``fixtures/README.md``, which restate:
   window and reset parsing from message text.
 - D-017: this implementation's existence and independence.
 - D-019: ``system``/``api_error`` lines as a ``retry_notice`` class.
+- D-080: ``system``/``model_refusal_fallback`` lines as a ``model_fallback`` class.
 
 Where the README is silent, the choice made is written next to the code that
 makes it, so a disagreement with the loader can be traced to a rule.
@@ -44,11 +45,12 @@ CLASSES = (
     "synthetic_other",
     "request",
     "retry_notice",
+    "model_fallback",
     "ignored_type",
 )
 
-# Classes that produce one event per line (README "Events": classes 2, 3, 4, 6).
-EVENT_CLASSES = ("limit_hit", "api_error", "synthetic_other", "retry_notice")
+# Classes that produce one event per line (README "Events": classes 2, 3, 4, 6, 7).
+EVENT_CLASSES = ("limit_hit", "api_error", "synthetic_other", "retry_notice", "model_fallback")
 
 # The three token fields that are reported when missing, as
 # (output field, log field). The report names them by their log field.
@@ -310,6 +312,8 @@ def classify(obj: dict[str, Any] | None) -> str:
         return "request"
     if obj.get("type") == "system" and obj.get("subtype") == "api_error":
         return "retry_notice"
+    if obj.get("type") == "system" and obj.get("subtype") == "model_refusal_fallback":
+        return "model_fallback"
     return "ignored_type"
 
 
@@ -741,7 +745,7 @@ def build_event(line: LogLine) -> dict[str, Any]:
     Returns:
         The event with ``class``, ``session_id``, ``timestamp``, ``file``,
         ``line``, ``error``, ``api_error_status``, ``window``, ``reset_text``,
-        ``quota_window``, ``quota_resets_at``.
+        ``quota_window``, ``quota_resets_at``, and the three ``fallback_`` fields.
     """
     obj = line.obj or {}
     error = obj.get("error")
@@ -778,7 +782,28 @@ def build_event(line: LogLine) -> dict[str, Any]:
         "reset_text": reset_text,
         "quota_window": quota_window,
         "quota_resets_at": quota_resets_at,
+        # D-080: each a string field of a model fallback line, else null.
+        "fallback_original_model": fallback_string(line, "originalModel"),
+        "fallback_model": fallback_string(line, "fallbackModel"),
+        "fallback_request_id": fallback_string(line, "requestId"),
     }
+
+
+def fallback_string(line: LogLine, key: str) -> str | None:
+    """Read one string field of a model fallback line (D-080).
+
+    Args:
+        line: An event line.
+        key: The log field.
+
+    Returns:
+        The field when the line is a ``model_fallback`` and the field is a
+        string; ``None`` otherwise.
+    """
+    if line.cls != "model_fallback":
+        return None
+    value = (line.obj or {}).get(key)
+    return value if isinstance(value, str) else None
 
 
 # ---------------------------------------------------------------------------

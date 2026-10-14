@@ -26,7 +26,7 @@ import { deriveNewSpoolLines } from "./spool.js";
  * Version of the derivation rules. Bump it whenever classify.ts or this file changes what a raw line
  * derives to; the next open rebuilds every derived row.
  */
-export const PARSER_VERSION = "6";
+export const PARSER_VERSION = "7";
 
 /** Everything one raw line derives to. */
 export interface DerivedLine {
@@ -61,6 +61,7 @@ const EVENT_CLASSES: ReadonlySet<LineClass> = new Set([
   "api_error",
   "synthetic_other",
   "retry_notice",
+  "model_fallback",
 ]);
 
 /** Links of a line that didn't parse. */
@@ -207,7 +208,7 @@ export function deriveNewLines(db: Db): number {
     "INSERT INTO requests (raw_line_id, dedup_key, message_id, request_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens, cache_write_unsplit_tokens, speed, service_tier, inference_geo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const insertEvent = db.prepare(
-    "INSERT INTO events (raw_line_id, class, error, api_error_status, window, reset_text, unknown_error_key, retry_rate_limits_present, reset_at_utc, quota_window, quota_resets_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO events (raw_line_id, class, error, api_error_status, window, reset_text, unknown_error_key, retry_rate_limits_present, reset_at_utc, quota_window, quota_resets_at_utc, fallback_original_model, fallback_model, fallback_request_id, refusal_category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const insertProblem = db.prepare(
     "INSERT INTO line_problems (raw_line_id, problem, detail) VALUES (?, ?, ?)",
@@ -267,6 +268,10 @@ export function deriveNewLines(db: Db): number {
           derived.resetAtUtc,
           e.quota.window,
           e.quota.resetsAtUtc,
+          e.fallback.originalModel,
+          e.fallback.fallbackModel,
+          e.fallback.requestId,
+          e.fallback.refusalCategory,
         );
       }
       for (const [problem, detail] of derived.problems) {

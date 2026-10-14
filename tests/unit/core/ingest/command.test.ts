@@ -69,6 +69,7 @@ describe("runIngestCommand", () => {
       unkeyedRequests: 0,
       limitHits: 4,
       otherEvents: 0,
+      modelFallbacks: 0,
       malformedLines: 2,
       statusReadings: 0,
       malformedReadings: 0,

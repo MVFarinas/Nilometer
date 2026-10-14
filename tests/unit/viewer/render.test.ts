@@ -107,6 +107,7 @@ describe("small renderers", () => {
       last_used_percentage: 40,
       last_reading_at_utc: "2026-09-02T18:00:00.000Z",
       window_open: 1,
+      open_at_report: 1,
       limit_reached: 0,
       projected_percentage_points_per_hour: 40,
       projected_limit_at_utc: "2026-09-02T19:30:00.000Z",
@@ -205,6 +206,61 @@ describe("a first run", () => {
   });
 });
 
+describe("a missing status line hook (D-081)", () => {
+  /**
+   * Renders the empty database's report with a given hook finding.
+   * @param missingHookPath - What the hook check found.
+   * @returns The text report.
+   */
+  function textWith(missingHookPath: string | null | undefined): string {
+    const db = ingest({});
+    return renderReport({
+      observed: loadObserved(db),
+      projected: loadProjected(db),
+      timeZone: "UTC",
+      lastIngestAt: null,
+      databasePath: "/home/example/.local/share/nilometer/usage.db",
+      home: "/home/example",
+      missingHookPath,
+    });
+  }
+
+  it("warns under the header, before the first-run text, with the path under ~", () => {
+    const lines = textWith("/home/example/old/nilometer/hooks/statusline.sh").split("\n");
+    // Title, times and database, blank, then the warning and the path.
+    expect(lines.slice(2, 5)).toEqual([
+      "",
+      LABELS.hookMissing,
+      "Missing hook file: ~/old/nilometer/hooks/statusline.sh",
+    ]);
+    expect(lines.indexOf(LABELS.hookMissing)).toBeLessThan(
+      lines.findIndex((line) => line.includes("Nothing has been recorded yet.")),
+    );
+  });
+
+  it("says nothing when the hook is there or wasn't checked", () => {
+    for (const found of [null, undefined]) {
+      expect(textWith(found)).not.toContain(LABELS.hookMissingPath);
+      expect(textWith(found)).not.toContain("Warning:");
+    }
+  });
+
+  it("puts the unshortened path in JSON, and null when there's nothing to warn about", () => {
+    const db = ingest({});
+    const base = {
+      observed: loadObserved(db),
+      projected: loadProjected(db),
+      timeZone: "UTC",
+      lastIngestAt: null,
+      databasePath: "/d/usage.db",
+      home: "/home/example",
+    };
+    const gone = "/home/example/old/hooks/statusline.sh";
+    expect(reportJson({ ...base, missingHookPath: gone })).toMatchObject({ missingHookPath: gone });
+    expect(reportJson({ ...base, missingHookPath: null })).toMatchObject({ missingHookPath: null });
+  });
+});
+
 describe("renderObserved and renderProjected on an empty database", () => {
   it("says there's no data instead of showing zeros as findings", () => {
     const db = ingest({});
@@ -254,17 +310,13 @@ describe("renderReport on the fixture database", () => {
     for (const label of [LABELS.burnRate, LABELS.apiListPrice, LABELS.burnRatePremise]) {
       expect(text.indexOf(label)).toBeGreaterThan(projectedAt);
     }
-    for (const label of [
-      LABELS.interruptions,
-      LABELS.windows,
-      LABELS.unattributed,
-      LABELS.byModel,
-      LABELS.byRepo,
-    ]) {
+    for (const label of [LABELS.interruptions, LABELS.windows, LABELS.byModel, LABELS.byRepo]) {
       const at = text.indexOf(label);
       expect(at).toBeGreaterThan(observedAt);
       expect(at).toBeLessThan(projectedAt);
     }
+    // Unattributed usage left the report (D-079); explain still lists its view's events.
+    expect(text).not.toContain("Usage rise with no Claude Code request");
   });
 
   it("gives every section its coverage and keeps caveats next to their numbers", () => {
@@ -272,7 +324,6 @@ describe("renderReport on the fixture database", () => {
     for (const heading of [
       LABELS.interruptions,
       LABELS.windows,
-      LABELS.unattributed,
       LABELS.byModel,
       LABELS.byRepo,
       LABELS.burnRate,
@@ -295,10 +346,13 @@ describe("renderReport on the fixture database", () => {
       "timeZone",
       "lastIngestAt",
       "databasePath",
+      // D-081: the status line's missing hook, or null; never inside the observed rows.
+      "missingHookPath",
       "labels",
       "observed",
       "projected",
     ]);
+    expect(json["missingHookPath"]).toBeNull();
     expect(json["labels"]).toBe(LABELS);
     expect(JSON.stringify(json["observed"])).not.toContain("projected_");
   });

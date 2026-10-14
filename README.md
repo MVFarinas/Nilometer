@@ -98,7 +98,7 @@ Claude Code ──(stdin JSON, every turn)──▶ statusline script ──▶ 
 
 `init` backfills from every session log still on disk. Token, model, repository, and cost metrics start as far back as those logs go; Claude Code keeps 30 days by default. So do interruption metrics, from the logged limit-hit lines ([D-004](decisions.md)). Elapsed lockout time is backfilled only where the logged reset time can be parsed.
 
-Usage percentages exist only from the moment the collector is installed, and only from Claude Code sessions in a terminal ([D-029](decisions.md)). Claude Code doesn't write them anywhere else, so they can't be backfilled. Headroom, peak usage, unattributed usage, and burn rate start at `init`. Principle 5 keeps those differing start dates visible.
+Usage percentages exist only from the moment the collector is installed, and only from Claude Code sessions in a terminal ([D-029](decisions.md)). Claude Code doesn't write them anywhere else, so they can't be backfilled. Headroom, peak usage, and burn rate start at `init`. Principle 5 keeps those differing start dates visible.
 
 ---
 
@@ -128,7 +128,6 @@ One screen. No daemon, no desktop app, no live updating. Every metric below is r
 |---|---|
 | Usage by repository | Session logs, grouped by git repository: worktrees and subfolders count as their repository, and a folder that no longer exists keeps its last known repository ([D-010](decisions.md), [D-028](decisions.md)) |
 | Usage by model | Session logs, grouped by model (e.g. Opus vs. Sonnet), by token type |
-| **Unattributed usage** | Budget consumed while Claude Code made no requests, i.e. from the web app, mobile, or Claude Design: rises between status line readings with no Claude Code request in between, a lower bound. The share is observable; its contents are not ([D-025](decisions.md)). **Under review:** a fresh reading always follows a Claude Code request, so status line data alone rarely, if ever, shows such a rise ([D-044](decisions.md)) |
 
 ### Projected (labeled as such)
 
@@ -150,13 +149,13 @@ Auto-resume (now built into Claude Code) · multi-assistant support · prompt-qu
 
 `rate_limits` is account-wide, so usage from the Claude web app, mobile app, and Claude Design shows up in the totals. But those surfaces leave nothing on disk to read.
 
-So the tool can report *that* budget was spent elsewhere, and how much. It cannot report *what* it was spent on, and it cannot price it. Any breakdown or cost of non-CLI usage would break principle 1.
+The tool can't separate that usage out. The status line is read only when Claude Code makes a request, and each reading already includes whatever was used elsewhere, so the two arrive mixed in the same percentages ([D-079](decisions.md)). It can't report what that usage was, and it can't price it. Any breakdown or cost of non-CLI usage would break principle 1.
 
-The same goes for Claude Code on your other computers. Their session logs stay on those machines, so their tokens and limit hits aren't read here. Their share of the account-wide percentages shows up as unattributed usage.
+The same goes for Claude Code on your other computers. Their session logs stay on those machines, so their tokens and limit hits aren't read here. Their usage still counts toward the account-wide percentages, so the headroom and peaks shown here include it.
 
 Rate-limit state is only sampled when Claude Code runs a turn. Between turns, the tool is blind. This is why headroom is a lower bound.
 
-The status line only runs when Claude Code runs in a terminal. *Observed (2026-09-13):* the VS Code extension doesn't run it, so turns made there leave no usage-percentage readings. Their tokens, costs, and limit hits are still read from the session logs. Headroom, peak, unattributed usage, and burn rate cover terminal sessions only ([D-029](decisions.md)).
+The status line only runs when Claude Code runs in a terminal. *Observed (2026-09-13):* the VS Code extension doesn't run it, so turns made there leave no usage-percentage readings. Their tokens, costs, and limit hits are still read from the session logs. Headroom, peak, and burn rate cover terminal sessions only ([D-029](decisions.md)).
 
 ---
 
@@ -218,7 +217,7 @@ nilometer init    # or, without npm link: npm start -- init
 |---|---|
 | `nilometer init` | Install the hook (wrapping any existing status line), then backfill from session logs |
 | `nilometer ingest` | Read new session log lines and status line readings into the database. `--full` rereads everything; `--json` prints the outcome as JSON |
-| `nilometer report` | Print what was observed, then projections in a separate section. `--json` prints unrounded rows and every label. `--save` also writes a dated copy (`report_YYYY-MM-DD_HHMMSS.txt` and `.json`) to `~/.local/share/nilometer/reports/`; `--save --html` adds a self-contained `.html` page with the same name, which works offline and makes no network requests. The page opens on an overview, has one tab per chart, and keeps the projections in their own labelled tabs |
+| `nilometer report` | Print what was observed, then projections in a separate section. `--json` prints unrounded rows and every label. `--save` also writes a dated copy (`report_YYYY-MM-DD_HHMMSS.txt` and `.json`) to `~/.local/share/nilometer/reports/`; `--save --html` adds a self-contained `.html` page with the same name, which works offline and makes no network requests. The page opens on an overview, has one tab per chart, and keeps the projections in their own labelled tabs. `--save --html --open` also opens the saved page in your browser; if it can't, the command says where the page is and still succeeds |
 | `nilometer explain <metric>` | List the events behind a number in the report, with the file, line, and byte each came from, and add them back up. Metrics: `limit-hits`, `mid-task`, `lockout`, `by-plan`, `not-resumed`, `headroom`, `peak`, `unattributed`, `by-model`, `by-repo`, `burn-rate`, `api-list-price` |
 | `nilometer plan-price set <YYYY-MM> <usd> --name <plan>` | Record your plan's USD list price per month from that month on, shown beside API list price. `plan-price list` shows what's entered |
 | `nilometer uninstall` | Remove the hook and restore the status line setting it replaced. Recorded data is kept |
@@ -292,6 +291,8 @@ cron doesn't load your shell's Node version manager, so give the full path to a 
 
 Run `nilometer ingest` before `nilometer report` to include the latest turns. Status line metrics start filling in once Claude Code has run a few turns **in a terminal** with the hook installed; the VS Code extension doesn't run the status line. Ingest at least weekly, since Claude Code deletes session logs after 30 days by default.
 
+If your status line still names a Nilometer hook file that no longer exists, for example after moving to a new machine, `report` prints a warning above the numbers and on the page, because no readings are being recorded. Run `nilometer init` again to fix it. `report` only reads `settings.json`; it never changes it.
+
 ### Sample output
 
 From the synthetic test fixture (`tests/unit/viewer/fixture.ts`), not real usage:
@@ -364,7 +365,6 @@ Token and cost tracking for Claude Code is well covered. This tool exists for wh
 
 - **Interruption history:** lockout durations, mid-task interruptions, sessions not resumed.
 - **Headroom:** how much of each window you actually use, as the downgrade signal.
-- **Unattributed usage:** budget spent outside Claude Code.
 - **The measurement principles:** observed and projected numbers kept separate, and every number traceable to its events.
 
 ccusage is the reference implementation for cost math. This tool's numbers should match it, apart from documented differences such as dated prices ([D-011](decisions.md)).
@@ -409,9 +409,9 @@ projections. *Built and audited 2026-09-13, and in daily use since.* Windows fol
 
 **Under review once v1 has a month of real use:**
 
-- **Whether the unattributed-usage metric earns its place.** On real status line data it can't be
-  nonzero, because every fresh reading follows a request in its own session
-  ([D-044](decisions.md)). It may be relabeled, or dropped.
+- **Unattributed usage was dropped from the report** at the Phase 8 review ([D-079](decisions.md)). It was
+  zero in every one of 49 windows, because every fresh status line reading follows a request in its own session
+  ([D-044](decisions.md)). `nilometer explain unattributed` still lists its view.
 - **Time-of-day interruption patterns**, and **notifications** — both only if a month of real
   readings shows they'd answer something the one screen doesn't.
 - **How the database grows** over a year of daily use, and whether it needs a size ceiling or

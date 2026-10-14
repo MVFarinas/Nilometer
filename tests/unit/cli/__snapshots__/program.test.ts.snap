@@ -124,6 +124,7 @@ Options:
                      directory's reports folder
   --html             with --save, also write the report as a self-contained HTML
                      page
+  --open             with --save --html, open the saved page in your browser
   -h, --help         display help for command"
 `;
 

@@ -603,6 +603,35 @@ export function buildCases(): FixtureCase[] {
         ]),
       },
     },
+    {
+      // A request one model refused and another retried (D-080), shaped like the four seen in a
+      // real log set on 2026-10-03: a system line naming both models and the refused requestId,
+      // then the fallback model's own request. The refused request writes no request line.
+      id: "22-model-refusal-fallback",
+      files: {
+        [sessionPath("projects", "s22")]: toJsonl([
+          userLine({ session: "s22", uuid: "u22-0", ts: at("10:00:00") }),
+          {
+            ...envelope({ session: "s22", uuid: "u22-f", ts: at("10:00:02") }),
+            parentUuid: "u22-0",
+            type: "system",
+            subtype: "model_refusal_fallback",
+            level: "info",
+            trigger: "refusal",
+            direction: "downgrade",
+            scope: "turn",
+            originalModel: "claude-opus-5",
+            fallbackModel: "claude-sonnet-5",
+            requestId: "req_22refused",
+            apiRefusalCategory: "synthetic-category",
+            refusedUserMessageUuid: "u22-0",
+            uuid: "u22-f",
+            timestamp: at("10:00:02"),
+          },
+          assistantLine({ session: "s22", uuid: "u22-a", ts: at("10:00:05"), messageId: "msg_22a", requestId: "req_22a", usage: { input: 6, output: 9, cacheRead: 0 } }),
+        ]),
+      },
+    },
   ];
 }
 

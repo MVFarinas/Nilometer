@@ -35,6 +35,10 @@ export const LABELS = {
   midTask: "Mid-task interruptions (the stopped request was answering a tool result)",
   lockout: "Elapsed lockout time (limit hit to reset, overlapping hits counted once)",
   resetToNextRequest: "reset to next Claude Code request",
+  // D-081 (step G2.9): a status line pointing at a hook file that isn't there records nothing.
+  hookMissing:
+    "Warning: your Claude Code status line runs a Nilometer hook file that doesn't exist, so no usage readings are being recorded. Run nilometer init to point it at this install.",
+  hookMissingPath: "Missing hook file",
   // D-077 (step G2.4): only the logged marker earns this label; nothing is inferred from timing.
   autoContinued: "resumed by Claude Code (logged auto-continuation)",
   // D-075 (step G2.2): interruptions per plan period.
@@ -49,9 +53,9 @@ export const LABELS = {
     "No status line readings yet. Readings are recorded only when Claude Code runs in a terminal; the VS Code extension doesn't run the status line.",
   windowsCaveat:
     "Last observed usage is a lower bound: usage after the last Claude Code turn isn't seen.",
-  unattributed: "Usage rise with no Claude Code request between readings",
-  unattributedCaveat:
-    "A lower bound: usage elsewhere at the same time as Claude Code requests can't be separated. Claude Code on another machine counts here too.",
+  // D-083 (step G2.5): what "open" means, and which reading an open window's usage is from.
+  openNote:
+    "Open: not reset as of this report. An open window's usage is its last reading's, at the time under Reading at.",
   byModel: "Claude Code tokens by model",
   byRepo: "Claude Code tokens by repository",
   burnRate: "Burn rate",
@@ -68,10 +72,6 @@ export const LABELS = {
     peak: "Peak",
     readings: "Readings",
     status: "Status",
-    rise: "Rise with no request",
-    pairs: "Reading pairs",
-    pairsWithoutRequests: "Pairs with no request",
-    pairsFalling: "Pairs where usage fell",
     model: "Model",
     repository: "Repository",
     kind: "Kind",
@@ -110,6 +110,11 @@ export interface ReportInput {
   readonly databasePath: string;
   /** The user's home directory, shown as `~` in paths so a shared screen doesn't carry it. */
   readonly home: string;
+  /**
+   * The hook file the status line names when it doesn't exist (D-081); null when the hook is
+   * there, the status line isn't this tool's, or there are no settings. Omitted, nothing was checked.
+   */
+  readonly missingHookPath?: string | null | undefined;
 }
 
 /** Column alignment. */
@@ -423,11 +428,13 @@ export function renderObserved(observed: ObservedReport, timeZone: string, home 
           formatInstant(w.last_reading_at_utc, timeZone),
           n(w.peak_used_percentage, "percent"),
           n(w.readings, "count"),
-          w.window_open === 1 ? "open" : "reset",
+          // Open only until its reset, as of this report (D-083).
+          w.open_at_report === 1 ? "open" : "reset",
         ]),
         ["left", "left", "right", "left", "right", "right", "left"],
       ),
       `  ${LABELS.windowsCaveat}`,
+      `  ${LABELS.openNote}`,
     );
     const afterReset = observed.windows.reduce((sum, w) => sum + w.readings_after_reset, 0);
     if (afterReset > 0) {
@@ -435,26 +442,6 @@ export function renderObserved(observed: ObservedReport, timeZone: string, home 
         `  Readings captured after their window's reset, not counted: ${n(afterReset, "count")}`,
       );
     }
-  }
-  lines.push("", LABELS.unattributed, `  Covers: status line ${statusLine}`);
-  if (observed.unattributed.length === 0) {
-    lines.push(`  ${LABELS.noReadings}`);
-  } else {
-    lines.push(
-      ...renderTable(
-        [c.window, c.resets, c.rise, c.pairs, c.pairsWithoutRequests, c.pairsFalling],
-        observed.unattributed.map((u) => [
-          windowName(u.window),
-          formatInstant(u.reset_at_utc, timeZone),
-          n(u.unattributed_percentage_points, "percentage_points"),
-          n(u.pairs, "count"),
-          n(u.pairs_without_requests, "count"),
-          n(u.decreasing_pairs, "count"),
-        ]),
-        ["left", "left", "right", "right", "right", "right"],
-      ),
-      `  ${LABELS.unattributedCaveat}`,
-    );
   }
   const modelCoverage = observed.byModel[0];
   lines.push(
@@ -540,7 +527,8 @@ function planCell(row: ApiListPriceRow): string {
  */
 export function renderProjected(projected: ProjectedReport, timeZone: string): string[] {
   const c = LABELS.columns;
-  const open = projected.burnRate.filter((row) => row.window_open === 1);
+  // A window whose reset has passed by the report's time has nothing left to project (D-083).
+  const open = projected.burnRate.filter((row) => row.open_at_report === 1);
   const first = projected.burnRate[0];
   const lines = [
     LABELS.projected,
@@ -609,6 +597,14 @@ export function renderReport(input: ReportInput): string {
   const header = [
     LABELS.title,
     `Times are in ${input.timeZone}. Last ingest: ${input.lastIngestAt === null ? "none yet" : formatInstant(input.lastIngestAt, input.timeZone)}. Database: ${displayPath(input.databasePath, input.home)}`,
+    // Above everything else: the readings below stop at this point until it's fixed (D-081).
+    ...(input.missingHookPath === undefined || input.missingHookPath === null
+      ? []
+      : [
+          "",
+          LABELS.hookMissing,
+          `${LABELS.hookMissingPath}: ${displayPath(input.missingHookPath, input.home)}`,
+        ]),
     "",
   ];
   // A first run has nothing to report; say what produces the numbers instead of printing empty
@@ -676,6 +672,8 @@ export function reportJson(input: ReportInput): object {
     timeZone: input.timeZone,
     lastIngestAt: input.lastIngestAt,
     databasePath: input.databasePath,
+    // D-081: the hook the status line names when its file is missing; null otherwise.
+    missingHookPath: input.missingHookPath ?? null,
     // Unrounded, unshortened values: JSON is for tools, and a path under ~ would need expanding back.
     labels: LABELS,
     observed: input.observed,

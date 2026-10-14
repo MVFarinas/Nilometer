@@ -32,4 +32,13 @@ First public version.
 - **Claude Code's own resumption is shown:**
   - **What changes:** where Claude Code logged that it resumed a session by itself after a limit reset (an `auto-continuation` line), the report says so beside the lockout it followed. The page draws a ring at the end of that lockout's bar, and `nilometer explain lockout` lists the logged lines.
   - **What stays:** nothing is labeled automatic from timing alone.
+- **"Open" means not yet reset:** a usage window counts as open only until its reset time, as of when you run the report. Before, a window stayed "open" if no status line reading had come in since its reset, for example after a stretch of work in the VS Code extension, and burn rate kept projecting it. A note under the table says an open window's usage is as of its last reading.
+- **No more 0-second lockouts from late readings:** a limit seen only in the status line is now counted only from readings taken before the window's reset. Before, a reading that arrived after the reset could add a lockout of 0 s.
+- **Unattributed usage is no longer reported:** the section that looked for usage outside Claude Code (a rise between status line readings with no Claude Code request in between) was zero in every window of a month of real use. Each reading follows a request in its own session, so it can't see that usage separately. `nilometer explain unattributed` still lists it.
+- **Refused requests are recorded:**
+  - **What changes:** when Claude Code logs that one model refused a request and another model retried it, that line is now its own event, keeping both models and the refused request's id, and `ingest` counts it. Before, it was filed with the lines Nilometer ignores.
+  - **What doesn't:** the refused request leaves no token count in the log, so nothing is added to tokens or cost.
+  - **When it takes effect:** the next `ingest` re-reads stored lines once to apply this.
+- **A missing status line hook is reported:** when your status line names a Nilometer hook file that doesn't exist, for example after moving to a new machine, `report` warns above the numbers and on the page, and says to run `nilometer init`. Until then no usage readings are recorded, and nothing else shows it: the hook can't log an error if it never starts. `report` reads `settings.json` and never writes it.
+- **`report --save --html --open`:** opens the saved page in your browser. If it can't, for example over SSH, it says where the page is and the command still succeeds.
 - **Install guide:** [`docs/requirements.md`](docs/requirements.md) explains how to check for and install everything Nilometer needs, including how to get Node.js 24 and not a newer release.

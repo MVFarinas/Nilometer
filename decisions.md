@@ -1231,6 +1231,10 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - (b) **Build the groups from counted readings only (`after_reset = 0`).** Chosen. It's the rule every other window metric already follows.
 - **Decision:** (b), with a scenario test: an at-limit reading after its reset makes no group; one before it makes a group, as now.
 - **Consequences:** no current real data changes. Every real hit so far is in the logs, and none is seen only in the status line.
+- **Built 2026-10-14 (step G2.6, migration 024).**
+  - **The change:** `status_limit_groups` takes at-limit readings only where `after_reset = 0`.
+  - **The test:** an at-limit reading 30 s after its reset makes no group; one an hour before its reset makes a group and a 3,600 s lockout. Without the migration, both tests fail.
+  - **Real data:** 5 groups, 0 status-line-only hits and 6 lockouts, the same before and after, as predicted. None of the 23 real at-limit readings came after its reset.
 
 ## D-079: Unattributed usage leaves the report (2026-10-13)
 
@@ -1242,6 +1246,13 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - (c) Drop the view too. Rejected: the view is what shows the metric is always zero.
 - **Decision:** (b). The README keeps the point in "What this cannot see": usage from the web, mobile, and other machines is in the account-wide percentages, and nothing local can separate it out.
 - **Consequences:** the README's metric table and roadmap entry for unattributed usage are updated when this is built.
+- **Built 2026-10-14 (step G2.7).**
+  - **What went:** the section left the text report, its JSON, and its labels. The page never drew it.
+  - **What stayed:** the view and `explain unattributed`, listed as an explain-only view (`EXPLAIN_ONLY_VIEWS`). The view-coverage test names it, so dropping a metric from the screen is never silent.
+  - **The README:**
+    - The metric's row is gone, and the roadmap entry records the decision.
+    - "What this cannot see" no longer claims the tool reports *that* budget was spent elsewhere. It now says the readings mix that usage in and can't separate it.
+  - **Real data:** the report lost exactly the section's 56 lines and changed nothing else.
 
 ## D-080: A request refused by one model and retried by another is its own event (2026-10-13)
 
@@ -1253,6 +1264,16 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - (c) **Class it as an event (like `api_error`), keeping both models and the `requestId`, and count it in the ingest report.** Chosen.
 - **Decision:** (c). Whether the report shows a count ("requests refused and retried with another model") is decided when there's more than one week of data.
 - **Consequences:** a fixture with a fallback line, a request line from the fallback model, and no line from the refused request. The refusal category is stored but never shown on the page.
+- **Built 2026-10-14 (step G2.8, migration 025, parser version 7).**
+  - **The class:** `model_fallback` is rule 7 of the classification, before `ignored_type`. Its events carry `fallback_original_model`, `fallback_model` and `fallback_request_id`, null on other classes, as D-067's fields are. `refusal_category` is stored in `events`, but not in any output.
+  - **The ingest summary** counts "requests refused and retried with another model" apart from errors and retries.
+  - **The rebuild:** `parsed_lines` and `events` are rebuilt for their CHECK constraints in SQLite's legacy rename mode. A modern rename re-checks every view and fails while the old table is dropped.
+  - **Fixture 22:** written by hand. The Python reference and the loader both matched it on first run. The 21 earlier fixtures gained a zero count and null fields, and ccusage shows no new delta.
+  - **On real data, re-derived with no new logs:** exactly 4 lines moved from `ignored_type` to `model_fallback`. Requests (23,039), output tokens, limit hits, and the text report are unchanged.
+- **The other two new line types, checked by structure (2026-10-14), are bookkeeping:**
+  - **`agent-name`** (6 lines, keys `type`, `agentName`, `sessionId`) names a subagent.
+  - **`failed`** (3 lines, keys `type`, `key`, `agentId`) sits only in workflow `journal.jsonl` files. Each named agent's own transcript has its requests logged (35 to 55 each), and the line carries no usage or request id.
+  - Both stay `ignored_type`, counted by type.
 
 ## D-081: `report` warns when the status line's hook file is missing (2026-10-13)
 
@@ -1264,6 +1285,12 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - (c) Re-point the hook automatically. Rejected: `settings.json` changes only through `init`, with a backup.
 - **Decision:** (b). The warning names the fix (`nilometer init`). The settings file is read, never written. A file that's missing or unparsable gives no warning; the check simply doesn't apply.
 - **Consequences:** a test for a missing hook, a present hook, and a non-Nilometer status line.
+- **Built 2026-10-14 (step G2.9).**
+  - **Where it looks:** `report` checks the settings file `init` would write: `CLAUDE_CONFIG_DIR/settings.json` when that's set, else `~/.claude/settings.json`.
+  - **What it reads:** the hook path is the first quoted word of the command `init` builds, read back the way `uninstall` reads the data directory from the second.
+  - **When there's no warning:** a status line that isn't Nilometer's, a command carrying the marker but not that shape, and a settings file that's missing, empty or invalid JSON. In the last case `init` would report the problem, so `report` doesn't repeat it.
+  - **Where it shows:** the text report's header, the page's header in the same words, and JSON as `missingHookPath`. JSON gives the full path, or null.
+  - **Not checked:** whether the hook file runs. The case D-072 found was a file that wasn't there.
 
 ## D-082: `report --html --open` opens the page it wrote (2026-10-13)
 
@@ -1274,8 +1301,12 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - (b) **An `--open` flag: open the saved page with the platform's opener (`open`, `xdg-open`, `start`).** Chosen.
 - **Decision:** (b). If the opener fails, the command prints the page's path and still succeeds.
 - **Consequences:** the opener is injected, so tests never launch a browser.
-
-## D-083: A window is open until its reset time, and "open" says as of which reading (2026-10-13)
+- **Built 2026-10-14 (step G2.10).**
+  - **`--open` needs both `--save` and `--html`.** Without them, `report` refuses before opening the database, like `--html` without `--save`.
+  - **Windows:** `start` runs through the same quoted `cmd.exe` command line as other commands (D-051). An empty window title comes first, so the quoted path isn't read as the title.
+  - **Waiting:** the opener is waited for, up to 15 s, so a failure can be reported.
+  - **Failure:** an exit other than 0, an opener that can't start, or a timeout prints one stderr line after the `Saved:` line: why, and where the page is. The exit code stays 0.
+  - **Success:** nothing extra is printed.: A window is open until its reset time, and "open" says as of which reading (2026-10-13)
 
 - **Status:** accepted, not built. Found on the Windows PC in Phase 8 weekly pass 2. From the Phase 8 review (D-074).
 - **Context:** `window_open` compares a window's `resets_at` with the latest status line reading, not with the time the report runs (`009_headroom.sql`, `014_observed_readings.sql`). When readings stop, every window that reset after the last one stays "open". On the PC, which has run only VS Code sessions since 2026-10-07, a weekly window that reset on 2026-10-11 still read "open" on 2026-10-13.
@@ -1288,6 +1319,12 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - An open window says which reading it is open as of.
   - The report's time is a query parameter, so two runs on the same data and the same time give the same output.
 - **Consequences:** burn rate, which projects only open windows, uses the same rule. A test covers readings that stop before a reset.
+- **Built 2026-10-14 (step G2.5).**
+  - **Where the rule lives:** the views keep their rule, open as of the last reading. The loaders add `open_at_report`: open at the last reading, and resetting after the report's time.
+  - **Where the time comes from:** the `report` command takes one instant for the report's time, the saved files' names, and the page's date. Without a time, as `explain` and older callers use the loaders, `open_at_report` equals `window_open`.
+  - **What reads it:** the text table's status, the page's gauge, and which windows burn rate projects.
+  - **What the reader sees:** a note under the table says "open" is as of the report, and an open window's usage is as of its last reading.
+- **On real data:** the 5-hour window resetting 2026-10-13 17:20 local read "open" with a projection in a report taken that night. It now reads "reset", and the weekly window is the only one projected. No other window of 49 changed.
 
 ## D-084: The HTML page is organized in tabs (2026-10-13)
 

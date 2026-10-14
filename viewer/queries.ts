@@ -77,21 +77,13 @@ export interface WindowRow {
   readonly peak_used_percentage: number | null;
   readonly readings: number;
   readonly readings_after_reset: number;
+  /** 1 while the window hadn't reset as of the last status line reading (the view's own rule). */
   readonly window_open: number;
-  readonly covers_from: string | null;
-  readonly covers_to: string | null;
-}
-
-/** One row of `obs_unattributed_usage`. */
-export interface UnattributedRow {
-  readonly window: string;
-  readonly reset_at_utc: string;
-  readonly readings: number;
-  readonly pairs: number;
-  readonly pairs_without_requests: number;
-  readonly decreasing_pairs: number;
-  readonly unattributed_percentage_points: number | null;
-  readonly window_open: number;
+  /**
+   * 1 while it hasn't reset as of the report's own time either (D-083): a window whose reset has
+   * passed isn't open, whatever was or wasn't read after it. Without a report time, as `window_open`.
+   */
+  readonly open_at_report: number;
   readonly covers_from: string | null;
   readonly covers_to: string | null;
 }
@@ -154,7 +146,6 @@ export interface ObservedReport {
   readonly interruptionsByPlan: readonly PlanPeriodRow[];
   readonly notResumed: NotResumed;
   readonly windows: readonly WindowRow[];
-  readonly unattributed: readonly UnattributedRow[];
   readonly byModel: readonly ModelRow[];
   readonly byRepo: readonly RepoRow[];
 }
@@ -167,6 +158,8 @@ export interface BurnRateRow {
   readonly last_used_percentage: number | null;
   readonly last_reading_at_utc: string | null;
   readonly window_open: number;
+  /** As {@link WindowRow.open_at_report}: open at the report's time too (D-083). */
+  readonly open_at_report: number;
   readonly limit_reached: number | null;
   readonly projected_percentage_points_per_hour: number | null;
   readonly projected_limit_at_utc: string | null;
@@ -214,10 +207,17 @@ export const OBSERVED_VIEWS = [
   "obs_sessions_not_resumed",
   "obs_window_headroom",
   "obs_window_peak",
-  "obs_unattributed_usage",
   "obs_usage_by_model",
   "obs_usage_by_repo",
 ] as const;
+
+/**
+ * Metric views the report no longer shows, kept so `nilometer explain` can still list their
+ * events. Unattributed usage was zero in every one of Phase 8's 49 windows, since each fresh
+ * reading follows a request in its own session (D-044); D-079 took it off the screen, and the
+ * view stays to show that it is always zero.
+ */
+export const EXPLAIN_ONLY_VIEWS = ["obs_unattributed_usage"] as const;
 
 /** The views {@link loadProjected} reads. Only `proj_` views belong here. */
 export const PROJECTED_VIEWS = ["proj_burn_rate", "proj_api_list_price"] as const;
@@ -247,9 +247,13 @@ function projected<T>(db: Db, view: (typeof PROJECTED_VIEWS)[number], order: str
 /**
  * Loads every observed metric.
  * @param db - Open, migrated database.
+ * @param reportedAt - The report's time: a window is open only until its reset, as of it (D-083).
+ *   Omitted, open is as of the last status line reading, as the views define it.
  * @returns The observed report.
  */
-export function loadObserved(db: Db): ObservedReport {
+export function loadObserved(db: Db, reportedAt?: Date): ObservedReport {
+  // The report's own time, in Unix seconds, for "open" (D-083); null keeps the view's rule.
+  const at = reportedAt === undefined ? null : reportedAt.getTime() / 1000;
   return {
     limitHits: observed<LimitHits>(db, "obs_limit_hits")[0] as LimitHits,
     midTask: observed<MidTask>(db, "obs_mid_task_interruptions")[0] as MidTask,
@@ -265,17 +269,15 @@ export function loadObserved(db: Db): ObservedReport {
     // Headroom and peak describe the same window instances, so they're joined in SQL to sit side by side.
     windows: db
       .prepare(
-        `SELECT h.*, p.peak_used_percentage
+        `SELECT h.*, p.peak_used_percentage,
+           -- Open only until its reset, as of the report's time (D-083).
+           (h.window_open = 1 AND (:at IS NULL OR unixepoch(h.reset_at_utc, 'subsec') > :at))
+             AS open_at_report
          FROM obs_window_headroom h
          JOIN obs_window_peak p ON p.window = h.window AND p.reset_at_utc = h.reset_at_utc
-         ORDER BY h.window_open DESC, h.reset_at_utc DESC, h.window`,
+         ORDER BY open_at_report DESC, h.reset_at_utc DESC, h.window`,
       )
-      .all() as WindowRow[],
-    unattributed: observed<UnattributedRow>(
-      db,
-      "obs_unattributed_usage",
-      "window_open DESC, reset_at_utc DESC, window",
-    ),
+      .all({ at }) as WindowRow[],
     byModel: observed<ModelRow>(db, "obs_usage_by_model", "output_tokens DESC, model"),
     byRepo: observed<RepoRow>(db, "obs_usage_by_repo", "output_tokens DESC, repository"),
   };
@@ -284,15 +286,23 @@ export function loadObserved(db: Db): ObservedReport {
 /**
  * Loads every projection.
  * @param db - Open, migrated database.
+ * @param reportedAt - The report's time, as for {@link loadObserved}: burn rate projects windows open at it.
  * @returns The projected report.
  */
-export function loadProjected(db: Db): ProjectedReport {
+export function loadProjected(db: Db, reportedAt?: Date): ProjectedReport {
+  // The report's own time, as loadObserved takes it (D-083).
+  const at = reportedAt === undefined ? null : reportedAt.getTime() / 1000;
   return {
-    burnRate: projected<BurnRateRow>(
-      db,
-      "proj_burn_rate",
-      "window_open DESC, reset_at_utc DESC, window",
-    ),
+    // A projection for a window that has already reset would project into the past (D-083).
+    burnRate: db
+      .prepare(
+        `SELECT *,
+           (window_open = 1 AND (:at IS NULL OR unixepoch(reset_at_utc, 'subsec') > :at))
+             AS open_at_report
+         FROM proj_burn_rate
+         ORDER BY open_at_report DESC, reset_at_utc DESC, window`,
+      )
+      .all({ at }) as BurnRateRow[],
     apiListPrice: projected<ApiListPriceRow>(db, "proj_api_list_price", "month"),
     // Grouped by reading date so each count stays beside its own date. The month view's
     // verified_on is the latest date in the month, which isn't the date its count refers to once

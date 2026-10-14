@@ -162,6 +162,12 @@ describe("quotaProblems", () => {
       quota,
       unknownErrorKey: null,
       retryRateLimitsPresent: false,
+      fallback: {
+        originalModel: null,
+        fallbackModel: null,
+        requestId: null,
+        refusalCategory: null,
+      },
     };
   }
 

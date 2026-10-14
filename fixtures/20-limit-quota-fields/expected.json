@@ -15,7 +15,10 @@
         "window": "five_hour",
         "reset_text": "6:10am (UTC)",
         "quota_window": "five_hour",
-        "quota_resets_at": "2026-09-02T06:10:00.000Z"
+        "quota_resets_at": "2026-09-02T06:10:00.000Z",
+        "fallback_original_model": null,
+        "fallback_model": null,
+        "fallback_request_id": null
       },
       {
         "class": "limit_hit",
@@ -28,7 +31,10 @@
         "window": "seven_day",
         "reset_text": "Sep 5, 9am (UTC)",
         "quota_window": "five_hour",
-        "quota_resets_at": "2026-09-05T09:00:00.000Z"
+        "quota_resets_at": "2026-09-05T09:00:00.000Z",
+        "fallback_original_model": null,
+        "fallback_model": null,
+        "fallback_request_id": null
       },
       {
         "class": "limit_hit",
@@ -41,7 +47,10 @@
         "window": null,
         "reset_text": null,
         "quota_window": null,
-        "quota_resets_at": null
+        "quota_resets_at": null,
+        "fallback_original_model": null,
+        "fallback_model": null,
+        "fallback_request_id": null
       },
       {
         "class": "limit_hit",
@@ -54,7 +63,10 @@
         "window": "five_hour",
         "reset_text": "6:10am (UTC)",
         "quota_window": "five_hour",
-        "quota_resets_at": "2026-09-05T09:00:00.000Z"
+        "quota_resets_at": "2026-09-05T09:00:00.000Z",
+        "fallback_original_model": null,
+        "fallback_model": null,
+        "fallback_request_id": null
       },
       {
         "class": "limit_hit",
@@ -67,7 +79,10 @@
         "window": "five_hour",
         "reset_text": "2am",
         "quota_window": null,
-        "quota_resets_at": null
+        "quota_resets_at": null,
+        "fallback_original_model": null,
+        "fallback_model": null,
+        "fallback_request_id": null
       },
       {
         "class": "limit_hit",
@@ -80,7 +95,10 @@
         "window": "five_hour",
         "reset_text": "6:10am (UTC)",
         "quota_window": null,
-        "quota_resets_at": null
+        "quota_resets_at": null,
+        "fallback_original_model": null,
+        "fallback_model": null,
+        "fallback_request_id": null
       },
       {
         "class": "limit_hit",
@@ -93,7 +111,10 @@
         "window": null,
         "reset_text": null,
         "quota_window": "seven_day",
-        "quota_resets_at": null
+        "quota_resets_at": null,
+        "fallback_original_model": null,
+        "fallback_model": null,
+        "fallback_request_id": null
       }
     ],
     "report": {
@@ -104,6 +125,7 @@
         "synthetic_other": 0,
         "request": 0,
         "retry_notice": 0,
+        "model_fallback": 0,
         "ignored_type": 1
       },
       "malformed": [],

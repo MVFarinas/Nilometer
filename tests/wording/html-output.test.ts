@@ -233,6 +233,7 @@ const FULL: HtmlReportData = {
     })),
   ],
   home: "/home/example",
+  missingHookPath: "/home/example/nilometer/hooks/statusline.sh",
   // Every sentence describeBurnRate can produce: limit before the reset, after it, already
   // reached, and with no projected time.
   burn: [

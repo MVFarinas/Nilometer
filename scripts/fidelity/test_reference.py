@@ -115,6 +115,23 @@ def synthetic(text: str, error: Any = "rate_limit", status: Any = 429, **extra: 
     return line
 
 
+def fallback(**extra: Any) -> dict[str, Any]:
+    """Build a ``system``/``model_refusal_fallback`` line (D-080).
+
+    Args:
+        **extra: Members that replace the defaults.
+
+    Returns:
+        The line object.
+    """
+    line = {"type": "system", "subtype": "model_refusal_fallback", "sessionId": "s1",
+            "timestamp": "2026-09-01T12:00:00.000Z", "originalModel": "claude-opus-5",
+            "fallbackModel": "claude-sonnet-5", "requestId": "req_x",
+            "apiRefusalCategory": "synthetic-category"}
+    line.update(extra)
+    return line
+
+
 def retry(status: Any = 429, rate_limits: Any = None, **extra: Any) -> dict[str, Any]:
     """Build a ``system``/``api_error`` retry notice line.
 
@@ -225,7 +242,7 @@ class ReadingTests(CaseTestCase):
         result = self.single(request, request, synthetic("x"), synthetic("x"), retry(), retry())
         self.assertEqual(result["report"]["lines"],
                          {"malformed": 0, "limit_hit": 1, "api_error": 0, "synthetic_other": 0,
-                          "request": 1, "retry_notice": 1, "ignored_type": 0})
+                          "request": 1, "retry_notice": 1, "model_fallback": 0, "ignored_type": 0})
         self.assertEqual(len(result["events"]), 2)
 
     def test_identical_bytes_in_one_file_are_one_line(self) -> None:
@@ -362,6 +379,10 @@ class ClassificationTests(CaseTestCase):
     def test_retry_notice(self) -> None:
         """type system with subtype api_error is a retry notice."""
         self.assertEqual(reference.classify(retry()), "retry_notice")
+
+    def test_model_fallback(self) -> None:
+        """type system with subtype model_refusal_fallback is a model fallback (D-080)."""
+        self.assertEqual(reference.classify(fallback()), "model_fallback")
 
     def test_ignored_type(self) -> None:
         """Anything else is ignored, including other system subtypes."""
@@ -825,7 +846,9 @@ class EventTests(CaseTestCase):
             "class": "limit_hit", "session_id": "s1", "timestamp": "2026-09-01T11:00:00.000Z",
             "file": FILE, "line": 1, "error": "rate_limit", "api_error_status": 429,
             "window": "five_hour", "reset_text": "6:10am (UTC)",
-            "quota_window": None, "quota_resets_at": None}])
+            "quota_window": None, "quota_resets_at": None,
+            "fallback_original_model": None, "fallback_model": None,
+            "fallback_request_id": None}])
         self.assertEqual(result["requests"], [])
         self.assertEqual(result["totals_by_model"], {})
 
@@ -863,7 +886,26 @@ class EventTests(CaseTestCase):
             "class": "retry_notice", "session_id": "s1", "timestamp": "2026-09-01T12:00:00.000Z",
             "file": FILE, "line": 1, "error": None, "api_error_status": 429,
             "window": None, "reset_text": None,
-            "quota_window": None, "quota_resets_at": None})
+            "quota_window": None, "quota_resets_at": None,
+            "fallback_original_model": None, "fallback_model": None,
+            "fallback_request_id": None})
+
+    def test_model_fallback_event(self) -> None:
+        """A model fallback names both models and the refused request (D-080)."""
+        event = self.single(fallback())["events"][0]
+        self.assertEqual(event, {
+            "class": "model_fallback", "session_id": "s1", "timestamp": "2026-09-01T12:00:00.000Z",
+            "file": FILE, "line": 1, "error": None, "api_error_status": None,
+            "window": None, "reset_text": None,
+            "quota_window": None, "quota_resets_at": None,
+            "fallback_original_model": "claude-opus-5", "fallback_model": "claude-sonnet-5",
+            "fallback_request_id": "req_x"})
+
+    def test_model_fallback_non_string_fields(self) -> None:
+        """A fallback member that is missing or not a string reads as null."""
+        event = self.single(fallback(originalModel=7, fallbackModel=None, requestId=None))["events"][0]
+        self.assertEqual((event["fallback_original_model"], event["fallback_model"],
+                          event["fallback_request_id"]), (None, None, None))
 
     def test_retry_notice_non_number_status(self) -> None:
         """A missing, string, or boolean error.status gives a null status."""
@@ -924,7 +966,7 @@ class ReportTests(CaseTestCase):
         report = self.single(assistant())["report"]
         self.assertEqual(report, {
             "lines": {"malformed": 0, "limit_hit": 0, "api_error": 0, "synthetic_other": 0,
-                      "request": 1, "retry_notice": 0, "ignored_type": 0},
+                      "request": 1, "retry_notice": 0, "model_fallback": 0, "ignored_type": 0},
             "malformed": [], "ignored_types": {}, "unkeyed_requests": 0,
             "unknown_error_values": {}, "missing_fields": [], "unparsed_timestamps": [],
             "non_message_iterations": [], "retry_rate_limits_present": 0,
@@ -939,7 +981,7 @@ class ReportTests(CaseTestCase):
                              retry(), {"type": "user"})["report"]
         self.assertEqual(report["lines"], {"malformed": 1, "limit_hit": 1, "api_error": 1,
                                            "synthetic_other": 1, "request": 2,
-                                           "retry_notice": 1, "ignored_type": 1})
+                                           "retry_notice": 1, "model_fallback": 0, "ignored_type": 1})
 
     def test_malformed_list(self) -> None:
         """Malformed lines are listed by file and line; neighbours still ingest."""

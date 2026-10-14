@@ -54,6 +54,8 @@ export interface StoredTotals {
   readonly limitHits: number;
   /** API error, synthetic, and retry-notice events. */
   readonly otherEvents: number;
+  /** Requests one model refused and another retried (D-080). */
+  readonly modelFallbacks: number;
   /** Log lines that aren't valid JSON objects. */
   readonly malformedLines: number;
   /** Status line readings decoded from the spool. */
@@ -140,7 +142,8 @@ export function runIngestCommand(options: IngestCommandOptions): IngestCommandOu
            (SELECT COUNT(*) FROM requests_dedup) AS requests,
            (SELECT COUNT(*) FROM requests WHERE dedup_key IS NULL) AS unkeyedRequests,
            (SELECT COUNT(*) FROM events WHERE class = 'limit_hit') AS limitHits,
-           (SELECT COUNT(*) FROM events WHERE class <> 'limit_hit') AS otherEvents,
+           (SELECT COUNT(*) FROM events WHERE class NOT IN ('limit_hit', 'model_fallback')) AS otherEvents,
+           (SELECT COUNT(*) FROM events WHERE class = 'model_fallback') AS modelFallbacks,
            (SELECT COUNT(*) FROM parsed_lines WHERE class = 'malformed') AS malformedLines,
            (SELECT COUNT(*) FROM status_readings WHERE status = 'ok') AS statusReadings,
            (SELECT COUNT(*) FROM status_readings WHERE status <> 'ok') AS malformedReadings,
