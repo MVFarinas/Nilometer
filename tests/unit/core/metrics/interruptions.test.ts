@@ -288,6 +288,9 @@ describe("interruption metrics: hand-computed scenario", () => {
         lockout_seconds: 7170,
         reset_to_next_request_seconds: 1805,
         reset_after_coverage: 0,
+        // No logged auto-continuation in this scenario (D-077).
+        auto_continuations: 0,
+        first_auto_continuation_seconds: null,
       },
       // sc: 12:45:00 → 15:00:00 = 8100 s; next request 15:20:00 = +1200 s.
       {
@@ -299,6 +302,9 @@ describe("interruption metrics: hand-computed scenario", () => {
         lockout_seconds: 8100,
         reset_to_next_request_seconds: 1200,
         reset_after_coverage: 0,
+        // No logged auto-continuation in this scenario (D-077).
+        auto_continuations: 0,
+        first_auto_continuation_seconds: null,
       },
       // sd: 489600 s; no request after, and the reset is after the logs end.
       {
@@ -310,6 +316,9 @@ describe("interruption metrics: hand-computed scenario", () => {
         lockout_seconds: 489600,
         reset_to_next_request_seconds: null,
         reset_after_coverage: 1,
+        // No logged auto-continuation in this scenario (D-077).
+        auto_continuations: 0,
+        first_auto_continuation_seconds: null,
       },
     ]);
   });

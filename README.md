@@ -112,7 +112,7 @@ One screen. No daemon, no desktop app, no live updating. Every metric below is r
 |---|---|
 | Rate-limit interruptions | Logged `error: "rate_limit"` lines; `used_percentage` reaching 100 after `init`. A hit seen in both counts once ([D-023](decisions.md)). Once a plan price is entered, hits, lockouts, and elapsed lockout time are also shown per plan period, so a count never mixes two plans without saying so ([D-075](decisions.md)) |
 | Mid-task interruptions | The stopped request was answering a tool result, so the model was mid-agentic-loop rather than at a turn boundary. Hits whose position can't be determined are counted separately ([D-021](decisions.md)). Context lines Claude Code inserts between a request and what it answered (token reminders, memory, hook output) are looked past; a line of an unknown kind stops the lookup, leaving the position unknown ([D-076](decisions.md)) |
-| Elapsed lockout time | Limit hit → reset time, with overlapping hits counted once. **Not** a claim about lost productivity. Shown beside it: reset → next Claude Code request ([D-023](decisions.md)) |
+| Elapsed lockout time | Limit hit → reset time, with overlapping hits counted once. **Not** a claim about lost productivity. Shown beside it: reset → next Claude Code request ([D-023](decisions.md)), and, where Claude Code logged that it resumed a session by itself after the reset, how many sessions it resumed ([D-077](decisions.md)) |
 | Sessions not resumed | No further request in the session after a limit was hit. May be abandonment; may be a deliberate stop. Reported without interpretation; sessions whose reset came after the logs end are counted separately ([D-022](decisions.md)) |
 
 ### Observed: "Am I paying for more than I use?"
@@ -164,7 +164,9 @@ The status line only runs when Claude Code runs in a terminal. *Observed (2026-0
 
 Built into Claude Code since v2.1.234 (August 2026). Claude Code continues automatically when a session limit resets. It's on by default and set in `/config`, and the Desktop app has its own checkbox. This tool doesn't do auto-resume and doesn't need to.
 
-It does change what two metrics mean. A session that continues right after a reset may have been resumed automatically, not by you. **Sessions not resumed** and **elapsed lockout time** therefore report *activity*, not whether you personally came back. As of 2026-09-13, no automatic continuation has been observed in the logs, so the tool reports resumption without attributing it. It shows the `origin.kind` field of the next prompt as written ([D-022](decisions.md)).
+It does change what two metrics mean. A session that continues right after a reset may have been resumed automatically, not by you. **Sessions not resumed** and **elapsed lockout time** therefore report *activity*, not whether you personally came back.
+
+Claude Code marks its own continuation in the log: a line with `origin.kind: "auto-continuation"` (observed from v2.1.281, [D-022](decisions.md)). Where that line exists, the report says the session was **resumed by Claude Code (logged auto-continuation)**, beside the lockout it followed ([D-077](decisions.md)). Nothing is labeled automatic from timing alone: a workflow that restarts its subagents writes no such line, so its sessions aren't labeled.
 
 ---
 

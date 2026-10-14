@@ -160,6 +160,12 @@ export interface LockoutBar {
   readonly nextRequestEvents: EventRef;
   /** The plan period its first hit falls in (D-075); undefined while no plan has been entered. */
   readonly period?: PlanPeriodRef;
+  /** Sessions Claude Code resumed by itself after the reset, as logged (D-077, step G2.4). */
+  readonly autoContinuations: number;
+  /** Seconds from the reset to the first of those; null when none. */
+  readonly firstAutoContinuationSeconds: number | null;
+  /** The logged auto-continuation lines behind `autoContinuations`. */
+  readonly autoContinuationEvents: EventRef;
 }
 
 /** The interruption counts the text report prints beside the lockouts, so the page states them too. */

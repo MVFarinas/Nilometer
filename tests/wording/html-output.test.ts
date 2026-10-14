@@ -102,6 +102,10 @@ const FULL: HtmlReportData = {
       resetAfterCoverage: false,
       events: [8],
       nextRequestEvents: [10],
+      // Resumed by Claude Code, so the page's resumption wording is guarded too (D-077).
+      autoContinuations: 1,
+      firstAutoContinuationSeconds: 46,
+      autoContinuationEvents: [11],
       // Drawn in a lane, so the lane heading's wording is guarded too (D-075).
       period: {
         kind: "plan",

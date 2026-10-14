@@ -164,6 +164,9 @@ const LOCKOUTS: readonly LockoutBar[] = [
     resetAfterCoverage: false,
     events: [5],
     nextRequestEvents: [11],
+    autoContinuations: 0,
+    firstAutoContinuationSeconds: null,
+    autoContinuationEvents: [],
   },
   {
     lockedFromUtc: "2026-09-04T09:00:00.000Z",
@@ -174,6 +177,9 @@ const LOCKOUTS: readonly LockoutBar[] = [
     resetAfterCoverage: true,
     events: [6, 7],
     nextRequestEvents: [],
+    autoContinuations: 0,
+    firstAutoContinuationSeconds: null,
+    autoContinuationEvents: [],
   },
 ];
 
@@ -547,6 +553,32 @@ describe("renderCoverage", () => {
 describe("renderLockouts", () => {
   // Width 600: bars from 124, 600 - 124 - 110 = 366 wide.
   const svg = renderLockouts(LOCKOUTS, OPTIONS);
+
+  it("rings a lockout Claude Code resumed by itself, with the marker lines (D-077, step G2.4)", () => {
+    const out = renderLockouts(
+      [
+        {
+          ...LOCKOUTS[0]!,
+          autoContinuations: 1,
+          firstAutoContinuationSeconds: 46,
+          autoContinuationEvents: [21],
+        },
+        LOCKOUTS[1]!,
+      ],
+      OPTIONS,
+    );
+    // The first bar runs from 124 for 366 (3600 of 3600 s): the ring sits at its end, 490, in the
+    // middle of its row, 8 + 14 = 22. The second bar has no marker, so no ring.
+    const ring = only(out, "nm-resumed");
+    expect([ring.cx, ring.cy, ring.r, ring["data-events"]]).toEqual(["490", "22", "5", "21"]);
+    expect(out).toContain(
+      "<title>Resumed by Claude Code (logged auto-continuation): 1 session, 46 s after the reset</title>",
+    );
+    // The value label moves past the ring, 490 + 12 = 502, and says so in words.
+    expect(texts(out)).toContain("1 h 0 m, 1 hit, resumed by Claude Code");
+    expect(tags(out).find((t) => t.attrs.x === "502")?.tag).toBe("text");
+    expect(byClass(svg, "nm-resumed")).toEqual([]);
+  });
 
   it("draws a lane heading above each plan period's first bar (D-075, step G2.2)", () => {
     const pro = {

@@ -157,6 +157,12 @@ interface LockoutSqlRow {
   readonly hit_ids: string;
   /** The request behind `next_request_at_utc`; null when none followed. */
   readonly next_request_raw_line_id: number | null;
+  /** Sessions Claude Code resumed by itself after the reset (D-077). */
+  readonly auto_continuations: number;
+  /** Seconds from the reset to the first of those; null when none. */
+  readonly first_auto_continuation_seconds: number | null;
+  /** JSON array of the auto-continuation lines, canonical order. */
+  readonly auto_continuation_ids: string;
 }
 
 /** The hits behind the interruption counts, one JSON list per count ({@link PLACED_HITS}). */
@@ -459,6 +465,12 @@ function loadLockouts(db: Db, withPeriods = false): LockoutBar[] {
          GROUP BY h.interval_number
        )
        SELECT i.interval_number, i.locked_from_utc, i.locked_until_utc, i.hits, i.lockout_seconds,
+         i.auto_continuations, i.first_auto_continuation_seconds,
+         -- The markers obs_lockout_intervals counts, so the list re-adds to auto_continuations.
+         COALESCE((SELECT json_group_array(a.raw_line_id ORDER BY ${CANONICAL})
+                   FROM obs_auto_continuation_events a
+                   JOIN raw_lines l ON l.id = a.raw_line_id
+                   WHERE a.interval_number = i.interval_number), '[]') AS auto_continuation_ids,
          i.reset_to_next_request_seconds, i.reset_after_coverage,
          COALESCE(m.hit_ids, '[]') AS hit_ids,
          -- The request behind the view's next_request_at_utc: matching that value, rather than
@@ -503,6 +515,9 @@ function loadLockouts(db: Db, withPeriods = false): LockoutBar[] {
     resetAfterCoverage: row.reset_after_coverage === 1,
     events: parseIds(row.hit_ids),
     nextRequestEvents: single(row.next_request_raw_line_id),
+    autoContinuations: row.auto_continuations,
+    firstAutoContinuationSeconds: row.first_auto_continuation_seconds,
+    autoContinuationEvents: parseIds(row.auto_continuation_ids),
   }));
 }
 
@@ -934,7 +949,11 @@ export const loadHtmlData: LoadHtmlData = (
   const referenced = [
     ...gauge.flatMap((g) => [...g.peakEvents, ...g.lastEvents, ...g.hitEvents]),
     ...series.flatMap((s) => [...s.points.map((p) => p.event), ...s.hits.map((h) => h.event)]),
-    ...lockouts.flatMap((bar) => [...bar.events, ...bar.nextRequestEvents]),
+    ...lockouts.flatMap((bar) => [
+      ...bar.events,
+      ...bar.nextRequestEvents,
+      ...bar.autoContinuationEvents,
+    ]),
     // interruptions.events already holds every hit; the two sublists are listed anyway, so the
     // table can't miss one should either list ever reach beyond it.
     ...interruptions.events,

@@ -42,6 +42,7 @@ import {
 import type { BurnRateRow } from "./queries.js";
 import {
   LABELS,
+  autoContinuedText,
   describeBurnRate,
   displayPath,
   planPeriodMonths,
@@ -888,6 +889,19 @@ function durationTick(seconds: number): string {
 }
 
 /**
+ * States a lockout's logged resumption in the text report's words (D-077).
+ * @param bar - A lockout with at least one marker.
+ * @returns E.g. `Resumed by Claude Code (logged auto-continuation): 1 session, 46 s after the reset`.
+ */
+export function resumedText(bar: LockoutBar): string {
+  const text = autoContinuedText({
+    auto_continuations: bar.autoContinuations,
+    first_auto_continuation_seconds: bar.firstAutoContinuationSeconds,
+  }).replace(/^; /, "");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
  * Names a lockout lane by its plan period, as the per-plan table does (D-075).
  * @param period - The period.
  * @returns E.g. `Max 5x, 2026-08 onward` or `no plan entered, before 2026-07`.
@@ -1001,10 +1015,36 @@ export const renderLockouts: RenderChart<readonly LockoutBar[]> = (bars, options
           `Elapsed lockout time ${formatDuration(bar.seconds)}, ${formatCoverage(bar.lockedFromUtc, bar.lockedUntilUtc, tz)}, ${plural(bar.hits, "limit hit", "limit hits")}; ${afterReset(bar)}`,
         ),
       ),
-      text(left + width + 6, y + 18, `${formatDuration(bar.seconds)}, ${hits}`, {
-        class: "nm-value",
-        fill: "var(--ink-2)",
-      }),
+    );
+    const resumed = bar.autoContinuations > 0;
+    if (resumed) {
+      // Claude Code's own logged resumption (D-077): a ring at the reset end of the bar, in ink,
+      // apart from the bar's limit color, carrying the marker lines.
+      parts.push(
+        el(
+          "circle",
+          {
+            class: "nm-data nm-resumed",
+            "data-events": eventList(bar.autoContinuationEvents),
+            cx: left + width,
+            cy: y + 14,
+            r: 5,
+            fill: "var(--surface)",
+            stroke: "var(--ink)",
+            "stroke-width": 2,
+          },
+          title(resumedText(bar)),
+        ),
+      );
+    }
+    parts.push(
+      // Past the ring when there is one, so the two never overlap.
+      text(
+        left + width + (resumed ? 12 : 6),
+        y + 18,
+        `${formatDuration(bar.seconds)}, ${hits}${resumed ? ", resumed by Claude Code" : ""}`,
+        { class: "nm-value", fill: "var(--ink-2)" },
+      ),
     );
   });
   const covered = extent(bars.flatMap((b) => [b.lockedFromUtc, b.lockedUntilUtc])) as {

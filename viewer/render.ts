@@ -17,6 +17,7 @@ import {
 import type {
   ApiListPriceRow,
   BurnRateRow,
+  LockoutInterval,
   ModelRow,
   ObservedReport,
   PlanPeriodRow,
@@ -34,6 +35,8 @@ export const LABELS = {
   midTask: "Mid-task interruptions (the stopped request was answering a tool result)",
   lockout: "Elapsed lockout time (limit hit to reset, overlapping hits counted once)",
   resetToNextRequest: "reset to next Claude Code request",
+  // D-077 (step G2.4): only the logged marker earns this label; nothing is inferred from timing.
+  autoContinued: "resumed by Claude Code (logged auto-continuation)",
   // D-075 (step G2.2): interruptions per plan period.
   byPlan: "By plan period",
   byPlanNote:
@@ -217,6 +220,24 @@ export function repoKindName(kind: string): string {
 }
 
 /**
+ * States the sessions Claude Code resumed by itself after a lockout, as logged (D-077).
+ * @param interval - The lockout.
+ * @returns `; resumed by Claude Code (logged auto-continuation): 1 session, 4 m 15 s after the
+ *   reset`, or "" when no marker was logged.
+ */
+export function autoContinuedText(
+  interval: Pick<LockoutInterval, "auto_continuations" | "first_auto_continuation_seconds">,
+): string {
+  if (interval.auto_continuations === 0) {
+    return "";
+  }
+  const after = `${n(interval.first_auto_continuation_seconds, "duration")} after the reset`;
+  return interval.auto_continuations === 1
+    ? `; ${LABELS.autoContinued}: 1 session, ${after}`
+    : `; ${LABELS.autoContinued}: ${plural(interval.auto_continuations, "session", "sessions")}, the first ${after}`;
+}
+
+/**
  * Names a plan period as the report shows it (D-075).
  * @param row - The period's kind and plan name.
  * @returns The plan's name as entered, "no plan entered" before the first, or "time unknown".
@@ -379,7 +400,7 @@ export function renderObserved(observed: ObservedReport, timeZone: string, home 
           interval.next_request_at_utc === null
             ? "no request after the reset in the logs"
             : n(interval.reset_to_next_request_seconds, "duration")
-        }`,
+        }${autoContinuedText(interval)}`,
     ),
     ...renderByPlan(observed.interruptionsByPlan, timeZone),
     `  ${LABELS.notResumed}: ${n(notResumed.sessions_not_resumed, "count")} of ${plural(notResumed.sessions_with_hits, "session", "sessions")} with a hit`,

@@ -52,6 +52,10 @@ export interface LockoutInterval {
   readonly next_request_at_utc: string | null;
   readonly reset_to_next_request_seconds: number | null;
   readonly reset_after_coverage: number | null;
+  /** Sessions Claude Code resumed by itself after the reset, as logged (D-077); 0 when none. */
+  readonly auto_continuations: number;
+  /** Seconds from the reset to the first of those; null when none. */
+  readonly first_auto_continuation_seconds: number | null;
 }
 
 /** `obs_sessions_not_resumed`. */

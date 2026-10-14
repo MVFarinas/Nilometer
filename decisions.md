@@ -1209,6 +1209,18 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - (c) **Show the marker where it was logged: "resumed by Claude Code (logged auto-continuation)". Otherwise show the next request as now.** Chosen.
 - **Decision:** (c). Only the logged marker earns the label. A background workflow restarting its subagents leaves no marker (D-022), so it stays unlabelled.
 - **Consequences:** "Sessions not resumed" is unchanged. The page shows the marker on the lockout timeline.
+- **Built 2026-10-13 (step G2.4, migration 023).**
+  - **Matching:** a marker belongs to the latest logged hit before it in its own session, and through that hit to its lockout. `obs_lockout_intervals` counts each lockout's markers and the delay to the first. `obs_auto_continuation_events` lists them.
+  - **Where it shows:**
+    - each lockout line of the text report
+    - a second group in `explain lockout`
+    - a ring at the end of the lockout's bar on the page, with a table column and a line on the overview
+  - **On real data:** 6 markers, all 46 s to about 5 min after a reset: 3 sessions after the 2026-09-24 afternoon lockout, 1 after 2026-10-11, 2 after the 2026-10-13 morning one.
+  - **Performance, with one judgment:** the first version found each marker's hit through the merged limit-hit view, which SQLite evaluated per marker, and the real-data report went from about 39 s to 126 s.
+    - **Options:**
+      - (a) Accept it. Rejected: three times slower for a count of 6.
+      - (b) Store the matches in a table at ingest. Rejected: a derived table to keep in step with every rebuild.
+      - (c) **Find the hit from the raw limit-hit lines in a helper view (`auto_continuation_marks`), and compute lockout membership once per view.** Chosen. It gives identical output, and the report takes 42 s.
 
 ## D-078: A status-line-only lockout starts from a counted reading (2026-10-13)
 

@@ -157,6 +157,9 @@ const DATA: HtmlReportData = {
       events: [8],
       // r4 at 13:05:10 is the first request after the 13:00 reset: 310 s later.
       nextRequestEvents: [10],
+      autoContinuations: 0,
+      firstAutoContinuationSeconds: null,
+      autoContinuationEvents: [],
     },
   ],
   // The one hit h1, logged, in the 5-hour window, inside its lockout: nothing in any caveat.
@@ -805,6 +808,9 @@ describe("the sections", () => {
       resetAfterCoverage: true,
       events: [20, 8],
       nextRequestEvents: [],
+      autoContinuations: 0,
+      firstAutoContinuationSeconds: null,
+      autoContinuationEvents: [],
     };
     const third: LockoutBar = { ...second, resetAfterCoverage: false, events: [21] };
     const lockouts = section(
@@ -965,8 +971,9 @@ describe("traceability of the tables (principle 4)", () => {
     // Gauge 3 rows x 4 numbers (peak, last, readings, hits) = 12; series readings 3 + 1 + 4 = 8;
     // lockout 3 (elapsed, hits, next request); models 2 x 2 = 4; repositories 1 x 2 (requests,
     // output) = 2; burn rate 2 x 2 (last usage, rate) = 4; month 3 (amount, priced, unpriced):
-    // 12 + 8 + 3 + 4 + 2 + 4 + 3 = 36. The guard looked at every one of them.
-    expect(checked).toBe(36);
+    // 12 + 8 + 3 + 4 + 2 + 4 + 3 = 36, and the lockout's "resumed by Claude Code" count (D-077):
+    // 37. The guard looked at every one of them.
+    expect(checked).toBe(37);
   });
 
   it("keeps the identity columns free of number cells, so the exemption hides no count", () => {
@@ -1253,6 +1260,40 @@ describe("interruptions per plan period (step G2.2, D-075)", () => {
       timeZone: "UTC",
       width: 960,
     });
+  });
+});
+
+describe("Claude Code's logged resumption (step G2.4, D-077)", () => {
+  const RESUMED: HtmlReportData = {
+    ...DATA,
+    lockouts: DATA.lockouts.map((bar) => ({
+      ...bar,
+      autoContinuations: 1,
+      firstAutoContinuationSeconds: 46,
+      autoContinuationEvents: [21],
+    })),
+  };
+
+  it("counts it in the lockout table and keys the ring, only when one was logged", () => {
+    const resumed = section(renderHtmlReport(RESUMED), "nm-lockouts");
+    expect(resumed).toContain(
+      '<td class="num" data-events="21" data-label="Resumed by Claude Code, Lockout from 2026-09-03 12:00">1</td>',
+    );
+    expect(resumed).toContain(`<i class="k-resumed"></i>${escapeHtml(HTML_LABELS.legendResumed)}`);
+    const none = section(renderHtmlReport(DATA), "nm-lockouts");
+    expect(none).toContain(
+      'data-label="Resumed by Claude Code, Lockout from 2026-09-03 12:00">0</td>',
+    );
+    expect(none).not.toContain("k-resumed");
+  });
+
+  it("adds a line to the overview's interruptions card", () => {
+    expect(section(renderHtmlReport(RESUMED), "nm-card-interruptions")).toContain(
+      '<p class="sub" data-events="21" data-label="Resumed by Claude Code">Resumed by Claude Code after a lockout: 1 session</p>',
+    );
+    expect(section(renderHtmlReport(DATA), "nm-card-interruptions")).not.toContain(
+      "after a lockout",
+    );
   });
 });
 

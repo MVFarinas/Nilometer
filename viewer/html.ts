@@ -134,6 +134,8 @@ export const HTML_LABELS = {
   noOpenWindow: "No open usage window in the status line readings.",
   lastFrom: "Last observed usage the projection starts from",
   byPlanCaption: "Limit hits by plan period",
+  legendResumed: "Resumed by Claude Code after the reset (logged auto-continuation)",
+  resumedColumn: "Resumed by Claude Code",
   limitProjectedFor: "Limit projected for",
 } as const;
 
@@ -763,6 +765,15 @@ function interruptionCounts(data: HtmlReportData): string {
 }
 
 /**
+ * Counts the sessions Claude Code resumed by itself across every lockout (D-077).
+ * @param data - Report data.
+ * @returns The sum of each lockout's count from obs_lockout_intervals.
+ */
+function resumedCount(data: HtmlReportData): number {
+  return data.lockouts.reduce((sum, bar) => sum + bar.autoContinuations, 0);
+}
+
+/**
  * Names a plan period as the text report's per-plan table does (D-075).
  * @param period - The period.
  * @returns Its name and its months, e.g. `["Max 5x", "2026-08 onward"]`.
@@ -856,8 +867,11 @@ function renderLockoutSection(data: HtmlReportData, options: ChartOptions): stri
       numberCell(formatNumber(bar.seconds, "duration"), bar.events),
       numberCell(formatNumber(bar.hits, "count"), bar.events),
       nextRequestCell(bar),
+      // D-077: sessions Claude Code resumed by itself after the reset, as logged.
+      numberCell(formatNumber(bar.autoContinuations, "count"), bar.autoContinuationEvents),
     ],
   }));
+  const resumed = bars.some((bar) => bar.autoContinuations > 0);
   return chartSection({
     id: "nm-lockouts",
     heading: LABELS.lockout,
@@ -865,6 +879,8 @@ function renderLockoutSection(data: HtmlReportData, options: ChartOptions): stri
     body: [
       summary,
       caveats,
+      // The ring is the one shape on this chart that isn't a lockout, so it gets a key.
+      ...(resumed ? [legend([["k-resumed", HTML_LABELS.legendResumed]])] : []),
       plot(renderLockouts(bars, options)),
       tableView(
         LABELS.lockout,
@@ -874,6 +890,7 @@ function renderLockoutSection(data: HtmlReportData, options: ChartOptions): stri
           HTML_LABELS.lockoutElapsed,
           HTML_LABELS.hits,
           resetHeader,
+          HTML_LABELS.resumedColumn,
         ],
         rows,
       ),
@@ -1162,6 +1179,17 @@ function renderOverviewCards(data: HtmlReportData, options: ChartOptions): strin
             "sub",
           );
         }),
+        // D-077: the sessions Claude Code resumed by itself, once any lockout has one.
+        ...(resumedCount(data) === 0
+          ? []
+          : [
+              countPara(
+                `${HTML_LABELS.resumedColumn} after a lockout: ${plural(resumedCount(data), "session", "sessions")}`,
+                mergeEvents(...data.lockouts.map((bar) => bar.autoContinuationEvents)),
+                HTML_LABELS.resumedColumn,
+                "sub",
+              ),
+            ]),
         countPara(
           `${HTML_LABELS.lockoutElapsed}: ${formatNumber(t.lockoutSeconds, "duration")} across ${plural(t.lockoutIntervals, "lockout", "lockouts")}`,
           inIntervals,
@@ -1454,6 +1482,7 @@ code { font-family: var(--mono); }
 .k-faded { width: 12px; height: 12px; border-radius: 2px; background: var(--water); opacity: 0.5; }
 .k-other { width: 12px; height: 12px; border-radius: 2px; background: var(--axis); }
 .k-proj { width: 16px; height: 0; border-top: 2px dotted var(--ink-2); }
+.k-resumed { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ink); background: var(--surface); }
 .nm-tabpanel { display: grid; gap: 28px; min-width: 0; }
 .nm-tabbar { display: none; }
 .nm-tabs .nm-tabbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 36px; background: var(--page); padding-top: 10px; border-bottom: 1px solid var(--grid); }

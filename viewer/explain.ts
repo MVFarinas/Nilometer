@@ -384,6 +384,38 @@ const BUILDERS = {
             contributions: [interval.lockout_seconds],
           })),
         },
+        {
+          // D-077: the logged markers behind each lockout's "resumed by Claude Code".
+          title: "Sessions Claude Code resumed by itself after a reset (logged auto-continuation)",
+          measures: [
+            {
+              label: "Resumed by Claude Code",
+              kind: "count",
+              reported: scalar(
+                db,
+                "SELECT TOTAL(auto_continuations) AS v FROM obs_lockout_intervals",
+              ),
+            },
+          ],
+          events: (
+            db
+              .prepare(
+                `SELECT e.*, ${LOCATION_COLUMNS} FROM obs_auto_continuation_events e ${LOCATION_JOIN}
+                 ORDER BY e.continued_at_utc, e.raw_line_id`,
+              )
+              .all() as (Located & {
+              continued_at_utc: string;
+              session_id: string;
+              seconds_after_reset: number;
+              locked_until_utc: string;
+            })[]
+          ).map((row) => ({
+            at: row.continued_at_utc,
+            description: `auto-continuation | ${formatNumber(row.seconds_after_reset, "duration")} after the reset at ${row.locked_until_utc} | session ${row.session_id}`,
+            location: formatLocation(row),
+            contributions: [1],
+          })),
+        },
       ],
     };
   },

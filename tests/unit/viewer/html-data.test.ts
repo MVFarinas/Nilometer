@@ -282,6 +282,10 @@ describe("loadHtmlData on the shared HTML fixture (html-fixture.ts)", () => {
         events: [log["h1"]],
         // r4 is that first request, behind the 310 s.
         nextRequestEvents: [log["r4"]],
+        // No logged auto-continuation here (D-077).
+        autoContinuations: 0,
+        firstAutoContinuationSeconds: null,
+        autoContinuationEvents: [],
       },
     ]);
   });
@@ -565,6 +569,10 @@ describe("loadHtmlData on the report fixture (fixture.ts buildReportFixture)", (
         resetAfterCoverage: false,
         events: [id["a4"]],
         nextRequestEvents: [id["a6"]],
+        // No logged auto-continuation here (D-077).
+        autoContinuations: 0,
+        firstAutoContinuationSeconds: null,
+        autoContinuationEvents: [],
         // a4 at 2026-09-01 09:00:30 in Chicago, in "Example plan"'s months from 2026-09 (D-075).
         period: {
           kind: "plan",
@@ -1480,6 +1488,10 @@ describe("loadHtmlData at the edges", () => {
         resetAfterCoverage: true,
         events: [h1],
         nextRequestEvents: [],
+        // No logged auto-continuation here (D-077).
+        autoContinuations: 0,
+        firstAutoContinuationSeconds: null,
+        autoContinuationEvents: [],
       },
     ]);
     // No status line reading, so the hit's window has no gauge column to sit in, and it is

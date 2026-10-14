@@ -23,6 +23,8 @@ const HELPER_VIEWS = new Set([
   "window_reading_pairs",
   // D-075 (step G2.2): plan names and months only, the one way an observed view may read plans.
   "plan_periods",
+  // D-077 (step G2.4): auto-continuation markers with their session's latest hit.
+  "auto_continuation_marks",
 ]);
 
 /** Names an observed view must never depend on: cost data and user-entered plan prices. */
