@@ -130,6 +130,8 @@ interface HitRow extends Located {
   readonly window: string | null;
   readonly position: string;
   readonly session_id: string | null;
+  /** Attachment lines the position looked past (D-076); 0 for the direct parent. */
+  readonly attachments_passed: number;
 }
 
 /**
@@ -140,9 +142,14 @@ interface HitRow extends Located {
 function hitEvent(row: HitRow): ExplainEvent {
   const source = row.source === "session_log" ? "logged limit hit" : "status line reached 100%";
   const window = row.window === null ? "window unknown" : `${windowName(row.window)} window`;
+  // The walk behind the position, so a reader can follow it to the line that decided it (D-076).
+  const past =
+    row.attachments_passed > 0
+      ? `, past ${row.attachments_passed === 1 ? "1 attachment line" : `${row.attachments_passed} attachment lines`}`
+      : "";
   return {
     at: row.hit_at_utc,
-    description: `${source} | ${window} | position ${row.position.replace("_", " ")} | session ${row.session_id ?? "unknown"}`,
+    description: `${source} | ${window} | position ${row.position.replace("_", " ")}${past} | session ${row.session_id ?? "unknown"}`,
     location: formatLocation(row),
     contributions: [1],
   };

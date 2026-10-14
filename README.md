@@ -111,7 +111,7 @@ One screen. No daemon, no desktop app, no live updating. Every metric below is r
 | Metric | Source |
 |---|---|
 | Rate-limit interruptions | Logged `error: "rate_limit"` lines; `used_percentage` reaching 100 after `init`. A hit seen in both counts once ([D-023](decisions.md)). Once a plan price is entered, hits, lockouts, and elapsed lockout time are also shown per plan period, so a count never mixes two plans without saying so ([D-075](decisions.md)) |
-| Mid-task interruptions | The stopped request was answering a tool result, so the model was mid-agentic-loop rather than at a turn boundary. Hits whose position can't be determined are counted separately ([D-021](decisions.md)) |
+| Mid-task interruptions | The stopped request was answering a tool result, so the model was mid-agentic-loop rather than at a turn boundary. Hits whose position can't be determined are counted separately ([D-021](decisions.md)). Context lines Claude Code inserts between a request and what it answered (token reminders, memory, hook output) are looked past; a line of an unknown kind stops the lookup, leaving the position unknown ([D-076](decisions.md)) |
 | Elapsed lockout time | Limit hit → reset time, with overlapping hits counted once. **Not** a claim about lost productivity. Shown beside it: reset → next Claude Code request ([D-023](decisions.md)) |
 | Sessions not resumed | No further request in the session after a limit was hit. May be abandonment; may be a deliberate stop. Reported without interpretation; sessions whose reset came after the logs end are counted separately ([D-022](decisions.md)) |
 

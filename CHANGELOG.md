@@ -28,4 +28,5 @@ First public version.
   - **Per plan period:** once you've entered a plan price with `plan-price set`, the report splits limit hits, lockouts, and elapsed lockout time by the plan in effect, so a count no longer mixes your old plan with your new one.
   - **The HTML page** shows the split as a table on the Interruptions tab and as one lane per plan on the lockout chart.
   - **`nilometer explain by-plan`** lists the events behind each row.
+- **Mid-task interruptions count again:** current Claude Code versions write context lines (token reminders, memory, hook output) between a request and the tool result or prompt it answered. A limit hit's position now looks past them, so most hits that showed as "position unknown" are now counted as mid-task or at the start of a turn. A line of a kind Nilometer hasn't classified stops the lookup and leaves the position unknown. `nilometer explain mid-task` says how many lines each lookup passed.
 - **Install guide:** [`docs/requirements.md`](docs/requirements.md) explains how to check for and install everything Nilometer needs, including how to get Node.js 24 and not a newer release.

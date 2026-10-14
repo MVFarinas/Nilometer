@@ -1188,6 +1188,16 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - Before building, every attachment type in the logs is checked by structure (keys and type only) and listed with its classification. `queued_command` gets a decision of its own.
   - A fixture covers a hit behind one attachment, behind several, and behind an unclassified type.
   - The mid-task count is expected to change sharply, so the change gets its own audit on real data.
+- **Built 2026-10-13 (step G2.3, migration 022).**
+  - **The survey:** 37 attachment types in real logs, classified by their keys alone. Of those, 36 are walked past: reminders, session context, tool and skill listings, notes on a tool call, notes on files and thinking, and the file or plan-exit lines that travel with a prompt or tool result.
+  - **`queued_command` is decided by its own fields:**
+    - A task notification (`commandMode: task-notification`, 247 of 271) is automatic, and walked past.
+    - A message typed by a person (11) or sent by another session (13) is input delivered into a running loop, which is neither mid-task nor a turn start. It stops the walk, position unknown.
+  - **The rule lives in `attachment_walk`;** a type it doesn't list stops the walk.
+  - **Each hit carries `attachments_passed`,** and `explain` prints it, e.g. "position mid task, past 2 attachment lines".
+  - **A walk stops at 50 steps;** the longest real one is 9.
+- **On real data:** mid-task moved from 1 to 20 of 31 hits, turn start from 6 to 9, and unknown from 24 to 2. The two still unknown end on meta lines, which D-021 leaves unknown. The total is unchanged.
+- **Cost:** the report on a month of real data went from about 34 s to about 39 s.
 
 ## D-077: Claude Code's own resumption after a limit hit is shown (2026-10-13)
 
