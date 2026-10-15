@@ -1342,3 +1342,14 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Hidden content stays in the page.** Tabs hide, they don't remove, so the file still works offline with no network requests, and printing shows every tab.
   - **Tabs follow the ARIA tabs pattern:** `tablist`, `tab`, and `tabpanel` roles, arrow keys between tabs.
 - **Consequences:** every rule D-070's tests enforce applies to every tab, including the banned-phrase guard over hidden text and events behind every bar, column, and point. The snapshot test is updated deliberately, once.
+
+## D-085: `verify` says its days are UTC days (2026-10-14)
+
+- **Status:** accepted, built (step M13).
+- **Context:** The first run on a work laptop, at 19:00 local in a zone at UTC-6, printed "2026-10-15 was not compared: both sides are still being written to today". The laptop's local date was still 2026-10-14. Both sides count days in UTC: Nilometer groups `timestamp_utc` by its date, and ccusage runs with `-z UTC`. The comparison was right; the word "today" wasn't.
+- **Options:**
+  - (a) Compare in the machine's own zone, running ccusage with `-z` set to it. Rejected: the result would depend on where it ran, so two people's outputs couldn't be compared, and the day boundary would move with daylight saving time.
+  - (b) **Keep UTC days and say so: "Compared N UTC days", and "<day> (the current UTC day) was not compared".** Chosen.
+  - (c) Leave the wording. Rejected: an output built to be sent to someone else shouldn't contain a date that reads wrong.
+- **Decision:** (b). The README says the days are UTC dates.
+- **Consequences:** `verify`'s output is now also checked against the banned-phrase list, across every branch. Before, only its privacy shapes were checked.

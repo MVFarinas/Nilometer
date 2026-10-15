@@ -41,4 +41,5 @@ First public version.
   - **When it takes effect:** the next `ingest` re-reads stored lines once to apply this.
 - **A missing status line hook is reported:** when your status line names a Nilometer hook file that doesn't exist, for example after moving to a new machine, `report` warns above the numbers and on the page, and says to run `nilometer init`. Until then no usage readings are recorded, and nothing else shows it: the hook can't log an error if it never starts. `report` reads `settings.json` and never writes it.
 - **`report --save --html --open`:** opens the saved page in your browser. If it can't, for example over SSH, it says where the page is and the command still succeeds.
+- **`verify` names UTC days:** its days are UTC dates, as ccusage counts them. The output now says so, so in the evening the newest day no longer reads as "today" when it's tomorrow's local date.
 - **Install guide:** [`docs/requirements.md`](docs/requirements.md) explains how to check for and install everything Nilometer needs, including how to get Node.js 24 and not a newer release.

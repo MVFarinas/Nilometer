@@ -245,7 +245,8 @@ nilometer verify
 ```
 
 It prints how many days were compared and any day, model and field where the two disagree — and
-nothing else. No paths, no repository names, no session ids, no prompt text, so the result can be
+nothing else. Days are UTC dates on both sides, so in the evening the newest one can be tomorrow's
+local date; the current UTC day is never compared, because both tools are still reading it. No paths, no repository names, no session ids, no prompt text, so the result can be
 sent to someone without sending your data.
 
 Two things it will tell you about rather than call a difference. Requests whose log Claude Code has

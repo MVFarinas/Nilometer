@@ -443,7 +443,9 @@ export function describeDeletion(dataDir: string, deleted: DataDeleted): string[
  */
 export function describeVerify(result: VerifyResult): { lines: string[]; exitCode: number } {
   const lines = [
-    `Compared ${plural(result.comparedDays, "day", "days")} against ccusage ${CCUSAGE_PIN}, token counts only.`,
+    // Both sides count days in UTC (ccusage runs with -z UTC), which isn't the local date in the
+    // evening west of Greenwich; saying so keeps "today" from reading as a wrong date (D-085).
+    `Compared ${plural(result.comparedDays, "UTC day", "UTC days")} against ccusage ${CCUSAGE_PIN}, token counts only.`,
   ];
   if (result.comparedDays === 0) {
     lines.push(
@@ -466,7 +468,7 @@ export function describeVerify(result: VerifyResult): { lines: string[]; exitCod
     );
   }
   lines.push(
-    `${result.skippedToday} was not compared: both sides are still being written to today, so a difference there would be the clock.`,
+    `${result.skippedToday} (the current UTC day) was not compared: both sides are still being written to, so a difference there would be the clock.`,
   );
   if (result.fromDeletedLogs > 0) {
     lines.push(

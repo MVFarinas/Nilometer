@@ -380,9 +380,19 @@ describe("describeVerify", () => {
 
   it("says everything matched, and exits 0", () => {
     const { lines, exitCode } = describeVerify(clean);
-    expect(lines[0]).toContain("Compared 12 days against ccusage");
+    expect(lines[0]).toContain("Compared 12 UTC days against ccusage");
     expect(lines.join("\n")).toContain("Every one matched");
     expect(exitCode).toBe(0);
+  });
+
+  it("names the skipped day as the current UTC day, since it can be tomorrow's local date (D-085)", () => {
+    // Found on a machine at UTC-6, at 19:00 local on 2026-10-14: verify skipped
+    // 2026-10-15 and called it "today".
+    const { lines } = describeVerify({ ...clean, skippedToday: "2026-10-15" });
+    expect(lines).toContain(
+      "2026-10-15 (the current UTC day) was not compared: both sides are still being written to, so a difference there would be the clock.",
+    );
+    expect(lines.join("\n")).not.toMatch(/\btoday\b/);
   });
 
   it("names the day, model, field and both values for a difference, and exits 1", () => {
@@ -426,6 +436,8 @@ describe("describeVerify", () => {
     for (const shape of [/\//, /\\/, /~/, /\.jsonl/, /[0-9a-f]{8}-[0-9a-f]{4}/]) {
       expect(text).not.toMatch(shape);
     }
+    // Every branch's wording, the clean result's too, is held to the banned list (D-085).
+    expectNoBannedWording([...lines, ...describeVerify(clean).lines]);
   });
 });
 
