@@ -20,7 +20,8 @@ import { loadPriceTable, syncPrices } from "../../core/pricing/prices.js";
 import { stageState, statesOf } from "../../scripts/fidelity/loader-check.js";
 import { loadObserved, loadProjected } from "../../viewer/queries.js";
 import { type ReportInput, renderReport, reportJson } from "../../viewer/render.js";
-import { ingest } from "../unit/core/metrics/helpers.js";
+import { METRIC_NAMES, explain, renderExplanation } from "../../viewer/explain.js";
+import { ingest, request } from "../unit/core/metrics/helpers.js";
 import { bannedPhrases, findBanned } from "./banned-phrases.js";
 import { FIXTURE_TIME_ZONE, buildReportFixture } from "../unit/viewer/fixture.js";
 
@@ -120,6 +121,47 @@ describe("A9: banned phrases in viewer output", () => {
       const input = inputFor(db);
       expect(findBanned(renderReport(input), phrases)).toEqual([]);
       expect(findBanned(JSON.stringify(reportJson(input)), phrases)).toEqual([]);
+    }
+  });
+
+  it("renders weekly crossings without a banned phrase, both levels and the caveat (D-087)", () => {
+    // No fixture case reaches 75% weekly, so the crossing lines only render here.
+    const crossed = ingest(
+      {},
+      [80, 95].map((used, i) => ({
+        at: `2026-09-0${String(i + 3)}T12:00:00Z`,
+        session: "s",
+        window: "seven_day",
+        used,
+        resets: "2026-09-08T00:00:00Z",
+      })),
+    );
+    const input = inputFor(crossed);
+    const text = renderReport(input);
+    expect(text).toContain("90% first read");
+    expect(findBanned(text, phrases)).toEqual([]);
+    expect(findBanned(JSON.stringify(reportJson(input)), phrases)).toEqual([]);
+  });
+
+  it("renders every explain view without a banned phrase, a changed reading's too (D-086)", () => {
+    // A value that changed after the session's last request: its own wording in explain.
+    const changed = ingest(
+      { "-p/s.jsonl": [request("s", "r1", null, "2026-09-01T10:00:00Z")] },
+      [20, 40].map((used, i) => ({
+        at: `2026-09-01T1${String(i)}:00:05Z`,
+        session: "s",
+        window: "five_hour",
+        used,
+        resets: "2026-09-01T14:00:00Z",
+      })),
+    );
+    const text = renderExplanation(explain(changed, "peak"), FIXTURE_TIME_ZONE, "", 50).join("\n");
+    expect(text).toContain("changed since the session's last request");
+    for (const db of [changed, buildReportFixture()]) {
+      for (const metric of METRIC_NAMES) {
+        const lines = renderExplanation(explain(db, metric), FIXTURE_TIME_ZONE, "", 50);
+        expect(findBanned(lines.join("\n"), phrases)).toEqual([]);
+      }
     }
   });
 });

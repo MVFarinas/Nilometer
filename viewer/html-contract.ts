@@ -212,6 +212,22 @@ export interface InterruptionTotals {
   readonly byPlan: readonly PlanPeriodTotals[];
 }
 
+/** A weekly window's first reading at or above a level, as `obs_weekly_crossings` lists it (D-087, step G3.2). */
+export interface WeeklyCrossing {
+  /** The window's reset. */
+  readonly resetAtUtc: string;
+  /** 75 or 90. */
+  readonly threshold: number;
+  /** When that reading was observed. */
+  readonly firstAtUtc: string;
+  /** Its value. */
+  readonly usedPercentage: number;
+  /** From the reading to the reset. */
+  readonly secondsBeforeReset: number;
+  /** The reading. */
+  readonly events: EventRef;
+}
+
 /** Readings captured after their window's reset: not counted in any window (D-024). */
 export interface AfterResetReadings {
   /** How many, as the text report prints it. */
@@ -347,6 +363,8 @@ export interface HtmlReportData {
   readonly interruptions: InterruptionTotals;
   /** Readings that fell after their window's reset, which no column counts. */
   readonly afterReset: AfterResetReadings;
+  /** Weekly windows' first readings at or above 75% and 90%, newest window first (D-087). */
+  readonly crossings: readonly WeeklyCrossing[];
   /** Models by output tokens, largest first. */
   readonly models: readonly ModelBar[];
   /** Repositories by output tokens, largest first, as the text report orders them (step G2.1). */

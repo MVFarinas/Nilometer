@@ -34,6 +34,7 @@ Usage windows
   5-hour  2026-09-02 12:00                35.5%  2026-09-02 10:00  35.5%         2  reset
   Last observed usage is a lower bound: usage after the last Claude Code turn isn't seen.
   Open: not reset as of this report. An open window's usage is its last reading's, at the time under Reading at.
+  No weekly window has a reading at or above 75%.
 
 Claude Code tokens by model
   Covers: session logs 2026-08-20 10:00 to 2026-09-02 15:00 (America/Chicago)

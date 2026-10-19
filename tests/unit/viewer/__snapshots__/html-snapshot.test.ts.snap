@@ -237,6 +237,12 @@ code { font-family: var(--mono); }
 </tbody></table></div></details>
 <div class="nm-events" aria-live="polite" hidden></div>
 </section>
+<section class="panel nm-chart" id="nm-crossings" aria-labelledby="nm-crossings-h">
+<div class="panel-title"><h3 id="nm-crossings-h">Weekly windows at 75% and 90%</h3>
+<p class="span">Covers: status line 2026-09-03 10:00 to 13:05 (UTC)</p></div>
+<p class="caveat">No weekly window has a reading at or above 75%.</p>
+<div class="nm-events" aria-live="polite" hidden></div>
+</section>
 </div>
 <div class="nm-tabpanel" role="tabpanel" id="nm-tab-interruptions" aria-labelledby="nm-tabbtn-interruptions" data-tab="interruptions">
 <section class="panel nm-chart" id="nm-lockouts" aria-labelledby="nm-lockouts-h">

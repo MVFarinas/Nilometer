@@ -202,6 +202,25 @@ const FULL: HtmlReportData = {
     ],
   },
   afterReset: { count: 1, events: [15] },
+  // Both levels in one window, so the section's every line and column label is guarded (D-087).
+  crossings: [
+    {
+      resetAtUtc: at("17:00:00"),
+      threshold: 75,
+      firstAtUtc: at("12:00:00"),
+      usedPercentage: 80,
+      secondsBeforeReset: 18_000,
+      events: [15],
+    },
+    {
+      resetAtUtc: at("17:00:00"),
+      threshold: 90,
+      firstAtUtc: at("13:00:00"),
+      usedPercentage: 95,
+      secondsBeforeReset: 14_400,
+      events: [15],
+    },
+  ],
   models: [
     { model: "claude-opus-5", requests: 3, outputTokens: 360, events: [4, 6, 10] },
     { model: "claude-sonnet-5", requests: 1, outputTokens: 100, events: [2] },
@@ -355,6 +374,7 @@ const EMPTY: HtmlReportData = {
     byPlan: [],
   },
   afterReset: { count: 0, events: [] },
+  crossings: [],
   models: [],
   repos: [],
   burn: [],
@@ -642,8 +662,8 @@ describe.each(REPORTS)("the %s HTML report", (_name, data) => {
 
   it("(d) states a span in every chart section and every window's series", () => {
     const sections = html.split('<section class="panel nm-chart"').slice(1);
-    // Coverage, gauge, lockouts, models, repositories, burn rate, months (D-084).
-    expect(sections).toHaveLength(7);
+    // Coverage, gauge, weekly crossings (D-087), lockouts, models, repositories, burn rate, months (D-084).
+    expect(sections).toHaveLength(8);
     const span = /<p class="span">Covers: [^<]*(\d{4}-\d{2}-\d{2} \d{2}:\d{2} to|no data yet)/;
     for (const part of sections) {
       expect(part).toMatch(span);

@@ -17,6 +17,7 @@ import {
 import type {
   ApiListPriceRow,
   BurnRateRow,
+  CrossingRow,
   LockoutInterval,
   ModelRow,
   ObservedReport,
@@ -56,6 +57,12 @@ export const LABELS = {
   // D-083 (step G2.5): what "open" means, and which reading an open window's usage is from.
   openNote:
     "Open: not reset as of this report. An open window's usage is its last reading's, at the time under Reading at.",
+  // D-087 (step G3.2): a weekly window near its limit, stated as readings, without inferring why.
+  crossings:
+    "Weekly windows at 75% and 90%: the first reading at or above each level, and the time from it to the reset",
+  crossingsCaveat:
+    "A level may have been passed earlier, between readings, so the time left is a lower bound.",
+  noCrossings: "No weekly window has a reading at or above 75%.",
   byModel: "Claude Code tokens by model",
   byRepo: "Claude Code tokens by repository",
   burnRate: "Burn rate",
@@ -279,6 +286,48 @@ export function planPeriodMonths(
 }
 
 /**
+ * Describes one weekly window's crossings (D-087): each level it reached, or that it wasn't reached.
+ * @param rows - The window's `obs_weekly_crossings` rows, lower level first.
+ * @param timeZone - Display zone.
+ * @returns E.g. `75% first read 2026-10-13 14:05 (4 d 21 h before the reset); 90% not reached`.
+ */
+export function crossingText(rows: readonly CrossingRow[], timeZone: string): string {
+  return [75, 90]
+    .map((level) => {
+      const row = rows.find((r) => r.threshold === level);
+      return row === undefined
+        ? `${String(level)}% not reached`
+        : `${String(level)}% first read ${formatInstant(row.first_at_utc, timeZone)} (${formatNumber(row.seconds_before_reset, "duration")} before the reset)`;
+    })
+    .join("; ");
+}
+
+/**
+ * Renders the weekly windows' first readings at or above 75% and 90% (D-087, step G3.2).
+ * @param rows - `obs_weekly_crossings`, newest window first.
+ * @param timeZone - Display zone.
+ * @returns Lines for the windows section.
+ */
+function renderCrossings(rows: readonly CrossingRow[], timeZone: string): string[] {
+  if (rows.length === 0) {
+    return [`  ${LABELS.noCrossings}`];
+  }
+  // One line per window, in the rows' order; a Set keeps each reset once.
+  const resets = [...new Set(rows.map((r) => r.reset_at_utc))];
+  return [
+    `  ${LABELS.crossings}`,
+    ...resets.map(
+      (reset) =>
+        `    weekly window resetting ${formatInstant(reset, timeZone)}: ${crossingText(
+          rows.filter((r) => r.reset_at_utc === reset),
+          timeZone,
+        )}`,
+    ),
+    `    ${LABELS.crossingsCaveat}`,
+  ];
+}
+
+/**
  * Renders the per-plan interruption table (D-075), only once a plan has been entered: before
  * that, every row would be "no plan entered" and repeat the totals above it.
  * @param rows - `obs_interruptions_by_plan` rows, in the view's order.
@@ -442,6 +491,7 @@ export function renderObserved(observed: ObservedReport, timeZone: string, home 
         `  Readings captured after their window's reset, not counted: ${n(afterReset, "count")}`,
       );
     }
+    lines.push(...renderCrossings(observed.weeklyCrossings, timeZone));
   }
   const modelCoverage = observed.byModel[0];
   lines.push(

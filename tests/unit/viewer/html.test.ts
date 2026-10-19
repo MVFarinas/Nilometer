@@ -186,6 +186,7 @@ const DATA: HtmlReportData = {
     byPlan: [],
   },
   afterReset: { count: 0, events: [] },
+  crossings: [],
   models: [
     { model: "claude-opus-5", requests: 3, outputTokens: 360, events: [4, 6, 10] },
     { model: "claude-sonnet-5", requests: 1, outputTokens: 100, events: [2] },

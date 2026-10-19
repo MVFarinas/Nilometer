@@ -1423,6 +1423,8 @@ describe("loadHtmlData at the edges", () => {
         byPlan: [],
       },
       afterReset: { count: 0, events: [] },
+      // D-087: no reading, so no weekly window reached 75%.
+      crossings: [],
       models: [],
       // Step G2.1: no request, so no repository; no reading, so no open window to project; no
       // home given in the meta, so paths would print in full.

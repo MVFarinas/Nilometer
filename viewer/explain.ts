@@ -263,7 +263,10 @@ function readingEvents(db: Db, instance: InstanceRow, what: string): ExplainEven
       description: `${what}: ${formatNumber(row.used_percentage, "percent")} | session ${row.session_id ?? "unknown"} | ${
         row.observed_via === "last_request"
           ? `observed at the session's request before capture ${row.captured_at_utc}`
-          : "observed at capture (no request found in the logs)"
+          : row.observed_via === "changed_capture"
+            ? // D-086: the value changed after the session's last request, so it isn't that request's.
+              "observed at capture (changed since the session's last request)"
+            : "observed at capture (no request found in the logs)"
       }`,
       location: formatLocation(row),
       contributions: [row.used_percentage],
@@ -554,6 +557,25 @@ const BUILDERS = {
       title: instanceTitle(row),
       measures: [{ label: "Peak usage", kind: "percent", reported: row.value }],
       events: readingEvents(db, row, "highest reading"),
+    })),
+  }),
+  // D-087 (step G3.2): each weekly window's first reading at or above 75% and 90%.
+  crossings: (db: Db): Explanation => ({
+    metric: "crossings",
+    title: "Weekly windows at 75% and 90%",
+    section: "observed",
+    groups: (
+      db
+        .prepare(
+          `SELECT window, reset_at_utc, threshold, seconds_before_reset,
+             used_percentage AS value, raw_line_id AS reading
+           FROM obs_weekly_crossings ORDER BY reset_at_utc, threshold`,
+        )
+        .all() as (InstanceRow & { threshold: number; seconds_before_reset: number })[]
+    ).map((row) => ({
+      title: `${instanceTitle(row)}: first reading at or above ${String(row.threshold)}%, ${formatNumber(row.seconds_before_reset, "duration")} before the reset`,
+      measures: [{ label: "Usage at that reading", kind: "percent", reported: row.value }],
+      events: readingEvents(db, row, `first reading at or above ${String(row.threshold)}%`),
     })),
   }),
   unattributed: (db: Db): Explanation => {

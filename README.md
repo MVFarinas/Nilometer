@@ -61,7 +61,7 @@ Things about the payload that matter here:
 
 - **`session_id` and `transcript_path`** point each rate-limit reading at the matching session log, so readings don't have to be matched to sessions by timestamp.
 - **A window disappears once its `resets_at` passes.** A missing window means "reset," not "no data."
-- **The numbers are from the session's last API response.** *Observed (2026-09-14/15):* re-rendering the status line (a refresh timer, a window reset) repeats them unchanged until that session makes another request, even while other sessions use the account. Nilometer dates each reading by that response, not by when it was captured, and counts repeats once ([D-044](decisions.md)). A terminal left open on a refresh timer therefore can't record usage from the VS Code extension.
+- **The numbers are from the session's last API response.** *Observed (2026-09-14/15):* re-rendering the status line (a refresh timer, a window reset) repeats them unchanged until that session makes another request, even while other sessions use the account. Nilometer dates each reading by that response, not by when it was captured, and counts repeats once ([D-044](decisions.md)). A terminal left open on a refresh timer therefore usually can't record usage from the VS Code extension. *Since Claude Code 2.1.281* an idle session sometimes does show the account's later total; a value that changed without a new request is dated when it was captured, as its own reading ([D-086](decisions.md)).
 - **`used_percentage` arrives in whole-number steps** (sometimes with float noise, e.g. `7.000000000000001`), so small amounts of usage show as 0%.
 - **`rate_limits` only appears after the first API response in a session.**
 - **The payload also carries `cost.total_cost_usd`**, Claude Code's own list-price estimate for the session. It's stored with each reading as a possible cross-check on the tool's cost math, never as a source. No check uses it yet.
@@ -113,6 +113,7 @@ One screen. No daemon, no desktop app, no live updating. Every metric below is r
 | Rate-limit interruptions | Logged `error: "rate_limit"` lines; `used_percentage` reaching 100 after `init`. A hit seen in both counts once ([D-023](decisions.md)). Once a plan price is entered, hits, lockouts, and elapsed lockout time are also shown per plan period, so a count never mixes two plans without saying so ([D-075](decisions.md)) |
 | Mid-task interruptions | The stopped request was answering a tool result, so the model was mid-agentic-loop rather than at a turn boundary. Hits whose position can't be determined are counted separately ([D-021](decisions.md)). Context lines Claude Code inserts between a request and what it answered (token reminders, memory, hook output) are looked past; a line of an unknown kind stops the lookup, leaving the position unknown ([D-076](decisions.md)) |
 | Elapsed lockout time | Limit hit → reset time, with overlapping hits counted once. **Not** a claim about lost productivity. Shown beside it: reset → next Claude Code request ([D-023](decisions.md)), and, where Claude Code logged that it resumed a session by itself after the reset, how many sessions it resumed ([D-077](decisions.md)) |
+| Weekly windows at 75% and 90% | The first status line reading at or above each level in each weekly window, and the time from it to the reset. A week that came close without a hit shows here and nowhere else. It's a reading, not a reason: why usage changed afterwards isn't inferred. The level may have been passed earlier, between readings, so the time left is a lower bound ([D-087](decisions.md)) |
 | Sessions not resumed | No further request in the session after a limit was hit. May be abandonment; may be a deliberate stop. Reported without interpretation; sessions whose reset came after the logs end are counted separately ([D-022](decisions.md)) |
 
 ### Observed: "Am I paying for more than I use?"
@@ -218,7 +219,7 @@ nilometer init    # or, without npm link: npm start -- init
 | `nilometer init` | Install the hook (wrapping any existing status line), then backfill from session logs |
 | `nilometer ingest` | Read new session log lines and status line readings into the database. `--full` rereads everything; `--json` prints the outcome as JSON |
 | `nilometer report` | Print what was observed, then projections in a separate section. `--json` prints unrounded rows and every label. `--save` also writes a dated copy (`report_YYYY-MM-DD_HHMMSS.txt` and `.json`) to `~/.local/share/nilometer/reports/`; `--save --html` adds a self-contained `.html` page with the same name, which works offline and makes no network requests. The page opens on an overview, has one tab per chart, and keeps the projections in their own labelled tabs. `--save --html --open` also opens the saved page in your browser; if it can't, the command says where the page is and still succeeds |
-| `nilometer explain <metric>` | List the events behind a number in the report, with the file, line, and byte each came from, and add them back up. Metrics: `limit-hits`, `mid-task`, `lockout`, `by-plan`, `not-resumed`, `headroom`, `peak`, `unattributed`, `by-model`, `by-repo`, `burn-rate`, `api-list-price` |
+| `nilometer explain <metric>` | List the events behind a number in the report, with the file, line, and byte each came from, and add them back up. Metrics: `limit-hits`, `mid-task`, `lockout`, `by-plan`, `not-resumed`, `headroom`, `peak`, `crossings`, `unattributed`, `by-model`, `by-repo`, `burn-rate`, `api-list-price` |
 | `nilometer plan-price set <YYYY-MM> <usd> --name <plan>` | Record your plan's USD list price per month from that month on, shown beside API list price. `plan-price list` shows what's entered |
 | `nilometer uninstall` | Remove the hook and restore the status line setting it replaced. Recorded data is kept |
 
@@ -326,6 +327,7 @@ Usage windows
   5-hour  2026-09-02 17:00                  40%  2026-09-02 13:00    40%         1  open
   5-hour  2026-09-02 12:00                35.5%  2026-09-02 10:00  35.5%         2  reset
   Last observed usage is a lower bound: usage after the last Claude Code turn isn't seen.
+  No weekly window has a reading at or above 75%.
 
 …
 

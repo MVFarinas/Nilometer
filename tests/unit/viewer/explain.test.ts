@@ -20,6 +20,28 @@ import { EXPLAIN_ONLY_VIEWS, OBSERVED_VIEWS, PROJECTED_VIEWS } from "../../../vi
 import { ingest } from "../core/metrics/helpers.js";
 import { FIXTURE_TIME_ZONE, buildReportFixture } from "./fixture.js";
 
+/**
+ * A database whose weekly window passes 75% and 90%. The report fixture's weekly window stays below
+ * 75%, and raising it would rewrite the reviewed snapshots built on it, so `crossings` (D-087) is
+ * re-summed here instead: readings of 80 at 09-03 12:00 and 95 at 09-05 18:00, resetting 09-08.
+ * @returns The database.
+ */
+function crossingsDb(): Db {
+  return ingest(
+    {},
+    [
+      ["2026-09-03T12:00:00Z", 80],
+      ["2026-09-05T18:00:00Z", 95],
+    ].map(([at, used]) => ({
+      at: String(at),
+      session: "s",
+      window: "seven_day",
+      used: Number(used),
+      resets: "2026-09-08T00:00:00Z",
+    })),
+  );
+}
+
 describe("explain on the report fixture", () => {
   let db: Db;
   const originalTz = process.env["TZ"];
@@ -46,7 +68,7 @@ describe("explain on the report fixture", () => {
   });
 
   it.each(METRIC_NAMES)("re-sums %s from its events to exactly the reported numbers", (metric) => {
-    const explanation = explain(db, metric);
+    const explanation = explain(metric === "crossings" ? crossingsDb() : db, metric);
     expect(explanation.groups.length).toBeGreaterThan(0);
     for (const group of explanation.groups) {
       /**

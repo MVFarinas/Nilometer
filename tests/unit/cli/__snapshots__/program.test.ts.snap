@@ -20,8 +20,9 @@ Commands:
   explain [options] <metric>  List the events behind a number in the report,
                               with where each was read from, and re-add them.
                               Metrics: limit-hits, mid-task, lockout, by-plan,
-                              not-resumed, headroom, peak, unattributed,
-                              by-model, by-repo, burn-rate, api-list-price.
+                              not-resumed, headroom, peak, crossings,
+                              unattributed, by-model, by-repo, burn-rate,
+                              api-list-price.
   plan-price                  Enter or list the plan's USD list price, shown
                               beside API list price.
   verify [options]            Compare this tool's token totals against ccusage,
@@ -40,7 +41,8 @@ exports[`runCli > prints stable help for explain 1`] = `
 
 List the events behind a number in the report, with where each was read from,
 and re-add them. Metrics: limit-hits, mid-task, lockout, by-plan, not-resumed,
-headroom, peak, unattributed, by-model, by-repo, burn-rate, api-list-price.
+headroom, peak, crossings, unattributed, by-model, by-repo, burn-rate,
+api-list-price.
 
 Options:
   --data-dir <path>  data directory holding the database

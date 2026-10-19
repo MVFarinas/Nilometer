@@ -43,9 +43,11 @@ import type {
   RepoBar,
   SeriesHit,
   SeriesPoint,
+  WeeklyCrossing,
   WindowSeries,
 } from "./html-contract.js";
 import {
+  type CrossingRow,
   type LimitHits,
   type LockoutTime,
   type ObservedReport,
@@ -660,6 +662,30 @@ function loadByPlan(db: Db, rows: readonly PlanPeriodRow[]): PlanPeriodTotals[] 
 }
 
 /**
+ * Loads the weekly windows' first readings at or above 75% and 90% (D-087), reusing the text
+ * report's rows when it has read them from the same snapshot.
+ * @param db - Open, migrated database.
+ * @param observed - What the text report read, if it did.
+ * @returns One entry per window and level, newest window first.
+ */
+function loadCrossings(db: Db, observed?: ObservedReport): WeeklyCrossing[] {
+  // The same view and order as loadObserved, so the page and the text list the same rows.
+  const rows =
+    observed?.weeklyCrossings ??
+    (db
+      .prepare("SELECT * FROM obs_weekly_crossings ORDER BY reset_at_utc DESC, threshold")
+      .all() as unknown as CrossingRow[]);
+  return rows.map((r) => ({
+    resetAtUtc: r.reset_at_utc,
+    threshold: r.threshold,
+    firstAtUtc: r.first_at_utc,
+    usedPercentage: r.used_percentage,
+    secondsBeforeReset: r.seconds_before_reset,
+    events: [r.raw_line_id],
+  }));
+}
+
+/**
  * Loads the readings captured after their window's reset, which no gauge column counts.
  * @param db - Open, migrated database.
  * @returns How many, and which.
@@ -947,6 +973,7 @@ export const loadHtmlData: LoadHtmlData = (
   // Lockouts carry their plan period only once a plan has been entered, as the split does.
   const lockouts = loadLockouts(db, interruptions.byPlan.length > 0);
   const afterReset = loadAfterReset(db);
+  const crossings = loadCrossings(db, loaded?.observed);
   const models = loadModels(db);
   const repos = loadRepos(db);
   // Projections are read by their own function from their own view, never mixed into the rows above.
@@ -968,6 +995,7 @@ export const loadHtmlData: LoadHtmlData = (
     ...interruptions.hitsInNoColumnEvents,
     ...interruptions.byPlan.flatMap((p) => [...p.hitEvents, ...p.lockoutEvents]),
     ...afterReset.events,
+    ...crossings.flatMap((c) => c.events),
     ...models.flatMap((bar) => bar.events),
     ...repos.flatMap((bar) => bar.events),
     ...burn.flatMap((window) => window.events),
@@ -986,6 +1014,7 @@ export const loadHtmlData: LoadHtmlData = (
     lockouts,
     interruptions,
     afterReset,
+    crossings,
     models,
     repos,
     home: meta.home ?? "",

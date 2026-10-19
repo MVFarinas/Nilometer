@@ -78,6 +78,12 @@ export const HTML_LABELS = {
   legendLast: "Last observed usage (a lower bound)",
   legendHit: "Limit hit in the window",
   over100: "Readings above 100% are shown as recorded.",
+  // D-087 (step G3.2): the section's heading and table columns; its sentences are the text report's.
+  crossingsHeading: "Weekly windows at 75% and 90%",
+  level: "Level",
+  firstReading: "First reading at or above",
+  usageAtReading: "Usage at that reading",
+  timeLeft: "Time left before the reset",
   seriesHint:
     "Select a column to show that window's readings over time and list the events behind it. Select any bar, point, count, or table cell with a number to list its events.",
   peakAt: "Peak reading at",
@@ -622,6 +628,57 @@ function gaugeNotes(data: HtmlReportData): string[] {
     );
   }
   return lines;
+}
+
+/**
+ * Renders the weekly windows' first readings at or above 75% and 90% (D-087, step G3.2), in the
+ * text report's words, with each value and time left resolving to the reading behind it.
+ * @param data - Report data.
+ * @returns The section.
+ */
+function renderCrossingsSection(data: HtmlReportData): string {
+  const zone = data.timeZone;
+  const span = `Covers: ${sourceSpan("status line", coverageOf(data, "status_line"), zone)}`;
+  if (data.crossings.length === 0) {
+    return chartSection({
+      id: "nm-crossings",
+      heading: HTML_LABELS.crossingsHeading,
+      span,
+      body: para(LABELS.noCrossings),
+    });
+  }
+  const c = LABELS.columns;
+  const rows = data.crossings.map((x): Row => ({
+    name: `${windowTitle("seven_day", x.resetAtUtc, zone)}, ${String(x.threshold)}%`,
+    cells: [
+      textCell(formatInstant(x.resetAtUtc, zone)),
+      textCell(`${String(x.threshold)}%`),
+      textCell(formatInstant(x.firstAtUtc, zone)),
+      numberCell(formatNumber(x.usedPercentage, "percent"), x.events),
+      numberCell(formatNumber(x.secondsBeforeReset, "duration"), x.events),
+    ],
+  }));
+  return chartSection({
+    id: "nm-crossings",
+    heading: HTML_LABELS.crossingsHeading,
+    span,
+    body: [
+      para(LABELS.crossings),
+      para(LABELS.crossingsCaveat),
+      tableView(
+        HTML_LABELS.crossingsHeading,
+        [
+          c.resets,
+          HTML_LABELS.level,
+          HTML_LABELS.firstReading,
+          HTML_LABELS.usageAtReading,
+          HTML_LABELS.timeLeft,
+        ],
+        rows,
+        true,
+      ),
+    ].join("\n"),
+  });
 }
 
 /**
@@ -1745,7 +1802,10 @@ function renderPage(data: HtmlReportData): string {
       "overview",
       [renderCoverageSection(data, options), renderOverviewCards(data, options)].join("\n"),
     ),
-    tabPanel("windows", renderGaugeSection(data, options)),
+    tabPanel(
+      "windows",
+      [renderGaugeSection(data, options), renderCrossingsSection(data)].join("\n"),
+    ),
     tabPanel("interruptions", renderLockoutSection(data, options)),
     tabPanel("models", renderModelSection(data, options)),
     tabPanel("repos", renderRepoSection(data, options)),

@@ -136,6 +136,21 @@ export interface PlanPeriodRow {
   readonly covers_to: string | null;
 }
 
+/** One row of `obs_weekly_crossings` (D-087): a weekly window's first reading at or above a level. */
+export interface CrossingRow {
+  readonly window: string;
+  readonly reset_at_utc: string;
+  /** 75 or 90. */
+  readonly threshold: number;
+  /** When the first reading at or above the level was observed. */
+  readonly first_at_utc: string;
+  readonly used_percentage: number;
+  /** From that reading to the window's reset. */
+  readonly seconds_before_reset: number;
+  /** The reading's raw line, for `explain`. */
+  readonly raw_line_id: number;
+}
+
 /** Everything observed. */
 export interface ObservedReport {
   readonly limitHits: LimitHits;
@@ -146,6 +161,8 @@ export interface ObservedReport {
   readonly interruptionsByPlan: readonly PlanPeriodRow[];
   readonly notResumed: NotResumed;
   readonly windows: readonly WindowRow[];
+  /** Weekly windows' first readings at or above 75% and 90%, newest window first (D-087, step G3.2). */
+  readonly weeklyCrossings: readonly CrossingRow[];
   readonly byModel: readonly ModelRow[];
   readonly byRepo: readonly RepoRow[];
 }
@@ -207,6 +224,7 @@ export const OBSERVED_VIEWS = [
   "obs_sessions_not_resumed",
   "obs_window_headroom",
   "obs_window_peak",
+  "obs_weekly_crossings",
   "obs_usage_by_model",
   "obs_usage_by_repo",
 ] as const;
@@ -278,6 +296,12 @@ export function loadObserved(db: Db, reportedAt?: Date): ObservedReport {
          ORDER BY open_at_report DESC, h.reset_at_utc DESC, h.window`,
       )
       .all({ at }) as WindowRow[],
+    // Newest window first, as the windows table lists them; within one, the lower level first.
+    weeklyCrossings: observed<CrossingRow>(
+      db,
+      "obs_weekly_crossings",
+      "reset_at_utc DESC, threshold",
+    ),
     byModel: observed<ModelRow>(db, "obs_usage_by_model", "output_tokens DESC, model"),
     byRepo: observed<RepoRow>(db, "obs_usage_by_repo", "output_tokens DESC, repository"),
   };

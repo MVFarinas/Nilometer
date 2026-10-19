@@ -1353,3 +1353,56 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - (c) Leave the wording. Rejected: an output built to be sent to someone else shouldn't contain a date that reads wrong.
 - **Decision:** (b). The README says the days are UTC dates.
 - **Consequences:** `verify`'s output is now also checked against the banned-phrase list, across every branch. Before, only its privacy shapes were checked.
+
+## D-086: A status line value that changed without a new response is its own observation (2026-10-19)
+
+- **Status:** accepted, built (step G3.1). Refines D-044 and D-045.
+- **Context:** Weekly pass 3 (2026-10-18) found the report's chart drawing a weekly window at 96% on Monday evening, beside readings of 35% the same hour.
+  - Two idle sessions were captured on Thursday carrying the account's later total. D-044 dated them to each session's last request, on Monday.
+  - D-044's premise was observed on Claude Code 2.1.270: an idle session repeats its last response's numbers. Since 2.1.281 it holds only mostly. Over the Mac's real data, about 90% or more of response groups never change between captures, but 740 captures changed, 739 of them upward.
+  - D-044 also kept only the latest capture of each response, so a changed value replaced the response's own.
+- **Options:**
+  - (a) Keep D-044, and document the caveat. Rejected: the chart is the main view (D-074), and it put a Thursday value on Monday.
+  - (b) **Within one response's captures, a run of the same value is one observation. The first run is dated by the response, as before. Each later run is dated by its first capture: the value first existed somewhere between the previous capture and that one, and the capture is the earliest time it's known to have existed.** Chosen.
+  - (c) Date every reading by its capture. Rejected: it brings back D-044's problem. A repeated value would look fresh, and the response's time is the better date whenever the value didn't change.
+  - (d) Drop changed captures. Rejected: they're real readings of the account, and principle 1 keeps observations.
+- **Decision:** (b).
+  - **Tolerance:** a change means more than 0.01 percentage points, because payloads carry computed values such as 7.000000000000001.
+  - **Columns:** unchanged. `observed_via` gains `changed_capture`, which `explain` describes as "observed at capture (changed since the session's last request)".
+  - **Unchanged:** capture-time fallbacks (no request found) and `window_open`.
+- **Consequences:** migration 026 recreates `window_readings`. On real data, 2026-10-19:
+  - **Observations:** 740 more. Reading counts in the windows table rise.
+  - **Window values:** peaks are unchanged in all 60 windows. "Last observed" changes in 3:
+    - 100% at 04:05 becomes 102% at 04:08.
+    - 100% at 17:59 becomes 100% at 18:02.
+    - 59% at 02:10 becomes 57% at 02:45, a changed value below an earlier one (next point).
+  - **The week ending 2026-10-18** now reads 15, 35, 91, 95, 96, 98 and 99% by day.
+  - **Not quite fresh:** 20 changed values sit below a value another session reported earlier, from 1 to 25 points. Those sessions' payloads were refreshed with something not quite current. Dated at capture, they read as what that session showed then. "Last observed" is already a lower bound (D-024).
+  - **Text report:** 24 s down to 14 s on the same copy. The projected section is unchanged.
+  - **Unattributed usage (D-025, D-079):** D-044's consequence that no fresh observation lacks a request no longer holds. The view now finds 2 rises, 18 points in one window: it counts requests from every session, and some session nearly always has one. D-079's choice to keep it out of the report still stands.
+
+## D-087: Show when each weekly window first reached 75% and 90% (2026-10-19)
+
+- **Status:** accepted, built (step G3.2).
+- **Context:** In the week ending 2026-10-18, the weekly window reached 91% on its third day and 99% by its last.
+  - **The user's account (context, not a measurement):** they avoided the weekly limit only by tapering their work, and took the Saturday off.
+  - **The Mac's requests** fell from 1,259 to 3,214 a day to 64 to 222 a day.
+  - **What the report showed:** interruptions count only limits that were hit, so this week read as zero.
+  - **What principle 3 allows:** stating how close the window came and when, but not inferring what would have happened without the tapering.
+- **Options:**
+  - (a) Nothing new. Rejected: the week that mattered most read as zero.
+  - (b) **For each weekly window, the first reading at or above 75% and 90%, and the time from it to the reset.** Chosen. It's observed, every row resolves to one reading, and it carries no judgment.
+  - (c) Infer "held back" from a drop in requests after a high reading. Rejected under principle 3: a drop has many causes. It's the user's to read.
+  - (d) A warning when a window is near its limit. Rejected: the report is retrospective, and a warning is advice (the add-metric checklist).
+  - **Other levels:** 80% and 95% were rejected. 75% marks the last quarter and 90% the last tenth, so two levels show how early and how close. Per-user levels were rejected as a setting before anyone has asked for one.
+  - **5-hour windows:** left out. A 5-hour window passes 90% often, with minutes left, and its lockouts already describe it. A weekly crossing is rare and leaves days.
+- **Decision:** (b). `obs_weekly_crossings` takes the counted readings (after D-086's dating) and their time to the reset.
+  - **Where it shows:** under the usage windows table, as one line per window, newest first. It's also a table on the page's usage windows tab, `explain crossings`, and `weeklyCrossings` in JSON.
+  - **The caveat next to it:** the level may have been passed earlier, between readings, so the time left is a lower bound.
+- **Consequences:**
+  - **Migration:** 027 adds the view.
+  - **Real data, 2026-10-19:** two weeks qualify.
+    - **The week ending 2026-10-18:** 75% at Tuesday 13:06 with 4 d 22 h left, and 90% at Tuesday 22:27 with 4 d 13 h left.
+    - **The week ending 2026-09-27:** 75% at 01:50 with 2 d 10 h left, and 90% not reached.
+  - **D-086's effect:** all three readings are changed captures. Before D-086 they would have been dated to earlier responses.
+  - **Report time:** 13.9 s to 14.2 s for the text report.
