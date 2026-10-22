@@ -1406,3 +1406,14 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
     - **The week ending 2026-09-27:** 75% at 01:50 with 2 d 10 h left, and 90% not reached.
   - **D-086's effect:** all three readings are changed captures. Before D-086 they would have been dated to earlier responses.
   - **Report time:** 13.9 s to 14.2 s for the text report.
+
+## D-088: Phase 8 closes with the machine-move gap accepted (2026-10-20)
+
+- **Status:** accepted.
+- **Context:** Phase 8's first criterion asks for 30 consecutive days with the hook installed and 0 hook errors. The error count is 0. But the machine move (D-072) left the status line naming a missing hook from 2026-10-05 to 10-07. The error log can't record a hook that never starts, so a clean 30 days would run to 2026-11-06.
+- **Options:**
+  - (a) Extend Phase 8 to 2026-11-06. Rejected: it waits two weeks for a number already explained. The rest of the phase finishes around 2026-10-26.
+  - (b) **Accept the documented gap, and close Phase 8 after weekly pass 4, around 2026-10-26.** Chosen. The gap and its cause are recorded (D-072). The same failure now prints a warning in `report` (D-081), so it can't recur silently.
+  - (c) Restart the criterion from 2026-10-07 without saying so. Rejected: it would hide the gap.
+- **Decision:** (b).
+- **Consequences:** Phase 8 is done when passes 3 and 4 are recorded on both machines and the chart click-through is done.
