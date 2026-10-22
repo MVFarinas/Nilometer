@@ -44,4 +44,17 @@ First public version.
 - **`verify` names UTC days:** its days are UTC dates, as ccusage counts them. The output now says so, so in the evening the newest day no longer reads as "today" when it's tomorrow's local date.
 - **Readings that change between requests are dated correctly:** newer Claude Code versions sometimes update an idle session's status line with the account's later usage. Such a value used to be dated back to that session's last request, which could draw a late-week number days early on the chart, and it replaced the request's own value. It's now its own reading, dated when it was captured.
 - **Weekly windows at 75% and 90%:** the report and the page now list, for each weekly window, the first reading at or above 75% and 90%, and how long was left before the reset. A week that came close to the limit without hitting it used to show no interruptions and nothing else. `nilometer explain crossings` lists the readings.
+- **Stale readings set aside:** about 1% of status line readings come in lower than an earlier reading in the same window, which can't be true, since usage within a window only rises. Such a reading could become a window's "last observed usage" (a window locked at 100% showed 73%), and it made the usage lines dip. It's now marked stale: counted under the windows table, listed in `nilometer explain headroom`, drawn as a hollow point off the line, and never used as the last observed value.
+- **Lockouts first:** the interruptions section now leads with lockouts, and each says how many requests it refused and from how many sessions, for example "13 refused requests in 3 sessions". Before, those 13 read as "13 hits", which looked like 13 separate limits. The total reads "Limit hits: 35 in 8 lockouts".
+- **Page layout fixes:**
+  - Lockout labels no longer run off the chart; where they don't fit beside the bars, they go under them.
+  - A time axis uses one style ("1 h 30 m", never "90 m" beside "2 h").
+  - A window with a lockout gets a plain marker instead of a number too small to read.
+  - Number columns line up under their headers, and tables scroll in their box on a narrow screen instead of stacking their text.
+  - The Overview's small charts are clean pictures without unreadable text.
+  - Labels no longer repeat, and lines that only say "0" are left off the page; the text report keeps them.
+  - The repository chart names the top 20 instead of 10.
+  - The first section is now "Where the numbers come from", with a sentence on why usage percentages start later than the session logs.
+- **Less text on the page:** each section's explanations now sit behind a small "i" beside its heading, which opens on hover, keyboard focus or a tap, opens along the bottom on a narrow screen, and prints in full. Caveats that change what a number means stay beside it. The page's visible paragraph text is about 30% shorter.
+- **Repository aliases:** `nilometer alias set <old-path> <new-path>` counts a renamed or moved project's old path under its new one, so it shows as one repository. The report lists each alias you entered under the repository table, and `nilometer explain by-repo` marks each request an alias moved. `alias list` and `alias remove` show and undo them.
 - **Install guide:** [`docs/requirements.md`](docs/requirements.md) explains how to check for and install everything Nilometer needs, including how to get Node.js 24 and not a newer release.

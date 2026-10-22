@@ -29,6 +29,7 @@ import type {
   PlanPeriodRef,
   RenderChart,
   RepoChartInput,
+  SeriesPoint,
   WindowSeries,
 } from "./html-contract.js";
 import {
@@ -43,6 +44,7 @@ import type { BurnRateRow } from "./queries.js";
 import {
   LABELS,
   autoContinuedText,
+  lockoutHitsText,
   describeBurnRate,
   displayPath,
   planPeriodMonths,
@@ -325,6 +327,41 @@ function percentY(scale: PercentScale, percent: number): number {
 }
 
 /**
+ * The readings a usage line joins: those that aren't stale (D-089). A stale reading is below an
+ * earlier one in its window, so joining it would draw usage falling, which it can't.
+ * @param points - A window's readings in time order.
+ * @returns The ones the line passes through.
+ */
+function onLine(points: readonly SeriesPoint[]): SeriesPoint[] {
+  return points.filter((p) => !p.stale);
+}
+
+/**
+ * A reading's marker: filled on the line, hollow and muted off it when stale (D-089).
+ * @param p - The reading.
+ * @returns The circle's size and paint.
+ */
+function pointStyle(p: SeriesPoint): Record<string, string | number> {
+  // A ring in the surface color keeps overlapping points apart.
+  return p.stale
+    ? { r: 3, fill: "var(--surface)", stroke: "var(--muted)", "stroke-width": 1.5 }
+    : { r: 4, fill: "var(--water)", stroke: "var(--surface)", "stroke-width": 2 };
+}
+
+/**
+ * A reading's hover title, saying when it's stale and why it's off the line (D-089).
+ * @param p - The reading.
+ * @param tz - Display zone.
+ * @returns The title text.
+ */
+function pointTitle(p: SeriesPoint, tz: string): string {
+  const reading = `${formatNumber(p.used, "percent")} at ${formatInstant(p.atUtc, tz)}`;
+  return p.stale
+    ? `Stale reading ${reading}: below an earlier reading in this window, so not used`
+    : `Observed usage ${reading}`;
+}
+
+/**
  * Draws the graduated percentage scale and the user's own 100% line.
  * @param scale - The chart's scale.
  * @param left - Plot's left edge.
@@ -486,8 +523,10 @@ function gaugeColumn(
     );
   }
   if (w.limitHits > 0) {
-    // On top of the column: above the fill, or above the baseline when no reading was usable.
-    const y = percentY(scale, w.peak ?? w.last ?? 0) - 12;
+    // A plain marker on top of the column: above the fill, or above the baseline when no reading
+    // was usable. No number inside: at this size it couldn't be read, and markers on neighbouring
+    // columns overlapped. The count is in its title, the table, and the events it lists (D-090).
+    const y = percentY(scale, w.peak ?? w.last ?? 0) - 9;
     parts.push(
       el(
         "circle",
@@ -496,23 +535,13 @@ function gaugeColumn(
           "data-events": eventList(w.hitEvents),
           cx,
           cy: y,
-          r: 8,
+          r: 5,
           fill: "var(--limit)",
           stroke: "var(--surface)",
-          "stroke-width": 2,
+          "stroke-width": 1.5,
         },
-        title(`${plural(w.limitHits, "limit hit", "limit hits")} in the ${name}`),
+        title(`Locked out in the ${name}: ${plural(w.limitHits, "limit hit", "limit hits")}`),
       ),
-      // The count sits inside the colored disc, so it takes the surface color to stay legible.
-      text(cx, y + 3.5, formatNumber(w.limitHits, "count"), {
-        class: "nm-hit-count",
-        "text-anchor": "middle",
-        fill: "var(--surface)",
-        "font-size": 10,
-        "font-weight": 600,
-        "aria-hidden": "true",
-        "pointer-events": "none",
-      }),
     );
   }
   if (w.open) {
@@ -709,8 +738,8 @@ export const renderWindowSeries: RenderChart<WindowSeries> = (series, options) =
       "path",
       {
         class: "nm-data nm-line",
-        "data-events": eventList(series.points.map((p) => p.event)),
-        d: series.points
+        "data-events": eventList(onLine(series.points).map((p) => p.event)),
+        d: onLine(series.points)
           .map(
             (p, i) =>
               `${i === 0 ? "M" : "L"}${num(timeX(p.atUtc))} ${num(percentY(scale, p.used))}`,
@@ -734,13 +763,9 @@ export const renderWindowSeries: RenderChart<WindowSeries> = (series, options) =
           "data-events": String(p.event),
           cx: timeX(p.atUtc),
           cy: percentY(scale, p.used),
-          r: 4,
-          fill: "var(--water)",
-          // A ring in the surface color keeps overlapping points apart.
-          stroke: "var(--surface)",
-          "stroke-width": 2,
+          ...pointStyle(p),
         },
-        title(`Observed usage ${formatNumber(p.used, "percent")} at ${formatInstant(p.atUtc, tz)}`),
+        title(pointTitle(p, tz)),
       ),
     ),
     text(left, baseline + 16, formatInstant(new Date(from).toISOString(), tz)),
@@ -849,7 +874,19 @@ export const renderCoverage: RenderChart<readonly CoverageRow[]> = (rows, option
 };
 
 /** Layout of the lockout chart. */
-const LOCKOUT = { left: 124, valueRoom: 110, top: 8, row: 28 } as const;
+const LOCKOUT = {
+  left: 124,
+  top: 8,
+  row: 28,
+  /** Extra row height when a label sits under its bar. */
+  labelRow: 16,
+  /** Width of one label character at the chart's 11 px monospace, generously. */
+  charWidth: 6.8,
+  /** Gap between a bar's end and its label (12 past a resumption ring). */
+  gap: 12,
+  /** Below this share of the width for bars, labels go under the bars. */
+  minPlotShare: 0.5,
+} as const;
 
 /** Duration tick steps in seconds, from a minute to four weeks. */
 const DURATION_STEPS = [
@@ -871,21 +908,22 @@ function durationAxis(longest: number): { step: number; end: number } {
 }
 
 /**
- * Labels a duration tick in its largest whole unit.
+ * Labels a duration tick as the report writes durations, so one axis never mixes `90 m` with `2 h`.
  * @param seconds - A multiple of 60.
- * @returns `0`, `10 m`, `2 h`, or `3 d`.
+ * @returns `0`, `10 m`, `1 h 30 m`, `2 h`, or `3 d`.
  */
 function durationTick(seconds: number): string {
   if (seconds === 0) {
     return "0";
   }
   if (seconds % 86_400 === 0) {
-    return `${seconds / 86_400} d`;
+    return `${String(seconds / 86_400)} d`;
   }
   if (seconds % 3_600 === 0) {
-    return `${seconds / 3_600} h`;
+    return `${String(seconds / 3_600)} h`;
   }
-  return `${seconds / 60} m`;
+  // Past an hour, hours and minutes, as formatDuration writes them; under it, minutes.
+  return seconds > 3_600 ? formatDuration(seconds) : `${String(seconds / 60)} m`;
 }
 
 /**
@@ -939,14 +977,37 @@ function afterReset(bar: LockoutBar): string {
  * @returns One `<svg>`; a "No data" svg when there are no lockouts.
  */
 export const renderLockouts: RenderChart<readonly LockoutBar[]> = (bars, options) => {
-  const label = "Elapsed lockout time, limit hit to reset";
+  const label = "Elapsed lockout time, first limit hit to reset";
   if (bars.length === 0) {
     return noData("lockouts", options, label);
   }
   const tz = options.timeZone;
   const axis = durationAxis(Math.max(...bars.map((b) => b.seconds)));
   const left = LOCKOUT.left;
-  const plotWidth = options.width - left - LOCKOUT.valueRoom;
+  // Each bar's label, as the text report words it (D-077, D-090).
+  const labels = bars.map(
+    (bar) =>
+      `${formatDuration(bar.seconds)}, ${lockoutHitsText({
+        hits: bar.hits,
+        refused_requests: bar.refusedRequests,
+        sessions: bar.sessions,
+      })}${bar.autoContinuations > 0 ? ", resumed by Claude Code" : ""}`,
+  );
+  const room = options.width - left - 4;
+  // The widest plot at which every label still ends inside the chart, beside its bar.
+  const fitted = Math.min(
+    room,
+    ...bars.map(
+      (bar, i) =>
+        (room - LOCKOUT.gap - (labels[i] ?? "").length * LOCKOUT.charWidth) /
+        (bar.seconds / axis.end),
+    ),
+  );
+  // Too narrow for that (a phone): every label goes under its bar instead. A thumbnail has none.
+  const compact = options.compact === true;
+  const under = !compact && fitted < room * LOCKOUT.minPlotShare;
+  const plotWidth = under || compact ? room : fitted;
+  const row = LOCKOUT.row + (under ? LOCKOUT.labelRow : 0);
   // One lane per plan period once bars carry one (D-075): a heading row above each period's first
   // bar. Bars come in time order and periods never overlap, so each period's bars are adjacent.
   const lanes = bars.map((bar, i) => {
@@ -959,7 +1020,7 @@ export const renderLockouts: RenderChart<readonly LockoutBar[]> = (bars, options
   /** Row index of each bar, counting the lane headings above it. */
   const rowOf = bars.map((_, i) => i + lanes.slice(0, i + 1).filter((l) => l !== undefined).length);
   const rows = bars.length + lanes.filter((l) => l !== undefined).length;
-  const bottom = LOCKOUT.top + rows * LOCKOUT.row;
+  const bottom = LOCKOUT.top + rows * row;
   const parts: string[] = [];
   for (let k = 0; k * axis.step <= axis.end; k += 1) {
     const x = left + ((k * axis.step) / axis.end) * plotWidth;
@@ -980,12 +1041,12 @@ export const renderLockouts: RenderChart<readonly LockoutBar[]> = (bars, options
     );
   }
   bars.forEach((bar, i) => {
-    const y = LOCKOUT.top + (rowOf[i] ?? i) * LOCKOUT.row;
+    const y = LOCKOUT.top + (rowOf[i] ?? i) * row;
     const lane = lanes[i];
     if (lane !== undefined) {
       // The heading sits in the row above the bar, in a text color, never the bars' color.
       parts.push(
-        text(0, y - LOCKOUT.row + 18, lane, {
+        text(0, y - row + 18, lane, {
           class: "nm-lane",
           fill: "var(--ink)",
           "font-weight": 600,
@@ -993,7 +1054,12 @@ export const renderLockouts: RenderChart<readonly LockoutBar[]> = (bars, options
       );
     }
     const width = (bar.seconds / axis.end) * plotWidth;
-    const hits = plural(bar.hits, "hit", "hits");
+    // What the lockout's hits were, as the text report says it (D-090).
+    const hits = lockoutHitsText({
+      hits: bar.hits,
+      refused_requests: bar.refusedRequests,
+      sessions: bar.sessions,
+    });
     parts.push(
       text(0, y + 18, formatInstant(bar.lockedFromUtc, tz), {
         class: "nm-label",
@@ -1012,7 +1078,7 @@ export const renderLockouts: RenderChart<readonly LockoutBar[]> = (bars, options
           fill: "var(--limit)",
         },
         title(
-          `Elapsed lockout time ${formatDuration(bar.seconds)}, ${formatCoverage(bar.lockedFromUtc, bar.lockedUntilUtc, tz)}, ${plural(bar.hits, "limit hit", "limit hits")}; ${afterReset(bar)}`,
+          `Elapsed lockout time ${formatDuration(bar.seconds)}, ${formatCoverage(bar.lockedFromUtc, bar.lockedUntilUtc, tz)}, ${hits}; ${afterReset(bar)}`,
         ),
       ),
     );
@@ -1037,15 +1103,21 @@ export const renderLockouts: RenderChart<readonly LockoutBar[]> = (bars, options
         ),
       );
     }
-    parts.push(
-      // Past the ring when there is one, so the two never overlap.
-      text(
-        left + width + (resumed ? 12 : 6),
-        y + 18,
-        `${formatDuration(bar.seconds)}, ${hits}${resumed ? ", resumed by Claude Code" : ""}`,
-        { class: "nm-value", fill: "var(--ink-2)" },
-      ),
-    );
+    if (!compact) {
+      parts.push(
+        // Under the bar when labels don't fit beside the bars; otherwise beside it.
+        under
+          ? text(left, y + 18 + LOCKOUT.labelRow, labels[i] ?? "", {
+              class: "nm-value",
+              fill: "var(--ink-2)",
+            })
+          : // Past the ring when there is one, so the two never overlap.
+            text(left + width + (resumed ? 12 : 6), y + 18, labels[i] ?? "", {
+              class: "nm-value",
+              fill: "var(--ink-2)",
+            }),
+      );
+    }
   });
   const covered = extent(bars.flatMap((b) => [b.lockedFromUtc, b.lockedUntilUtc])) as {
     from: string;
@@ -1128,7 +1200,9 @@ export const renderModelBars: RenderChart<readonly ModelBar[]> = (bars, options)
 };
 
 /** Repositories the chart draws by name; the rest share one bar, and the table lists every one. */
-export const REPO_BARS = 10;
+// 20, not 10 (2026-10-22 click-through): on real data, repositories 11 to 20 held 3.0M of the 3.5M
+// output tokens the Other bar folded together.
+export const REPO_BARS = 20;
 
 /** Layout of the repository chart (step G2.1). */
 const REPOS = {
@@ -1360,8 +1434,8 @@ export const renderBurnRate: RenderChart<BurnChartInput> = (input, options) => {
         "path",
         {
           class: "nm-data nm-line",
-          "data-events": eventList(points.map((p) => p.event)),
-          d: points
+          "data-events": eventList(onLine(points).map((p) => p.event)),
+          d: onLine(points)
             .map(
               (p, i) =>
                 `${i === 0 ? "M" : "L"}${num(timeX(Date.parse(p.atUtc)))} ${num(percentY(scale, p.used))}`,
@@ -1383,14 +1457,9 @@ export const renderBurnRate: RenderChart<BurnChartInput> = (input, options) => {
             "data-events": String(p.event),
             cx: timeX(Date.parse(p.atUtc)),
             cy: percentY(scale, p.used),
-            r: 4,
-            fill: "var(--water)",
-            stroke: "var(--surface)",
-            "stroke-width": 2,
+            ...pointStyle(p),
           },
-          title(
-            `Observed usage ${formatNumber(p.used, "percent")} at ${formatInstant(p.atUtc, tz)}`,
-          ),
+          title(pointTitle(p, tz)),
         ),
       ),
     );

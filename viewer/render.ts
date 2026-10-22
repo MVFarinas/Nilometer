@@ -32,9 +32,13 @@ export const LABELS = {
   observed: "OBSERVED",
   projected: "PROJECTED: estimates derived from the observations above, not observations",
   interruptions: "Interruptions",
-  limitHits: "Rate-limit interruptions",
-  midTask: "Mid-task interruptions (the stopped request was answering a tool result)",
-  lockout: "Elapsed lockout time (limit hit to reset, overlapping hits counted once)",
+  // D-090 (step G4.2): lockouts lead; a logged limit hit is a refused request, and one lockout can hold many.
+  limitHits: "Limit hits",
+  limitHitsNote:
+    "Each logged hit is a request the limit refused. A lockout refuses every request until its reset, so one lockout can hold several hits.",
+  midTask: "Mid-task interruptions (the refused request was answering a tool result)",
+  lockout:
+    "Elapsed lockout time (first limit hit to the window's reset, overlapping lockouts counted once)",
   resetToNextRequest: "reset to next Claude Code request",
   // D-081 (step G2.9): a status line pointing at a hook file that isn't there records nothing.
   hookMissing:
@@ -60,11 +64,15 @@ export const LABELS = {
   // D-087 (step G3.2): a weekly window near its limit, stated as readings, without inferring why.
   crossings:
     "Weekly windows at 75% and 90%: the first reading at or above each level, and the time from it to the reset",
+  crossingsWhat: "The first reading at or above each level, and the time from it to the reset.",
   crossingsCaveat:
     "A level may have been passed earlier, between readings, so the time left is a lower bound.",
   noCrossings: "No weekly window has a reading at or above 75%.",
+  // D-089 (step G4.1): usage within a window only rises, so a lower reading is stale.
+  staleReadings: "Readings below an earlier reading in their window, not used",
   byModel: "Claude Code tokens by model",
   byRepo: "Claude Code tokens by repository",
+  alias: "Alias you entered (nilometer alias)",
   burnRate: "Burn rate",
   burnRatePremise:
     "Premise: each window's usage started at 0% when it began, and its average rate since then continues.",
@@ -94,7 +102,7 @@ export const LABELS = {
     planPrice: "Plan price entered",
     plan: "Plan",
     months: "Months",
-    hits: "Hits",
+    hits: "Limit hits",
     lockouts: "Lockouts",
     elapsed: "Elapsed lockout time",
     priced: "Priced requests",
@@ -229,6 +237,28 @@ export function repoKindName(kind: string): string {
     default:
       return "not resolved yet";
   }
+}
+
+/**
+ * Says what one lockout's limit hits were (D-090): requests the limit refused, from how many
+ * sessions, and any status line readings at 100% with no refusal logged (D-023).
+ * @param interval - The lockout.
+ * @returns E.g. `13 refused requests in 3 sessions`, or `1 status line reading at 100%`.
+ */
+export function lockoutHitsText(
+  interval: Pick<LockoutInterval, "hits" | "refused_requests" | "sessions">,
+): string {
+  const parts: string[] = [];
+  if (interval.refused_requests > 0) {
+    parts.push(
+      `${plural(interval.refused_requests, "refused request", "refused requests")} in ${plural(interval.sessions, "session", "sessions")}`,
+    );
+  }
+  const readings = interval.hits - interval.refused_requests;
+  if (readings > 0) {
+    parts.push(`${plural(readings, "status line reading", "status line readings")} at 100%`);
+  }
+  return parts.join(" and ");
 }
 
 /**
@@ -441,21 +471,23 @@ export function renderObserved(observed: ObservedReport, timeZone: string, home 
     "",
     LABELS.interruptions,
     `  Covers: session logs ${logs}; status line ${statusLine}`,
-    `  ${LABELS.limitHits}: ${n(hits.hits, "count")}`,
-    `    5-hour window: ${n(hits.five_hour_hits, "count")} | weekly window: ${n(hits.seven_day_hits, "count")} | window unknown: ${n(hits.unknown_window_hits, "count")}`,
-    `    From the session logs: ${n(hits.logged_hits, "count")} | seen only in the status line: ${n(hits.status_line_only_hits, "count")}`,
-    `  ${LABELS.midTask}: ${n(midTask.mid_task, "count")}`,
-    `    At the start of a turn: ${n(midTask.turn_start, "count")} | position unknown: ${n(midTask.position_unknown, "count")}`,
+    // Lockouts first: one lockout is one limit reached, however many requests it refused (D-090).
     `  ${LABELS.lockout}: ${n(lockout.lockout_seconds, "duration")} across ${plural(lockout.intervals, "lockout", "lockouts")}`,
-    `    Hits with an unknown reset time, not included: ${n(lockout.hits_with_unknown_reset, "count")}`,
+    `    Limit hits with an unknown reset time, in no lockout: ${n(lockout.hits_with_unknown_reset, "count")}`,
     ...observed.lockoutIntervals.map(
       (interval) =>
-        `    ${span(interval.locked_from_utc, interval.locked_until_utc, timeZone)}: ${n(interval.lockout_seconds, "duration")}, ${plural(interval.hits, "hit", "hits")}; ${LABELS.resetToNextRequest}: ${
+        `    ${span(interval.locked_from_utc, interval.locked_until_utc, timeZone)}: ${n(interval.lockout_seconds, "duration")}, ${lockoutHitsText(interval)}; ${LABELS.resetToNextRequest}: ${
           interval.next_request_at_utc === null
             ? "no request after the reset in the logs"
             : n(interval.reset_to_next_request_seconds, "duration")
         }${autoContinuedText(interval)}`,
     ),
+    `  ${LABELS.limitHits}: ${n(hits.hits, "count")} in ${plural(lockout.intervals, "lockout", "lockouts")}`,
+    `    ${LABELS.limitHitsNote}`,
+    `    5-hour window: ${n(hits.five_hour_hits, "count")} | weekly window: ${n(hits.seven_day_hits, "count")} | window unknown: ${n(hits.unknown_window_hits, "count")}`,
+    `    From the session logs: ${n(hits.logged_hits, "count")} | seen only in the status line: ${n(hits.status_line_only_hits, "count")}`,
+    `  ${LABELS.midTask}: ${n(midTask.mid_task, "count")}`,
+    `    At the start of a turn: ${n(midTask.turn_start, "count")} | position unknown: ${n(midTask.position_unknown, "count")}`,
     ...renderByPlan(observed.interruptionsByPlan, timeZone),
     `  ${LABELS.notResumed}: ${n(notResumed.sessions_not_resumed, "count")} of ${plural(notResumed.sessions_with_hits, "session", "sessions")} with a hit`,
     `    Reset came after the logs end: ${n(notResumed.reset_after_coverage, "count")} | reset time unknown: ${n(notResumed.reset_unknown, "count")}`,
@@ -490,6 +522,10 @@ export function renderObserved(observed: ObservedReport, timeZone: string, home 
       lines.push(
         `  Readings captured after their window's reset, not counted: ${n(afterReset, "count")}`,
       );
+    }
+    const stale = observed.windows.reduce((sum, w) => sum + w.readings_stale, 0);
+    if (stale > 0) {
+      lines.push(`  ${LABELS.staleReadings}: ${n(stale, "count")}`);
     }
     lines.push(...renderCrossings(observed.weeklyCrossings, timeZone));
   }
@@ -533,6 +569,11 @@ export function renderObserved(observed: ObservedReport, timeZone: string, home 
           ],
           row,
         })),
+      ),
+      // D-092: each alias the user entered, since it's their link and not something observed.
+      ...observed.repositoryAliases.map(
+        (a) =>
+          `  ${LABELS.alias}: ${displayPath(a.from, home)} counts under ${displayPath(a.to, home)}`,
       ),
     );
   }

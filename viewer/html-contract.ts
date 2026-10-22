@@ -86,6 +86,8 @@ export interface SeriesPoint {
   readonly used: number;
   /** The reading's raw line ID. */
   readonly event: number;
+  /** Below an earlier reading in its window, so drawn apart from the line and used for no value (D-089). */
+  readonly stale: boolean;
 }
 
 /** A limit hit placed on a window's line over time. */
@@ -150,6 +152,10 @@ export interface LockoutBar {
   readonly seconds: number;
   /** Hits merged into the interval. */
   readonly hits: number;
+  /** Its logged hits, each a request the limit refused (D-090). */
+  readonly refusedRequests: number;
+  /** Distinct sessions with a hit in it (D-090). */
+  readonly sessions: number;
   /** Reset to the next Claude Code request, in seconds; null when none followed. */
   readonly resetToNextRequestSeconds: number | null;
   /** True when the reset came after the logs end, so no request could follow yet. */
@@ -371,6 +377,8 @@ export interface HtmlReportData {
   readonly repos: readonly RepoBar[];
   /** The home directory repository paths are shortened against (`~`), as the text report does; "" for none. */
   readonly home: string;
+  /** The aliases the user entered, by old path (D-092); listed under the repository chart. */
+  readonly repositoryAliases: readonly { readonly from: string; readonly to: string }[];
   /** The hook file the status line names when it doesn't exist (D-081); null otherwise. */
   readonly missingHookPath: string | null;
   /** Open windows' burn rates, projected (below the seam), as the text report lists them (step G2.1). */
@@ -418,6 +426,8 @@ export interface ChartOptions {
   readonly timeZone: string;
   /** The SVG `viewBox` width; the page scales it to its container. */
   readonly width: number;
+  /** True for an Overview thumbnail: rows stay compact and value labels are left out. */
+  readonly compact?: boolean;
 }
 
 /** What the repository chart draws: the bars, and the home directory their labels shorten against. */

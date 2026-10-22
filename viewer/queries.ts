@@ -7,6 +7,7 @@
  * holds only `obs_` views and {@link PROJECTED_VIEWS} only `proj_` views. The SQL here only selects
  * whole views: every computation stays in the views themselves.
  */
+import { type AliasRow, listAliases } from "../core/plans/repository-aliases.js";
 import type { Db } from "../core/db/database.js";
 
 /** `obs_limit_hits`. */
@@ -56,6 +57,10 @@ export interface LockoutInterval {
   readonly auto_continuations: number;
   /** Seconds from the reset to the first of those; null when none. */
   readonly first_auto_continuation_seconds: number | null;
+  /** Distinct sessions with a hit in this lockout (D-090). */
+  readonly sessions: number;
+  /** Its logged hits, each a request the limit refused; the rest are status line readings at 100% (D-090). */
+  readonly refused_requests: number;
 }
 
 /** `obs_sessions_not_resumed`. */
@@ -77,6 +82,8 @@ export interface WindowRow {
   readonly peak_used_percentage: number | null;
   readonly readings: number;
   readonly readings_after_reset: number;
+  /** Counted readings below an earlier one in the window, used for no value (D-089). */
+  readonly readings_stale: number;
   /** 1 while the window hadn't reset as of the last status line reading (the view's own rule). */
   readonly window_open: number;
   /**
@@ -165,6 +172,8 @@ export interface ObservedReport {
   readonly weeklyCrossings: readonly CrossingRow[];
   readonly byModel: readonly ModelRow[];
   readonly byRepo: readonly RepoRow[];
+  /** The aliases the user entered, by old path (D-092): their links, listed beside the numbers they move. */
+  readonly repositoryAliases: readonly AliasRow[];
 }
 
 /** One row of `proj_burn_rate`. */
@@ -304,6 +313,7 @@ export function loadObserved(db: Db, reportedAt?: Date): ObservedReport {
     ),
     byModel: observed<ModelRow>(db, "obs_usage_by_model", "output_tokens DESC, model"),
     byRepo: observed<RepoRow>(db, "obs_usage_by_repo", "output_tokens DESC, repository"),
+    repositoryAliases: listAliases(db),
   };
 }
 

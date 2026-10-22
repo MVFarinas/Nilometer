@@ -19,7 +19,7 @@ import { ingestLogs } from "../../core/ingest/ingest.js";
 import { loadPriceTable, syncPrices } from "../../core/pricing/prices.js";
 import { stageState, statesOf } from "../../scripts/fidelity/loader-check.js";
 import { loadObserved, loadProjected } from "../../viewer/queries.js";
-import { type ReportInput, renderReport, reportJson } from "../../viewer/render.js";
+import { LABELS, type ReportInput, renderReport, reportJson } from "../../viewer/render.js";
 import { METRIC_NAMES, explain, renderExplanation } from "../../viewer/explain.js";
 import { ingest, request } from "../unit/core/metrics/helpers.js";
 import { bannedPhrases, findBanned } from "./banned-phrases.js";
@@ -125,10 +125,11 @@ describe("A9: banned phrases in viewer output", () => {
   });
 
   it("renders weekly crossings without a banned phrase, both levels and the caveat (D-087)", () => {
-    // No fixture case reaches 75% weekly, so the crossing lines only render here.
+    // No fixture case reaches 75% weekly, so the crossing lines only render here; the third
+    // reading, 60 after 95, is stale (D-089), so its count line renders too.
     const crossed = ingest(
       {},
-      [80, 95].map((used, i) => ({
+      [80, 95, 60].map((used, i) => ({
         at: `2026-09-0${String(i + 3)}T12:00:00Z`,
         session: "s",
         window: "seven_day",
@@ -139,8 +140,12 @@ describe("A9: banned phrases in viewer output", () => {
     const input = inputFor(crossed);
     const text = renderReport(input);
     expect(text).toContain("90% first read");
+    expect(text).toContain(LABELS.staleReadings);
     expect(findBanned(text, phrases)).toEqual([]);
     expect(findBanned(JSON.stringify(reportJson(input)), phrases)).toEqual([]);
+    const headroom = renderExplanation(explain(crossed, "headroom"), FIXTURE_TIME_ZONE, "", 50);
+    expect(headroom.join("\n")).toContain("stale reading, not used");
+    expect(findBanned(headroom.join("\n"), phrases)).toEqual([]);
   });
 
   it("renders every explain view without a banned phrase, a changed reading's too (D-086)", () => {

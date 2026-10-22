@@ -25,6 +25,8 @@ Commands:
                               api-list-price.
   plan-price                  Enter or list the plan's USD list price, shown
                               beside API list price.
+  alias                       Count a renamed or moved project's old path under
+                              its new one.
   verify [options]            Compare this tool's token totals against ccusage,
                               on your own logs. Prints a verdict and any
                               differing days, never a path, repository name, or
@@ -34,6 +36,17 @@ Commands:
                               setting it replaced. Recorded data is kept unless
                               --delete-data is given.
   help [command]              display help for command"
+`;
+
+exports[`runCli > prints stable help for alias set 1`] = `
+"Usage: nilometer alias set [options] <old-path> <new-path>
+
+Count every request under <old-path> as <new-path>. Re-entering an old path
+replaces its target.
+
+Options:
+  --data-dir <path>  data directory holding the database
+  -h, --help         display help for command"
 `;
 
 exports[`runCli > prints stable help for explain 1`] = `

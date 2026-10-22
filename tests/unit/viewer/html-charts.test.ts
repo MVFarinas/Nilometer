@@ -146,9 +146,9 @@ const SERIES: WindowSeries = {
   window: "five_hour",
   resetAtUtc: "2026-09-03T13:00:00.000Z",
   points: [
-    { atUtc: "2026-09-03T10:00:00.000Z", used: 20, event: 1 },
-    { atUtc: "2026-09-03T11:00:00.000Z", used: 60, event: 2 },
-    { atUtc: "2026-09-03T12:00:00.000Z", used: 103, event: 3 },
+    { atUtc: "2026-09-03T10:00:00.000Z", used: 20, event: 1, stale: false },
+    { atUtc: "2026-09-03T11:00:00.000Z", used: 60, event: 2, stale: false },
+    { atUtc: "2026-09-03T12:00:00.000Z", used: 103, event: 3, stale: false },
   ],
   hits: [{ atUtc: "2026-09-03T12:30:00.000Z", event: 4 }],
 };
@@ -160,6 +160,8 @@ const LOCKOUTS: readonly LockoutBar[] = [
     lockedUntilUtc: "2026-09-03T13:00:00.000Z",
     seconds: 3600,
     hits: 1,
+    refusedRequests: 1,
+    sessions: 1,
     resetToNextRequestSeconds: 300,
     resetAfterCoverage: false,
     events: [5],
@@ -173,6 +175,8 @@ const LOCKOUTS: readonly LockoutBar[] = [
     lockedUntilUtc: "2026-09-04T09:30:00.000Z",
     seconds: 1800,
     hits: 2,
+    refusedRequests: 2,
+    sessions: 1,
     resetToNextRequestSeconds: null,
     resetAfterCoverage: true,
     events: [6, 7],
@@ -315,13 +319,15 @@ describe("renderGauge", () => {
   it("flags limit hits on top of the column with the count and the hit lines", () => {
     const hit = only(svg, "nm-hit");
     expect(hit["data-events"]).toBe("8");
-    // 12 above the peak's top: 70 - 12 = 58; column centre 130.667.
-    expect(hit.cy).toBe("58");
+    // 9 above the peak's top: 70 - 9 = 61; column centre 130.667. A plain marker, radius 5, with
+    // no number inside it: the count is in its title (2026-10-22 click-through).
+    expect(hit.cy).toBe("61");
     expect(hit.cx).toBe("130.67");
+    expect(hit.r).toBe("5");
     expect(svg).toContain(
-      "<title>1 limit hit in the 5-hour window resetting 2026-09-03 13:00</title>",
+      "<title>Locked out in the 5-hour window resetting 2026-09-03 13:00: 1 limit hit</title>",
     );
-    expect(only(svg, "nm-hit-count").y).toBe("61.5");
+    expect(byClass(svg, "nm-hit-count")).toEqual([]);
   });
 
   it("labels the open windows and states the span of resets", () => {
@@ -374,8 +380,8 @@ describe("renderGauge", () => {
     );
     expect(byClass(none, "nm-peak")).toEqual([]);
     expect(byClass(none, "nm-last")).toEqual([]);
-    // No values: top 110, baseline y(0) = 276, flag 12 above it: 264.
-    expect(only(none, "nm-hit").cy).toBe("264");
+    // No values: top 110, baseline y(0) = 276, marker 9 above it: 267.
+    expect(only(none, "nm-hit").cy).toBe("267");
     expect(only(none, "nm-col")["aria-label"]).toContain(
       "peak unknown, last observed usage unknown",
     );
@@ -461,7 +467,7 @@ describe("renderWindowSeries", () => {
     const late = renderWindowSeries(
       {
         ...SERIES,
-        points: [{ atUtc: "2026-09-03T10:00:00.000Z", used: 50, event: 1 }],
+        points: [{ atUtc: "2026-09-03T10:00:00.000Z", used: 50, event: 1, stale: false }],
         hits: [{ atUtc: "2026-09-03T14:00:00.000Z", event: 2 }],
       },
       { timeZone: "UTC", width: 596 },
@@ -474,7 +480,11 @@ describe("renderWindowSeries", () => {
 
   it("keeps a single reading taken exactly at the reset on the left edge", () => {
     const single = renderWindowSeries(
-      { ...SERIES, points: [{ atUtc: "2026-09-03T13:00:00.000Z", used: 50, event: 9 }], hits: [] },
+      {
+        ...SERIES,
+        points: [{ atUtc: "2026-09-03T13:00:00.000Z", used: 50, event: 9, stale: false }],
+        hits: [],
+      },
       OPTIONS,
     );
     // Zero-length axis becomes 1 ms, and the reading is its start: x = 44.
@@ -551,7 +561,10 @@ describe("renderCoverage", () => {
 });
 
 describe("renderLockouts", () => {
-  // Width 600: bars from 124, 600 - 124 - 110 = 366 wide.
+  // Width 600: bars from 124, room 600 - 124 - 4 = 472. The 1-hour bar's label, "1 h 0 m, 1 refused
+  // request in 1 session", is 39 characters, 39 * 6.8 = 265.2, so beside it the plot could be at
+  // most (472 - 12 - 265.2) / (3600 / 3600) = 194.8 wide: under half of 472 (236). Labels go under
+  // the bars, the plot takes the whole room, 472, and rows are 28 + 16 = 44 tall.
   const svg = renderLockouts(LOCKOUTS, OPTIONS);
 
   it("rings a lockout Claude Code resumed by itself, with the marker lines (D-077, step G2.4)", () => {
@@ -567,16 +580,17 @@ describe("renderLockouts", () => {
       ],
       OPTIONS,
     );
-    // The first bar runs from 124 for 366 (3600 of 3600 s): the ring sits at its end, 490, in the
+    // The first bar runs from 124 for 472 (3600 of 3600 s): the ring sits at its end, 596, in the
     // middle of its row, 8 + 14 = 22. The second bar has no marker, so no ring.
     const ring = only(out, "nm-resumed");
-    expect([ring.cx, ring.cy, ring.r, ring["data-events"]]).toEqual(["490", "22", "5", "21"]);
+    expect([ring.cx, ring.cy, ring.r, ring["data-events"]]).toEqual(["596", "22", "5", "21"]);
     expect(out).toContain(
       "<title>Resumed by Claude Code (logged auto-continuation): 1 session, 46 s after the reset</title>",
     );
-    // The value label moves past the ring, 490 + 12 = 502, and says so in words.
-    expect(texts(out)).toContain("1 h 0 m, 1 hit, resumed by Claude Code");
-    expect(tags(out).find((t) => t.attrs.x === "502")?.tag).toBe("text");
+    // The value label sits under the bar, at 124 and 8 + 18 + 16 = 42, and says so in words.
+    expect(texts(out)).toContain("1 h 0 m, 1 refused request in 1 session, resumed by Claude Code");
+    const label = byClass(out, "nm-value")[0]?.attrs;
+    expect([label?.x, label?.y]).toEqual(["124", "42"]);
     expect(byClass(svg, "nm-resumed")).toEqual([]);
   });
 
@@ -602,16 +616,17 @@ describe("renderLockouts", () => {
       ],
       OPTIONS,
     );
-    // Rows 28 apart from 8: heading, bar, heading, bar. Bars in rows 1 and 3, 6 into the row:
-    // 8 + 28 + 6 = 42 and 8 + 3 * 28 + 6 = 98. Headings 18 into rows 0 and 2: 26 and 82.
-    expect(byClass(two, "nm-lockout").map((t) => t.attrs.y)).toEqual(["42", "98"]);
-    expect(byClass(two, "nm-lane").map((t) => t.attrs.y)).toEqual(["26", "82"]);
+    // Rows 44 apart from 8 (labels under the bars): heading, bar, heading, bar. Bars in rows 1 and
+    // 3, 6 into the row: 8 + 44 + 6 = 58 and 8 + 3 * 44 + 6 = 146. Headings 18 into rows 0 and 2:
+    // 26 and 8 + 2 * 44 + 18 = 114.
+    expect(byClass(two, "nm-lockout").map((t) => t.attrs.y)).toEqual(["58", "146"]);
+    expect(byClass(two, "nm-lane").map((t) => t.attrs.y)).toEqual(["26", "114"]);
     expect(texts(two)).toEqual(
       expect.arrayContaining(["Pro, 2026-07 to 2026-08", "Max 5x, 2026-09 onward"]),
     );
-    // Four rows end at 8 + 4 * 28 = 120; the chart is 40 taller: 160.
-    expect(tags(two)[0]?.attrs.viewBox).toBe("0 0 600 160");
-    // Both bars in one period: one heading, bars in rows 1 and 2 (42 and 70).
+    // Four rows end at 8 + 4 * 44 = 184; the chart is 40 taller: 224.
+    expect(tags(two)[0]?.attrs.viewBox).toBe("0 0 600 224");
+    // Both bars in one period: one heading, bars in rows 1 and 2 (58 and 102).
     const one = renderLockouts(
       [
         { ...LOCKOUTS[0]!, period: max },
@@ -620,7 +635,7 @@ describe("renderLockouts", () => {
       OPTIONS,
     );
     expect(byClass(one, "nm-lane")).toHaveLength(1);
-    expect(byClass(one, "nm-lockout").map((t) => t.attrs.y)).toEqual(["42", "70"]);
+    expect(byClass(one, "nm-lockout").map((t) => t.attrs.y)).toEqual(["58", "102"]);
     // No period on the bars, no headings: the layout below is unchanged.
     expect(byClass(svg, "nm-lane")).toEqual([]);
   });
@@ -628,24 +643,33 @@ describe("renderLockouts", () => {
   it("draws each lockout on one duration axis with its hit lines", () => {
     // Longest 3600 s: steps of 60 (60 ticks) and 300 (12) are too many; 600 needs 6. Axis 0 to 3600.
     const bars = byClass(svg, "nm-lockout").map((t) => t.attrs);
-    // 3600 / 3600 * 366 = 366; 1800 / 3600 * 366 = 183.
-    expect(bars.map((b) => b.width)).toEqual(["366", "183"]);
+    // 3600 / 3600 * 472 = 472; 1800 / 3600 * 472 = 236.
+    expect(bars.map((b) => b.width)).toEqual(["472", "236"]);
     expect(bars.map((b) => b["data-events"])).toEqual(["5", "6 7"]);
-    // Rows 28 apart from 8, bars 6 into the row: 14 and 42.
-    expect(bars.map((b) => b.y)).toEqual(["14", "42"]);
+    // Rows 44 apart from 8, bars 6 into the row: 14 and 58.
+    expect(bars.map((b) => b.y)).toEqual(["14", "58"]);
     expect(texts(svg)).toEqual(
-      expect.arrayContaining(["0", "10 m", "30 m", "1 h", "1 h 0 m, 1 hit", "30 m 0 s, 2 hits"]),
+      expect.arrayContaining([
+        "0",
+        "10 m",
+        "30 m",
+        "1 h",
+        "1 h 0 m, 1 refused request in 1 session",
+        "30 m 0 s, 2 refused requests in 1 session",
+      ]),
     );
   });
 
   it("states the span and what followed each reset", () => {
     expect(texts(svg)).toContain("Lockouts 2026-09-03 12:00 to 2026-09-04 09:30 (UTC)");
     expect(svg).toContain(
-      "<title>Elapsed lockout time 1 h 0 m, 2026-09-03 12:00 to 13:00 (UTC), 1 limit hit; 5 m 0 s reset to next Claude Code request</title>",
+      "<title>Elapsed lockout time 1 h 0 m, 2026-09-03 12:00 to 13:00 (UTC), 1 refused request in 1 session; 5 m 0 s reset to next Claude Code request</title>",
     );
-    expect(svg).toContain("2 limit hits; the reset came after the logs end</title>");
-    // bottom = 8 + 2 * 28 = 64; height 64 + 40 = 104.
-    expect(svg).toContain('viewBox="0 0 600 104"');
+    expect(svg).toContain(
+      "2 refused requests in 1 session; the reset came after the logs end</title>",
+    );
+    // bottom = 8 + 2 * 44 = 96; height 96 + 40 = 136.
+    expect(svg).toContain('viewBox="0 0 600 136"');
   });
 
   it("says when no request followed a reset inside the logs, and labels hour and day ticks", () => {
@@ -661,14 +685,39 @@ describe("renderLockouts", () => {
       OPTIONS,
     );
     expect(twoHours).toContain("no Claude Code request followed the reset");
-    // 7200 s: steps 600 (12) and 900 (8) are too many, 1800 needs 4; ticks 0, 30 m, 1 h, 90 m, 2 h.
-    expect(texts(twoHours)).toEqual(expect.arrayContaining(["30 m", "90 m", "2 h"]));
+    // 7200 s: steps 600 (12) and 900 (8) are too many, 1800 needs 4; ticks 0, 30 m, 1 h, 1 h 30 m,
+    // 2 h: one style on one axis, never "90 m" beside "2 h" (2026-10-22 click-through).
+    expect(texts(twoHours)).toEqual(expect.arrayContaining(["30 m", "1 h 30 m", "2 h"]));
+    expect(texts(twoHours)).not.toContain("90 m");
     const threeDays = renderLockouts([{ ...LOCKOUTS[0]!, seconds: 259_200 }], OPTIONS);
     // 259,200 s: 43,200 (12 h) needs 6 ticks; labels 12 h, 1 d, ..., 3 d.
     expect(texts(threeDays)).toEqual(expect.arrayContaining(["12 h", "1 d", "3 d"]));
     const halfYear = renderLockouts([{ ...LOCKOUTS[0]!, seconds: 2_419_200 * 7 }], OPTIONS);
     // Past six four-week steps: step 4 weeks * ceil(7 / 6) = 8 weeks = 56 d.
     expect(texts(halfYear)).toContain("56 d");
+  });
+
+  it("keeps labels beside the bars where they fit, every one ending inside the chart", () => {
+    // Width 960: room 960 - 124 - 4 = 832. Beside its bar, the 1-hour label (265.2) allows
+    // (832 - 12 - 265.2) / 1 = 554.8; the half-hour one, 41 characters (278.8), allows
+    // (832 - 12 - 278.8) / 0.5 = 1082.4. The plot is 554.8, over half of 832, so labels stay beside.
+    const wide = renderLockouts(LOCKOUTS, { timeZone: "UTC", width: 960 });
+    expect(byClass(wide, "nm-lockout").map((t) => t.attrs.width)).toEqual(["554.8", "277.4"]);
+    const labels = byClass(wide, "nm-value").map((t) => Number(t.attrs.x));
+    // 124 + 554.8 + 6 = 684.8 and 124 + 277.4 + 6 = 407.4, on the bars' rows (8 + 18, 36 + 18).
+    expect(labels).toEqual([684.8, 407.4]);
+    // The longer of the two ends at 684.8 + 265.2 = 950, inside 960.
+    expect(684.8 + "1 h 0 m, 1 refused request in 1 session".length * 6.8).toBeLessThanOrEqual(960);
+  });
+
+  it("draws a thumbnail compact: rows 28 tall and no value labels", () => {
+    const thumb = renderLockouts(LOCKOUTS, { timeZone: "UTC", width: 600, compact: true });
+    expect(byClass(thumb, "nm-value")).toEqual([]);
+    // Rows 28 apart from 8, bars 6 into the row: 14 and 42; the whole room for bars, 472.
+    expect(byClass(thumb, "nm-lockout").map((t) => [t.attrs.y, t.attrs.width])).toEqual([
+      ["14", "472"],
+      ["42", "236"],
+    ]);
   });
 
   it("returns No data for no lockouts", () => {
@@ -817,8 +866,8 @@ describe("renderRepoBars (step G2.1)", () => {
     expect(out).toContain(`<title>~/${"a".repeat(50)} (git repository)`);
   });
 
-  it("draws the first ten by name and the rest as one neutral bar holding all their events", () => {
-    const twelve: RepoBar[] = Array.from({ length: 12 }, (_, i) => ({
+  it("draws the first twenty by name and the rest as one neutral bar holding all their events", () => {
+    const twelve: RepoBar[] = Array.from({ length: 22 }, (_, i) => ({
       repository: `/home/example/r${String(i)}`,
       kind: "repo",
       requests: 1,
@@ -827,15 +876,15 @@ describe("renderRepoBars (step G2.1)", () => {
     }));
     const out = renderRepoBars({ bars: twelve, home: "/home/example" }, OPTIONS);
     const bars = byClass(out, "nm-repo");
-    // Ten named and one remainder: eleven bars.
-    expect(bars).toHaveLength(11);
+    // Twenty named and one remainder: twenty-one bars (twenty since the 2026-10-22 click-through).
+    expect(bars).toHaveLength(21);
     const other = only(out, "nm-repo-other");
-    // r10 (110) and r11 (109): 219 output tokens, both events, ascending.
-    expect(other["data-events"]).toBe("110 111");
+    // r20 (100) and r21 (99): 199 output tokens, both events, ascending.
+    expect(other["data-events"]).toBe("120 121");
     expect(other.fill).toBe("var(--axis)");
     expect(texts(out)).toContain("Other: 2 more repositories and folders");
     expect(out).toContain(
-      "<title>2 repositories and folders past the first 10: 219 output tokens from 2 requests</title>",
+      "<title>2 repositories and folders past the first 20: 199 output tokens from 2 requests</title>",
     );
   });
 
@@ -864,7 +913,7 @@ const BURN: BurnWindow = {
 const BURN_SERIES: WindowSeries = {
   window: "five_hour",
   resetAtUtc: "2026-09-03T18:00:00.000Z",
-  points: [{ atUtc: "2026-09-03T13:05:10.000Z", used: 2, event: 14 }],
+  points: [{ atUtc: "2026-09-03T13:05:10.000Z", used: 2, event: 14, stale: false }],
   hits: [],
 };
 

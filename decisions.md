@@ -1417,3 +1417,104 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - (c) Restart the criterion from 2026-10-07 without saying so. Rejected: it would hide the gap.
 - **Decision:** (b).
 - **Consequences:** Phase 8 is done when passes 3 and 4 are recorded on both machines and the chart click-through is done.
+
+## D-089: A reading below an earlier one in its window is stale (2026-10-22)
+
+- **Status:** accepted, built (step G4.1).
+- **Context:** The user's chart click-through found a 5-hour window whose "last observed usage" was 73%, though it was locked at 100% from 01:17 until its 02:40 reset. The reading came from one session's status line at 01:59.
+  - **Usage within one window only rises.** So a reading lower than an earlier one in the same window carries a number from before that earlier reading.
+  - **How common:** on real data, 268 of 14,024 counted readings (1.9%), in 23 windows, are more than 1 point below an earlier reading in their window. Every model and Claude Code version is affected, at about 1% each, and readings dated by a fresh response as well as changed captures (D-086).
+  - **The effects:** such a reading became "last observed" whenever it came last. It also made the page's usage lines dip, as in the burn-rate chart's drop to 10% in a week already at 36%.
+- **Options:**
+  - (a) Keep every reading as the latest-in-time value. Rejected: it reports usage falling, which can't happen within a window.
+  - (b) **Flag such a reading as stale.** It stays a row, is counted in the window's readings and is listed in `explain`. It's never the last observed value, never part of a reading pair, and drawn as a hollow point off the line. Chosen.
+  - (c) Drop it. Rejected: principle 1 keeps observations, and the count of stale readings is itself worth seeing.
+  - (d) Report each window's running maximum instead of its last reading. Rejected: it would hide that a lower reading arrived at all.
+- **Decision:** (b).
+  - **The rule:** a counted reading more than 1 point below the highest earlier counted reading in its window, from any session. The 1-point allowance keeps 99.5 after 100 from being called stale.
+  - **Unaffected:** peaks and weekly crossings, because a stale reading is below an earlier one by definition.
+  - **Burn rate:** its last reading now comes from a reading that isn't stale.
+- **Consequences:**
+  - **Schema:** migration 028 adds `stale` to `window_readings` and `readings_stale` to `window_instances` and `obs_window_headroom`. Headroom and reading pairs skip stale readings.
+  - **What's shown:** the text report and the page print "Readings below an earlier reading in their window, not used: N", and `explain headroom` lists them, each contributing nothing.
+  - **Real data:** the 10-19 window's last observed value is 100% at 01:17. The 10-12 05:20 window's is 59% at 02:10, where D-086's below-earlier change had made it 57%. No other value moves.
+  - **Report time:** 17.0–17.4 s rising to 18.1 s on the same copy.
+  - **A known limit:** a plan upgrade during a window could lower the percentage for real. Its readings would be marked stale until the window resets. It's rare, and the readings stay listed.
+
+## D-090: Lockouts lead, and a lockout's limit hits read as refused requests (2026-10-22)
+
+- **Status:** accepted, built (step G4.2).
+- **Context:** The user's chart click-through asked "how is it possible I hit the limit 13 times?" about the lockout of 2026-09-24 16:15 to 16:30.
+  - **What it was:** one lockout. Within it, 13 requests were refused in 3 minutes, from 3 sessions, 6 of them in subagents.
+  - **How the report showed it:** each refused request is a logged limit hit (D-004), shown as "13 hits". The headline "Rate-limit interruptions: 35" summed such lines across 8 lockouts.
+  - **Why that misled:** both read as limits reached, not as one limit and the requests it refused.
+- **Options:**
+  - (a) Keep the counts and add a footnote. Rejected: the misreading is in the headline.
+  - (b) Count lockouts only. Rejected: how many requests a lockout refused, and from how many sessions, is observed and worth seeing. The mid-task count is per refused request.
+  - (c) **Lead with lockouts. Keep "limit hits" as the name of the logged events, always shown with their lockout count ("Limit hits: 35 in 8 lockouts"). Say what one lockout's hits were: "13 refused requests in 3 sessions", and status line readings at 100% apart when there are any.** Chosen.
+  - (d) Rename every "limit hit" to "refused request". Rejected: a status-line-only hit (D-023) is a reading at 100% with no refusal logged, so the word would be false for it.
+- **Decision:** (c).
+  - **Text:** the elapsed lockout time comes first, with each lockout's refused requests and sessions, then the limit hits with a one-line note.
+  - **Page:** the same order. The Overview card leads with lockouts, and each plan's line counts lockouts.
+  - **Other labels:** the table columns are "Limit hits", and the gauge legend reads "Locked out in this window".
+  - **Unchanged:** JSON keys and `explain` metric names, which tools may read.
+- **Consequences:**
+  - **Schema:** migration 029 adds `sessions` and `refused_requests` to `obs_lockout_intervals`, counting a logged hit's session or a status-line hit's reading session.
+  - **Real data:** the 09-24 16:15 lockout reads "13 refused requests in 3 sessions", and the headline reads "Limit hits: 35 in 8 lockouts". Nothing outside the interruptions section changes.
+
+## D-091: Explanations move behind an "i"; caveats that change a number's meaning stay beside it (2026-10-22)
+
+- **Status:** accepted, built (step G4.4). Also covers G4.3's hiding of zero lines on the page.
+- **Context:** The user's chart click-through found the page "quite text heavy", and suggested moving information behind an info icon shown on hover.
+  - **What a render of every tab showed:** five paragraphs under the usage windows chart, a by-plan paragraph, a hits note, a heading with a parenthetical definition, and repricing reasoning beside the monthly bars.
+  - **The constraint:** the add-metric checklist requires caveats to sit next to the number. Principle 2 requires a projection's label to say so.
+- **Options:**
+  - (a) Keep all text visible. Rejected: the explanations crowded out the charts.
+  - (b) Move everything into hover tooltips. Rejected on three counts:
+    - a phone has no hover;
+    - paper can't hover;
+    - "a lower bound", "Claude Code only", "not a bill", a projection's premise, and "what happened during a lockout isn't observed" change what a number means, so they must be seen with it.
+  - (c) **Explanations go behind a small "i" beside each section's heading.** That covers how a number is computed, what a term means, how to use a chart, and a rule's details. Chosen:
+    - It opens on hover, keyboard focus, or a tap. The script toggles it, and CSS alone handles hover and focus.
+    - On a narrow screen it opens as a sheet along the bottom.
+    - It prints in full.
+    - **Stays visible:** caveats that change a number's meaning, counts that open their events (principle 4), and every span (principle 5).
+- **Decision:** (c).
+  - **Usage windows:** the lower-bound and over-100% note, the open-window note, and the selection hint move. "A lower bound" stays in the legend.
+  - **Weekly crossings:** what the table shows moves; the lower-bound caveat stays.
+  - **Lockouts:**
+    - The heading shortens to "Elapsed lockout time".
+    - Its definition, the hits note (D-090) and the by-plan rule move.
+    - "What happened during it isn't observed" stays.
+  - **Monthly list price:** the month zone and the reasoning move. "Covers Claude Code only. Only the plan price is a price: the bars aren't a bill." stays.
+  - **Repositories:** how paths count moves.
+  - **Zero lines (G4.3):** the page shows a split only when two or more of its parts are above 0, and the unknown-reset line only above 0. The text report keeps every line; it's the complete record.
+  - **The icon** is a CSS-drawn "i", because the page stays ASCII-only (D-063).
+- **Consequences:**
+  - **Measured on the real page,** 2026-10-22: visible paragraph text went from 642 words in 46 paragraphs to 452 in 37. That's 30% less, not the "more than half" estimated beforehand.
+  - **What remains** is mostly spans, counts, card lines, and caveats this decision keeps visible.
+  - **The guard still reads it:** the text behind each "i" is in the page, so the banned-phrase guard reads it.
+
+## D-092: A user-entered alias counts a renamed or moved project's old path under its new one (2026-10-22)
+
+- **Status:** accepted, built (step G4.5). Builds the backlog's "repository aliases" (D-028).
+- **Context:** The user's chart click-through showed this project twice in the repository chart.
+  - **The two rows:** the project's current checkout (2.7M output tokens), and the old Mac's `ai-usage-analyzer` checkout under the previous account's home directory (1.0M). The second is its old name, a directory that no longer exists.
+  - **Why nothing joins them:** nothing in the logs links an old path to a new one (D-028), so only the user can say they're one project.
+- **Options:**
+  - (a) Leave them apart. Rejected: the first real case is the user's own most-used project.
+  - (b) Guess from the directory name. Rejected: it isn't observed, and two projects can share a name.
+  - (c) **A user-entered alias, `nilometer alias set <old-path> <new-path>`, stored like plan prices (user data, untouched by rebuilds).** `request_repositories` counts the old path's requests under the new one and keeps the old path on each request as `aliased_from`. Chosen.
+- **Decision:** (c).
+  - **The aliased requests' kind:** they take the target's kind, so the two count as one row.
+  - **Kept visible:** the report and the page list every alias under the repository table, because an alias is the user's link, not an observation. `explain by-repo` marks each request an alias moved.
+  - **Refused:**
+    - an old path with no recorded request;
+    - an alias from a path to itself;
+    - a chain: a new path that is itself moved, or an old path that something else counts under.
+- **Consequences:**
+  - **Schema:** migration 030 adds `repository_aliases`, and `request_repositories` and `obs_usage_events` gain `aliased_from`.
+  - **Real data,** on a copy, with the user's case entered:
+    - the current checkout holds 3,721,571 output tokens, its 2,728,045 plus the old path's 993,526, and the old row is gone.
+    - The text report took 17.9 s before and 19.0 s after, under 10%.
+  - **The user's live install** gets the alias only when the user enters it, after the public sync.

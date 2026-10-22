@@ -11,7 +11,7 @@
  * | r1 | 11:00:00 | five_hour | 10 | 15:00 | |
  * | r8 | 11:00:00 | seven_day | 30 | 09-10 00:00 | |
  * | r2 | 12:00:00 | five_hour | 55 | 15:00 | the peak |
- * | r3 | 12:00:00 | five_hour | 50 | 15:00 | same second as r2, later line: the last reading |
+ * | r3 | 12:00:00 | five_hour | 50 | 15:00 | same second as r2, later line; 5 below r2, so stale (D-089) |
  * | r4 | 14:30:00 | five_hour | -1 | 15:00 | invalid percentage, excluded |
  * | r5 | 15:00:05 | five_hour | 3 | 15:00 | captured after its reset |
  * | r6 | 15:10:00 | five_hour | 4 | 20:00 | |
@@ -73,13 +73,15 @@ describe("headroom and peak: hand-computed scenario", () => {
         first_reading_at_utc: null,
         window_open: 0,
         ...COVERS,
+        readings_stale: 0,
       },
-      // r1, r2, r3 count (r4 invalid, r5 after reset). r2 and r3 share 12:00:00; r3 is the later line.
+      // r1, r2, r3 count (r4 invalid, r5 after reset). r2 and r3 share 12:00:00; r3 is the later line
+      // but 5 below r2, so it's stale and r2 is the last reading that isn't (D-089).
       // Closed: the last reading overall (16:00) is after 15:00.
       {
         window: "five_hour",
         reset_at_utc: "2026-09-03T15:00:00.000Z",
-        last_used_percentage: 50,
+        last_used_percentage: 55,
         last_reading_at_utc: "2026-09-03T12:00:00.000Z",
         last_reading_raw_line_id: expect.any(Number) as number,
         readings: 3,
@@ -87,6 +89,7 @@ describe("headroom and peak: hand-computed scenario", () => {
         first_reading_at_utc: "2026-09-03T11:00:00.000Z",
         window_open: 0,
         ...COVERS,
+        readings_stale: 1,
       },
       // r6, r7; 20:00 is after the last reading, so still open.
       {
@@ -100,6 +103,7 @@ describe("headroom and peak: hand-computed scenario", () => {
         first_reading_at_utc: "2026-09-03T15:10:00.000Z",
         window_open: 1,
         ...COVERS,
+        readings_stale: 0,
       },
       {
         window: "seven_day",
@@ -112,6 +116,7 @@ describe("headroom and peak: hand-computed scenario", () => {
         first_reading_at_utc: "2026-09-03T11:00:00.000Z",
         window_open: 1,
         ...COVERS,
+        readings_stale: 0,
       },
     ]);
   });
@@ -248,12 +253,15 @@ describe("headroom, peak and limit hits with readings over 100% (D-068)", () => 
         peak_reading_at_utc: "2026-09-04T11:30:00.000Z",
       },
     ]);
+    // 101 at 12:00 is 2 below the 103 read at 11:30, so it's stale; 103 is the last reading that
+    // isn't (D-089). Usage above 100 is still kept as recorded (D-068).
     expect(rows(db, "obs_window_headroom", "window")).toMatchObject([
       {
         window: "five_hour",
-        last_used_percentage: 101,
-        last_reading_at_utc: "2026-09-04T12:00:00.000Z",
+        last_used_percentage: 103,
+        last_reading_at_utc: "2026-09-04T11:30:00.000Z",
         readings: 4,
+        readings_stale: 1,
       },
     ]);
   });

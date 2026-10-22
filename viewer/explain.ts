@@ -188,6 +188,8 @@ interface UsageRow extends Located {
   readonly cache_write_5m_tokens: number | null;
   readonly cache_write_1h_tokens: number | null;
   readonly cache_write_unsplit_tokens: number | null;
+  /** The repository an alias moved the request from (D-092); absent or null when none. */
+  readonly aliased_from?: string | null;
 }
 
 /**
@@ -212,7 +214,12 @@ function tokenGroup(
     })),
     events: requests.map((row) => ({
       at: row.timestamp_utc,
-      description: `request ${row.dedup_key ?? "without an ID"} | ${row.model}`,
+      // An aliased request says where it was before, so the user's alias is visible here (D-092).
+      description: `request ${row.dedup_key ?? "without an ID"} | ${row.model}${
+        row.aliased_from === undefined || row.aliased_from === null
+          ? ""
+          : ` | counted here by the alias from ${row.aliased_from}`
+      }`,
       location: formatLocation(row),
       contributions: [
         1,
@@ -272,6 +279,34 @@ function readingEvents(db: Db, instance: InstanceRow, what: string): ExplainEven
       contributions: [row.used_percentage],
     },
   ];
+}
+
+/**
+ * Lists a window's stale readings, which add nothing to its value (D-089): usage within a window
+ * only rises, so a reading below an earlier one carries a number from before that reading.
+ * @param db - Database.
+ * @param instance - The window instance.
+ * @returns One event per stale reading, contributing nothing, in time order.
+ */
+function staleEvents(db: Db, instance: InstanceRow): ExplainEvent[] {
+  const rows = db
+    .prepare(
+      `SELECT e.observed_at_utc, e.used_percentage, e.session_id, ${LOCATION_COLUMNS}
+       FROM window_readings e ${LOCATION_JOIN}
+       WHERE e.window = ? AND e.reset_at_utc = ? AND e.after_reset = 0 AND e.stale = 1
+       ORDER BY e.observed_at_s, e.raw_line_id`,
+    )
+    .all(instance.window, instance.reset_at_utc) as (Located & {
+    observed_at_utc: string;
+    used_percentage: number;
+    session_id: string | null;
+  })[];
+  return rows.map((row) => ({
+    at: row.observed_at_utc,
+    description: `stale reading, not used: ${formatNumber(row.used_percentage, "percent")} | session ${row.session_id ?? "unknown"} | below an earlier reading in this window`,
+    location: formatLocation(row),
+    contributions: [null],
+  }));
 }
 
 /** A window instance row with the reading that gives its value. */
@@ -368,7 +403,7 @@ const BUILDERS = {
       section: "observed",
       groups: [
         {
-          title: "Lockout intervals (limit hit to reset, overlapping hits merged)",
+          title: "Lockouts (first limit hit to the window's reset, overlapping lockouts merged)",
           measures: [
             {
               label: "Elapsed lockout time",
@@ -539,7 +574,7 @@ const BUILDERS = {
       measures: [
         { label: "Last observed usage (lower bound)", kind: "percent", reported: row.value },
       ],
-      events: readingEvents(db, row, "last reading before the reset"),
+      events: [...readingEvents(db, row, "last reading before the reset"), ...staleEvents(db, row)],
     })),
   }),
   peak: (db: Db): Explanation => ({

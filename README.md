@@ -110,7 +110,7 @@ One screen. No daemon, no desktop app, no live updating. Every metric below is r
 
 | Metric | Source |
 |---|---|
-| Rate-limit interruptions | Logged `error: "rate_limit"` lines; `used_percentage` reaching 100 after `init`. A hit seen in both counts once ([D-023](decisions.md)). Once a plan price is entered, hits, lockouts, and elapsed lockout time are also shown per plan period, so a count never mixes two plans without saying so ([D-075](decisions.md)) |
+| Lockouts and limit hits | Logged `error: "rate_limit"` lines; `used_percentage` reaching 100 after `init`. A hit seen in both counts once ([D-023](decisions.md)). Lockouts lead: a lockout refuses every request until its reset, so one can hold many hits, each logged hit a refused request, and each lockout says how many requests it refused and from how many sessions ([D-090](decisions.md)). Once a plan price is entered, hits, lockouts, and elapsed lockout time are also shown per plan period, so a count never mixes two plans without saying so ([D-075](decisions.md)) |
 | Mid-task interruptions | The stopped request was answering a tool result, so the model was mid-agentic-loop rather than at a turn boundary. Hits whose position can't be determined are counted separately ([D-021](decisions.md)). Context lines Claude Code inserts between a request and what it answered (token reminders, memory, hook output) are looked past; a line of an unknown kind stops the lookup, leaving the position unknown ([D-076](decisions.md)) |
 | Elapsed lockout time | Limit hit → reset time, with overlapping hits counted once. **Not** a claim about lost productivity. Shown beside it: reset → next Claude Code request ([D-023](decisions.md)), and, where Claude Code logged that it resumed a session by itself after the reset, how many sessions it resumed ([D-077](decisions.md)) |
 | Weekly windows at 75% and 90% | The first status line reading at or above each level in each weekly window, and the time from it to the reset. A week that came close without a hit shows here and nowhere else. It's a reading, not a reason: why usage changed afterwards isn't inferred. The level may have been passed earlier, between readings, so the time left is a lower bound ([D-087](decisions.md)) |
@@ -120,7 +120,7 @@ One screen. No daemon, no desktop app, no live updating. Every metric below is r
 
 | Metric | Source |
 |---|---|
-| Window headroom | Last observed `used_percentage` before each window's `resets_at`, shown with the time of that reading. Budget used after the last Claude Code turn isn't seen, so this is a lower bound ([D-024](decisions.md)) |
+| Window headroom | Last observed `used_percentage` before each window's `resets_at`, shown with the time of that reading. Budget used after the last Claude Code turn isn't seen, so this is a lower bound ([D-024](decisions.md)). A reading more than 1 point below an earlier one in the same window is stale, since usage within a window only rises: it's counted and listed, but never the last observed value, and it's drawn off the line ([D-089](decisions.md)) |
 | Peak usage per window | Highest observed `used_percentage` in each 5-hour and 7-day window ([D-024](decisions.md)) |
 
 ### Observed: "Where does it go?"
@@ -221,6 +221,7 @@ nilometer init    # or, without npm link: npm start -- init
 | `nilometer report` | Print what was observed, then projections in a separate section. `--json` prints unrounded rows and every label. `--save` also writes a dated copy (`report_YYYY-MM-DD_HHMMSS.txt` and `.json`) to `~/.local/share/nilometer/reports/`; `--save --html` adds a self-contained `.html` page with the same name, which works offline and makes no network requests. The page opens on an overview, has one tab per chart, and keeps the projections in their own labelled tabs. `--save --html --open` also opens the saved page in your browser; if it can't, the command says where the page is and still succeeds |
 | `nilometer explain <metric>` | List the events behind a number in the report, with the file, line, and byte each came from, and add them back up. Metrics: `limit-hits`, `mid-task`, `lockout`, `by-plan`, `not-resumed`, `headroom`, `peak`, `crossings`, `unattributed`, `by-model`, `by-repo`, `burn-rate`, `api-list-price` |
 | `nilometer plan-price set <YYYY-MM> <usd> --name <plan>` | Record your plan's USD list price per month from that month on, shown beside API list price. `plan-price list` shows what's entered |
+| `nilometer alias set <old-path> <new-path>` | Count a renamed or moved project's old path under its new one, so it shows as one repository. The report lists every alias you entered under the repository table. `alias list` shows them; `alias remove <old-path>` undoes one ([D-092](decisions.md)) |
 | `nilometer uninstall` | Remove the hook and restore the status line setting it replaced. Recorded data is kept |
 
 **Removing it:** `nilometer uninstall` restores your previous status line and keeps the recorded data. To delete the data too, remove the data directory below. It may hold session history that Claude Code has already deleted, so that history is then gone for good.
@@ -307,14 +308,15 @@ OBSERVED
 
 Interruptions
   Covers: session logs 2026-08-20 10:00 to 2026-09-02 15:00 (America/Chicago); status line 2026-09-02 09:00–14:00 (America/Chicago)
-  Rate-limit interruptions: 2
+  Elapsed lockout time (first limit hit to the window's reset, overlapping lockouts counted once): 1 h 59 m across 1 lockout
+    Limit hits with an unknown reset time, in no lockout: 1
+    2026-09-01 09:00 to 2026-09-01 11:00: 1 h 59 m, 1 refused request in 1 session; reset to next Claude Code request: 30 m 5 s
+  Limit hits: 2 in 1 lockout
+    Each logged hit is a request the limit refused. A lockout refuses every request until its reset, so one lockout can hold several hits.
     5-hour window: 1 · weekly window: 1 · window unknown: 0
     From the session logs: 2 · seen only in the status line: 0
-  Mid-task interruptions (the stopped request was answering a tool result): 1
+  Mid-task interruptions (the refused request was answering a tool result): 1
     At the start of a turn: 1 · position unknown: 0
-  Elapsed lockout time (limit hit to reset, overlapping hits counted once): 1 h 59 m across 1 lockout
-    Hits with an unknown reset time, not included: 1
-    2026-09-01 09:00 to 2026-09-01 11:00: 1 h 59 m, 1 hit; reset to next Claude Code request: 30 m 5 s
   Sessions with no further request after a limit hit: 1 of 2 sessions with a hit
     Reset came after the logs end: 0 · reset time unknown: 1
     A session that continued after its reset may have been resumed automatically; these counts are requests, not who made them.

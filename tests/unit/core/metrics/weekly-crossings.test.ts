@@ -179,7 +179,9 @@ describe("the crossings in the text report, JSON and page (D-087)", () => {
       html.indexOf('id="nm-crossings"'),
       html.indexOf("</section>", html.indexOf('id="nm-crossings"')),
     );
-    expect(section).toContain(`<p class="caveat">${LABELS.crossings}</p>`);
+    // What the table shows is behind the heading's "i"; the lower-bound caveat stays (D-091).
+    expect(section).toContain(`<span>${LABELS.crossingsWhat}</span>`);
+    expect(section).toContain(`<p class="caveat">${LABELS.crossingsCaveat}</p>`);
     expect(section).toContain("<td>2026-09-08 00:00</td><td>90%</td><td>2026-09-05 18:00</td>");
     expect(section).toContain(">2 d 6 h</td>");
   });

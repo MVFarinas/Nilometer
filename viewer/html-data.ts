@@ -21,6 +21,7 @@
  * column holds is counted beside the lockouts, so the columns and that count add up to the text
  * report's total.
  */
+import { listAliases } from "../core/plans/repository-aliases.js";
 import type { Db } from "../core/db/database.js";
 import type {
   AfterResetReadings,
@@ -149,6 +150,10 @@ interface LockoutSqlRow {
   readonly locked_until_utc: string;
   /** Hits merged into it. */
   readonly hits: number;
+  /** Its logged hits, each a refused request (D-090). */
+  readonly refused_requests: number;
+  /** Distinct sessions with a hit in it (D-090). */
+  readonly sessions: number;
   /** Hit to reset, seconds. */
   readonly lockout_seconds: number;
   /** Reset to the next request, seconds; null when none followed. */
@@ -348,7 +353,7 @@ function loadWindows(db: Db, at: number): WindowSqlRow[] {
          -- The readings window_instances counts (after_reset = 0), in the order the reading-pair
          -- view walks them, so a series has exactly the window's readings count of points (D-024).
          SELECT r.window, r.reset_at_utc,
-           json_group_array(json_array(r.observed_at_utc, r.used_percentage, r.raw_line_id)
+           json_group_array(json_array(r.observed_at_utc, r.used_percentage, r.raw_line_id, r.stale)
              ORDER BY r.observed_at_s, r.raw_line_id) AS points
          FROM window_readings r
          WHERE r.after_reset = 0
@@ -407,8 +412,8 @@ function toGauge(row: WindowSqlRow): GaugeWindow {
 function toSeries(row: WindowSqlRow): WindowSeries {
   // Real values round-trip through SQLite's JSON exactly (17 significant digits), so each point
   // keeps the recorded used_percentage unrounded, including values above 100 (D-068).
-  const points = (JSON.parse(row.points) as [string, number, number][]).map(
-    ([atUtc, used, event]): SeriesPoint => ({ atUtc, used, event }),
+  const points = (JSON.parse(row.points) as [string, number, number, number][]).map(
+    ([atUtc, used, event, stale]): SeriesPoint => ({ atUtc, used, event, stale: stale === 1 }),
   );
   const hits = (JSON.parse(row.series_hits) as [string, number][]).map(
     ([atUtc, event]): SeriesHit => ({ atUtc, event }),
@@ -469,7 +474,8 @@ function loadLockouts(db: Db, withPeriods = false): LockoutBar[] {
          JOIN raw_lines l ON l.id = h.raw_line_id
          GROUP BY h.interval_number
        )
-       SELECT i.interval_number, i.locked_from_utc, i.locked_until_utc, i.hits, i.lockout_seconds,
+       SELECT i.interval_number, i.locked_from_utc, i.locked_until_utc, i.hits, i.refused_requests,
+         i.sessions, i.lockout_seconds,
          i.auto_continuations, i.first_auto_continuation_seconds,
          -- The markers obs_lockout_intervals counts, so the list re-adds to auto_continuations.
          COALESCE((SELECT json_group_array(a.raw_line_id ORDER BY ${CANONICAL})
@@ -514,6 +520,8 @@ function loadLockouts(db: Db, withPeriods = false): LockoutBar[] {
     lockedUntilUtc: row.locked_until_utc,
     seconds: row.lockout_seconds,
     hits: row.hits,
+    refusedRequests: row.refused_requests,
+    sessions: row.sessions,
     resetToNextRequestSeconds: row.reset_to_next_request_seconds,
     // NULL means there are no session logs to compare with; nothing says the reset came after
     // them, so it reads false and the null reset-to-next-request stands on its own.
@@ -1018,6 +1026,11 @@ export const loadHtmlData: LoadHtmlData = (
     models,
     repos,
     home: meta.home ?? "",
+    // The user's own links, as the text report lists them (D-092).
+    repositoryAliases: (loaded?.observed.repositoryAliases ?? listAliases(db)).map((a) => ({
+      from: a.from,
+      to: a.to,
+    })),
     missingHookPath: meta.missingHookPath ?? null,
     burn,
     months,

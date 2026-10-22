@@ -68,7 +68,10 @@ export const EVENT_LIST_LIMIT = 200;
 export const HTML_LABELS = {
   privacy:
     "Privacy: this file holds session IDs and the paths of your session logs, like nilometer explain output, and it makes no network requests. Think before sharing it.",
-  coverage: "What each number covers",
+  // 2026-10-22 click-through: "What each number covers" with two bars didn't say why they differ.
+  coverage: "Where the numbers come from",
+  coverageWhy:
+    "Session logs give tokens, models and limit hits. Usage percentages come only from status line readings, so they start later: when the collector was installed.",
   sessionLogsHold: "tokens, models, limit hits",
   statusLineHolds: "usage windows",
   source: "Source",
@@ -76,7 +79,7 @@ export const HTML_LABELS = {
   tableView: "Table view",
   legendPeak: "Peak usage in the window",
   legendLast: "Last observed usage (a lower bound)",
-  legendHit: "Limit hit in the window",
+  legendHit: "Locked out in this window",
   over100: "Readings above 100% are shown as recorded.",
   // D-087 (step G3.2): the section's heading and table columns; its sentences are the text report's.
   crossingsHeading: "Weekly windows at 75% and 90%",
@@ -93,12 +96,14 @@ export const HTML_LABELS = {
   usage: "Observed usage",
   reading: "Status line reading",
   hit: "Limit hit",
-  lockoutFrom: "Limit hit",
+  lockoutFrom: "First limit hit",
   lockoutUntil: "Reset",
   lockoutElapsed: "Elapsed lockout time",
-  hits: "Hits",
+  lockoutDefinition:
+    "Each lockout runs from its first limit hit to the window's reset; overlapping lockouts are counted once.",
+  hits: "Limit hits",
   lockoutCaveat:
-    "Each interval runs from a limit hit to the window's reset. What happened during it isn't observed.",
+    "Each lockout runs from its first limit hit to the window's reset. What happened during it isn't observed.",
   noLockouts: "No lockouts in the covered span.",
   noRequestAfter: "no request after the reset in the logs",
   resetAfterLogs: "reset came after the logs end",
@@ -109,6 +114,8 @@ export const HTML_LABELS = {
   legendPlan: "Plan price entered for that month",
   repricing:
     "Only the plan price is a price. The bars reprice the tokens observed at API list rates; they aren't a bill, because paying per token changes how people work.",
+  // D-091: the caveat that stays beside the bars; the reasoning above is behind the section's "i".
+  notABill: "Only the plan price is a price: the bars aren't a bill.",
   unpricedNote:
     "Unpriced requests have no verified rate and are left out of the amounts, not counted as $0.",
   planHint:
@@ -139,7 +146,7 @@ export const HTML_LABELS = {
   burnProjected: "Projected at the window's average rate",
   noOpenWindow: "No open usage window in the status line readings.",
   lastFrom: "Last observed usage the projection starts from",
-  byPlanCaption: "Limit hits by plan period",
+  byPlanCaption: "Lockouts by plan period",
   legendResumed: "Resumed by Claude Code after the reset (logged auto-continuation)",
   resumedColumn: "Resumed by Claude Code",
   limitProjectedFor: "Limit projected for",
@@ -289,7 +296,13 @@ function tableView(
   rows: readonly Row[],
   open = false,
 ): string {
-  const head = headers.map((header) => `<th scope="col">${escapeHtml(header)}</th>`).join("");
+  // A column of numbers has its header right-aligned too, over the numbers it names.
+  const head = headers
+    .map((header, column) => {
+      const numeric = rows.some((row) => row.cells[column]?.numeric === true);
+      return `<th scope="col"${numeric ? ' class="num"' : ""}>${escapeHtml(header)}</th>`;
+    })
+    .join("");
   const body = rows
     .map((row) => {
       const cells = row.cells
@@ -326,6 +339,25 @@ interface SectionParts {
   readonly body: string;
   /** A small tag above the heading, unescaped; used to say "Projected" in the label itself. */
   readonly tag?: string;
+  /**
+   * Explanations for the heading's disclosure (D-091), one paragraph each, unescaped: how a number
+   * is computed, why, what a term means. A caveat that changes what a number means stays in the body.
+   */
+  readonly info?: readonly string[];
+}
+
+/**
+ * Renders an explanation behind a small "i" button (D-091). It opens on hover, keyboard focus, or a
+ * tap, works without the script through CSS, and prints in full. Its text is in the page either
+ * way, so the banned-phrase guard reads it.
+ * @param id - Unique among the page's disclosures; the text's element takes `${id}-info`.
+ * @param about - What it explains, for the button's accessible name.
+ * @param paragraphs - The explanation, one paragraph each, unescaped.
+ * @returns The disclosure's HTML, inline.
+ */
+function info(id: string, about: string, paragraphs: readonly string[]): string {
+  const text = paragraphs.map((p) => `<span>${escapeHtml(p)}</span>`).join("");
+  return `<span class="nm-info"><button type="button" class="nm-info-btn" aria-expanded="false" aria-controls="${id}-info" aria-label="${escapeHtml(`About: ${about}`)}">i</button><span class="nm-info-text" id="${id}-info" role="note">${text}</span></span>`;
 }
 
 /**
@@ -335,10 +367,13 @@ interface SectionParts {
  * @returns The section HTML.
  */
 function chartSection(parts: SectionParts): string {
-  const tag = parts.tag === undefined ? "" : `<p class="eyebrow">${escapeHtml(parts.tag)}</p>\n`;
+  const tag =
+    parts.tag === undefined ? "" : `<p class="eyebrow projected">${escapeHtml(parts.tag)}</p>\n`;
   return [
     `<section class="panel nm-chart" id="${parts.id}" aria-labelledby="${parts.id}-h">`,
-    `${tag}<div class="panel-title"><h3 id="${parts.id}-h">${escapeHtml(parts.heading)}</h3>`,
+    `${tag}<div class="panel-title"><h3 id="${parts.id}-h">${escapeHtml(parts.heading)}${
+      parts.info === undefined ? "" : info(parts.id, parts.heading, parts.info)
+    }</h3>`,
     `<p class="span">${escapeHtml(parts.span)}</p></div>`,
     parts.body,
     // Hidden until the script fills it: without JavaScript it would be an empty box.
@@ -394,7 +429,13 @@ function splitPara(
     readonly name: string;
   }[],
 ): string {
-  const counts = parts.map(
+  // Only the parts that happened: a zero says nothing, and a split with one part left is the total
+  // above it again. The text report keeps every part (2026-10-22 click-through, D-091).
+  const shown = parts.filter((part) => part.count > 0);
+  if (shown.length <= 1) {
+    return "";
+  }
+  const counts = shown.map(
     (part) =>
       `${escapeHtml(part.phrase)}: <span class="num"${eventsAttr(part.events)} data-label="${escapeHtml(part.name)}">${escapeHtml(formatNumber(part.count, "count"))}</span>`,
   );
@@ -503,6 +544,7 @@ function renderCoverageSection(data: HtmlReportData, options: ChartOptions): str
     heading: HTML_LABELS.coverage,
     span: `Covers: ${sourceSpan("session logs", logs, zone)}; ${sourceSpan("status line", status, zone)}`,
     body: [
+      para(HTML_LABELS.coverageWhy),
       plot(renderCoverage(data.coverage, options)),
       tableView(
         HTML_LABELS.coverage,
@@ -617,6 +659,18 @@ function gaugeNotes(data: HtmlReportData): string[] {
       ),
     );
   }
+  // The stale points, as the text report counts readings_stale: counted readings below an earlier
+  // one in their window (D-089).
+  const stale = data.series.flatMap((s) => s.points.filter((p) => p.stale).map((p) => p.event));
+  if (stale.length > 0) {
+    lines.push(
+      countPara(
+        `${LABELS.staleReadings}: ${formatNumber(stale.length, "count")}`,
+        stale,
+        LABELS.staleReadings,
+      ),
+    );
+  }
   const totals = data.interruptions;
   if (totals.hitsInNoColumn > 0) {
     lines.push(
@@ -662,8 +716,8 @@ function renderCrossingsSection(data: HtmlReportData): string {
     id: "nm-crossings",
     heading: HTML_LABELS.crossingsHeading,
     span,
+    info: [LABELS.crossingsWhat],
     body: [
-      para(LABELS.crossings),
       para(LABELS.crossingsCaveat),
       tableView(
         HTML_LABELS.crossingsHeading,
@@ -723,6 +777,12 @@ function renderGaugeSection(data: HtmlReportData, options: ChartOptions): string
     id: "nm-gauge",
     heading: LABELS.windows,
     span,
+    // D-091: how to read the chart, behind the heading's "i". "A lower bound" stays in the legend.
+    info: [
+      `${LABELS.windowsCaveat} ${HTML_LABELS.over100}`,
+      LABELS.openNote,
+      HTML_LABELS.seriesHint,
+    ],
     body: [
       legend([
         ["k-fill", HTML_LABELS.legendPeak],
@@ -730,11 +790,8 @@ function renderGaugeSection(data: HtmlReportData, options: ChartOptions): string
         ["k-hit", HTML_LABELS.legendHit],
       ]),
       plot(renderGauge(data.gauge, options)),
-      para(`${LABELS.windowsCaveat} ${HTML_LABELS.over100}`),
-      // What "open" means, as the text report says it (D-083).
-      para(LABELS.openNote),
+      // The counts behind the chart stay visible: each lists its readings or hits (principle 4).
       ...notes,
-      para(HTML_LABELS.seriesHint, "nm-hint"),
       `<div class="nm-series-list">\n${data.series.map((s) => renderSeries(s, options)).join("\n")}\n</div>`,
       tableView(
         LABELS.windows,
@@ -792,13 +849,21 @@ function interruptionCounts(data: HtmlReportData): string {
   return [
     '<div class="nm-counts">',
     total,
+    // Only when there are some: "…: 0" says nothing (2026-10-22 click-through).
+    t.hitsWithUnknownReset === 0
+      ? ""
+      : countPara(
+          `Limit hits with an unknown reset time, in no lockout: ${n(t.hitsWithUnknownReset)}`,
+          t.unknownResetEvents,
+          "Limit hits with an unknown reset time",
+          "sub",
+        ),
     countPara(
-      `Hits with an unknown reset time, not included: ${n(t.hitsWithUnknownReset)}`,
-      t.unknownResetEvents,
-      "Hits with an unknown reset time",
-      "sub",
+      `${LABELS.limitHits}: ${n(t.hits)} in ${plural(t.lockoutIntervals, "lockout", "lockouts")}`,
+      t.events,
+      LABELS.limitHits,
+      "count",
     ),
-    countPara(`${LABELS.limitHits}: ${n(t.hits)}`, t.events, LABELS.limitHits, "count"),
     splitPara([
       {
         phrase: "5-hour window",
@@ -834,7 +899,9 @@ function interruptionCounts(data: HtmlReportData): string {
       },
     ]),
     "</div>",
-  ].join("\n");
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
 }
 
 /**
@@ -885,7 +952,7 @@ function byPlanBlock(data: HtmlReportData): string[] {
         numberCell(formatNumber(p.hits, "count"), p.hitEvents),
         numberCell(formatNumber(p.lockouts, "count"), p.lockoutEvents),
         numberCell(formatNumber(p.lockoutSeconds, "duration"), p.lockoutEvents),
-        // Without the zone, as the month table's span cells: the note above names it.
+        // Without the zone, as the month table's span cells: the section's "i" names it.
         textCell(
           p.period.kind === "unknown"
             ? ""
@@ -894,8 +961,8 @@ function byPlanBlock(data: HtmlReportData): string[] {
       ],
     };
   });
+  // The by-plan rule is in the section's "i" (D-091); the table stays open, as the split it shows.
   return [
-    para(`${LABELS.byPlan}: ${LABELS.byPlanNote} (months in ${zone}).`),
     tableView(
       HTML_LABELS.byPlanCaption,
       [c.plan, c.months, c.hits, c.lockouts, c.elapsed, c.covers],
@@ -919,14 +986,23 @@ function renderLockoutSection(data: HtmlReportData, options: ChartOptions): stri
   const span = `Covers: ${sourceSpan("session logs", data.interruptions.span, zone)}; ${sourceSpan("status line", coverageOf(data, "status_line"), zone)}`;
   const bars = data.lockouts;
   const summary = [interruptionCounts(data), ...byPlanBlock(data)].join("\n");
+  // D-091: the heading's definition, the hits note and the by-plan rule, behind the heading's "i".
+  const explained = [
+    HTML_LABELS.lockoutDefinition,
+    LABELS.limitHitsNote,
+    ...(data.interruptions.byPlan.length === 0
+      ? []
+      : [`${LABELS.byPlan}: ${LABELS.byPlanNote} (months in ${zone}).`]),
+  ];
   // The text report's auto-resume caveat qualifies the not-resumed counts, which the page doesn't
   // print, so it stays with them in the text report rather than seeming to qualify the hits here.
   const caveats = para(HTML_LABELS.lockoutCaveat);
   if (bars.length === 0) {
     return chartSection({
       id: "nm-lockouts",
-      heading: LABELS.lockout,
+      heading: HTML_LABELS.lockoutElapsed,
       span,
+      info: explained,
       body: [summary, para(HTML_LABELS.noLockouts), caveats].join("\n"),
     });
   }
@@ -947,8 +1023,9 @@ function renderLockoutSection(data: HtmlReportData, options: ChartOptions): stri
   const resumed = bars.some((bar) => bar.autoContinuations > 0);
   return chartSection({
     id: "nm-lockouts",
-    heading: LABELS.lockout,
+    heading: HTML_LABELS.lockoutElapsed,
     span,
+    info: explained,
     body: [
       summary,
       caveats,
@@ -1033,6 +1110,8 @@ function renderRepoSection(data: HtmlReportData, options: ChartOptions): string 
     return chartSection({
       id: "nm-repos",
       heading: HTML_LABELS.repos,
+      // D-091: how paths count, behind the heading's "i".
+      info: [HTML_LABELS.repoCaveat],
       span,
       body: para(HTML_LABELS.noRequests),
     });
@@ -1057,10 +1136,18 @@ function renderRepoSection(data: HtmlReportData, options: ChartOptions): string 
   return chartSection({
     id: "nm-repos",
     heading: HTML_LABELS.repos,
+    // D-091: how paths count, behind the heading's "i".
+    info: [HTML_LABELS.repoCaveat],
     span,
     body: [
       legend(keys),
-      para(HTML_LABELS.repoCaveat),
+      // D-092: each alias the user entered, beside the bars it moves, in the text report's words.
+      ...data.repositoryAliases.map((a) =>
+        para(
+          `${LABELS.alias}: ${displayPath(a.from, data.home)} counts under ${displayPath(a.to, data.home)}`,
+          "sub",
+        ),
+      ),
       plot(renderRepoBars({ bars: data.repos, home: data.home }, options)),
       tableView(HTML_LABELS.repos, [c.repository, c.kind, c.requests, c.output], rows),
     ].join("\n"),
@@ -1186,6 +1273,9 @@ function overviewCard(card: CardParts): string {
  */
 function renderOverviewCards(data: HtmlReportData, options: ChartOptions): string {
   const zone = data.timeZone;
+  // A thumbnail is a picture of its tab's chart: drawn compact, and its text hidden by CSS, since at
+  // half size it can't be read and the card's own lines give the numbers.
+  const thumb: ChartOptions = { ...options, compact: true };
   const status = `Covers: ${sourceSpan("status line", coverageOf(data, "status_line"), zone)}`;
   const logs = `Covers: ${sourceSpan("session logs", coverageOf(data, "session_logs"), zone)}`;
   const weekly = data.gauge.filter((w) => w.window === "seven_day");
@@ -1229,29 +1319,36 @@ function renderOverviewCards(data: HtmlReportData, options: ChartOptions): strin
       tab: "windows",
       heading: HTML_LABELS.tabWindows,
       lines: windowLines,
-      thumbnail: data.gauge.length === 0 ? "" : renderGauge(data.gauge, options),
+      thumbnail: data.gauge.length === 0 ? "" : renderGauge(data.gauge, thumb),
       span: status,
     },
     {
       tab: "interruptions",
       heading: HTML_LABELS.tabInterruptions,
       lines: [
+        // Lockouts lead: one is one limit reached, however many requests it refused (D-090).
         countPara(
-          `${LABELS.limitHits}: ${formatNumber(t.hits, "count")}`,
-          t.events,
-          LABELS.limitHits,
+          `${HTML_LABELS.lockoutElapsed}: ${formatNumber(t.lockoutSeconds, "duration")} across ${plural(t.lockoutIntervals, "lockout", "lockouts")}`,
+          inIntervals,
+          HTML_LABELS.lockoutElapsed,
           "count",
         ),
-        // One line per plan period once a plan is entered (D-075), each with its own hits.
+        // One line per plan period once a plan is entered (D-075), each with its own lockouts.
         ...t.byPlan.map((p) => {
           const [name, months] = periodText(p.period);
           return countPara(
-            `${name}, ${months}: ${plural(p.hits, "limit hit", "limit hits")}`,
-            p.hitEvents,
-            `${LABELS.limitHits}, ${name}`,
+            `${name}, ${months}: ${plural(p.lockouts, "lockout", "lockouts")}`,
+            p.lockoutEvents,
+            `${LABELS.columns.lockouts}, ${name}`,
             "sub",
           );
         }),
+        countPara(
+          `${LABELS.limitHits}: ${formatNumber(t.hits, "count")} in ${plural(t.lockoutIntervals, "lockout", "lockouts")}`,
+          t.events,
+          LABELS.limitHits,
+          "sub",
+        ),
         // D-077: the sessions Claude Code resumed by itself, once any lockout has one.
         ...(resumedCount(data) === 0
           ? []
@@ -1263,14 +1360,8 @@ function renderOverviewCards(data: HtmlReportData, options: ChartOptions): strin
                 "sub",
               ),
             ]),
-        countPara(
-          `${HTML_LABELS.lockoutElapsed}: ${formatNumber(t.lockoutSeconds, "duration")} across ${plural(t.lockoutIntervals, "lockout", "lockouts")}`,
-          inIntervals,
-          HTML_LABELS.lockoutElapsed,
-          "count",
-        ),
       ],
-      thumbnail: data.lockouts.length === 0 ? "" : renderLockouts(data.lockouts, options),
+      thumbnail: data.lockouts.length === 0 ? "" : renderLockouts(data.lockouts, thumb),
       span: `Covers: ${sourceSpan("session logs", t.span, zone)}`,
     },
     {
@@ -1287,7 +1378,7 @@ function renderOverviewCards(data: HtmlReportData, options: ChartOptions): strin
                 "count",
               ),
             ],
-      thumbnail: data.models.length === 0 ? "" : renderModelBars(data.models, options),
+      thumbnail: data.models.length === 0 ? "" : renderModelBars(data.models, thumb),
       span: logs,
     },
     {
@@ -1308,7 +1399,7 @@ function renderOverviewCards(data: HtmlReportData, options: ChartOptions): strin
       thumbnail:
         data.repos.length === 0
           ? ""
-          : renderRepoBars({ bars: data.repos.slice(0, 5), home: data.home }, options),
+          : renderRepoBars({ bars: data.repos.slice(0, 5), home: data.home }, thumb),
       span: logs,
     },
   ];
@@ -1430,10 +1521,16 @@ function renderMonthSection(data: HtmlReportData, options: ChartOptions): string
   const months = data.months;
   // Months come in order, so the first starts the span and the last ends it.
   const span: Span = { from: months[0]?.span.from ?? null, to: months.at(-1)?.span.to ?? null };
-  const heading = { id: "nm-months", heading: LABELS.apiListPrice, tag: HTML_LABELS.projectedTag };
+  // D-091: the month zone and the reasoning behind "not a bill" are behind the heading's "i".
+  const heading = {
+    id: "nm-months",
+    heading: LABELS.apiListPrice,
+    tag: HTML_LABELS.projectedTag,
+    info: [`Months in ${zone}.`, HTML_LABELS.repricing],
+  };
   const spanText = `Covers: ${sourceSpan("session logs", span, zone)}`;
-  // The zone and the Claude Code-only scope sit next to the amounts, as in the text report.
-  const scope = para(`Months in ${zone}. ${LABELS.apiListPriceScope}`);
+  // The Claude Code-only scope and "not a bill" change what the amounts mean, so they stay beside them.
+  const scope = para(`${LABELS.apiListPriceScope} ${HTML_LABELS.notABill}`);
   if (months.length === 0) {
     return chartSection({
       ...heading,
@@ -1462,7 +1559,6 @@ function renderMonthSection(data: HtmlReportData, options: ChartOptions): string
         ["k-plan", HTML_LABELS.legendPlan],
       ]),
       scope,
-      para(HTML_LABELS.repricing),
       plot(renderMonthBars(months, options)),
       tableView(
         LABELS.apiListPrice,
@@ -1508,6 +1604,25 @@ p { margin: 0; }
 .privacy { font-size: 13px; color: var(--ink-2); }
 .hook-warning { display: grid; gap: 4px; border-left: 3px solid var(--ink); padding: 8px 12px; background: var(--surface); font-weight: 600; }
 .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--water); font-weight: 600; }
+.eyebrow.projected { color: var(--silt); }
+/* D-091: an explanation behind a small "i" beside a heading. Hover, keyboard focus, or a tap (the
+   script's .nm-open) shows it; without the script, hover and focus still do. */
+.nm-info { position: relative; display: inline-block; margin-left: 8px; vertical-align: 2px; }
+.nm-info-btn { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--muted); background: transparent; color: var(--muted); font: italic 600 12px/1 Georgia, "Times New Roman", serif; padding: 0; cursor: help; }
+.nm-info-btn:hover, .nm-info-btn:focus-visible, .nm-info.nm-open .nm-info-btn { border-color: var(--ink); color: var(--ink); }
+.nm-info-text { display: none; position: absolute; left: 0; top: calc(100% + 6px); z-index: 10; width: max-content; max-width: min(420px, 80vw); padding: 10px 12px; background: var(--surface); border: 1px solid var(--axis); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.2); font-size: 13px; font-weight: 400; line-height: 1.45; color: var(--ink-2); white-space: normal; letter-spacing: normal; text-transform: none; }
+.nm-info-text > span { display: block; }
+.nm-info-text > span + span { margin-top: 6px; }
+.nm-info:hover .nm-info-text, .nm-info:focus-within .nm-info-text, .nm-info.nm-open .nm-info-text { display: block; }
+/* On a narrow screen a popover beside the heading would run off the right edge: it opens as a sheet
+   along the bottom of the screen instead. */
+@media (max-width: 600px) {
+  .nm-info-text { position: fixed; left: 12px; right: 12px; top: auto; bottom: 12px; width: auto; max-width: none; z-index: 20; }
+}
+/* Read by screen readers, not drawn. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* An empty column's full-height track, faint: in light mode it drew a grey stripe per window. */
+.nm-track { fill-opacity: 0.5; }
 .nm-part { display: grid; gap: 28px; }
 .panel { display: grid; gap: 10px; background: var(--surface); border-radius: 10px; padding: 18px 20px; min-width: 0; }
 @media (max-width: 520px) { .panel { padding: 14px 12px; } }
@@ -1551,7 +1666,9 @@ table { border-collapse: collapse; width: 100%; font-size: 13px; }
 caption { text-align: left; font-size: 12px; color: var(--muted); padding-bottom: 4px; }
 th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
 th { font-weight: 500; color: var(--muted); background: var(--sunken); white-space: nowrap; }
-td.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* One line per cell: a narrow screen scrolls the table in its box rather than stacking its text. */
+td { white-space: nowrap; }
 code { font-family: var(--mono); }
 .k-faded { width: 12px; height: 12px; border-radius: 2px; background: var(--water); opacity: 0.5; }
 .k-other { width: 12px; height: 12px; border-radius: 2px; background: var(--axis); }
@@ -1578,8 +1695,17 @@ code { font-family: var(--mono); }
 .nm-card-body { display: grid; gap: 2px; }
 .nm-goto { font: inherit; font-size: 13px; color: var(--water-deep); background: var(--sunken); border: 0; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 .nm-thumb { max-height: 160px; overflow: hidden; border-radius: 6px; background: var(--sunken); padding: 6px; }
+/* A thumbnail's text would print at about 5 px; the card's lines carry its numbers instead. */
+.nm-thumb text { display: none; }
 @media print {
   .nm-tabs .nm-tabbar, .nm-goto { display: none; }
+  /* Every explanation in full on paper, where nothing can be hovered (D-091). */
+  .nm-info-btn { display: none; }
+  .nm-info { display: block; margin: 4px 0 0; }
+  .nm-info-text { display: block; position: static; width: auto; max-width: none; padding: 0; border: 0; box-shadow: none; }
+  /* Paper can't scroll a table's box, so cells wrap there again (screens keep one line per cell). */
+  td { white-space: normal; }
+  .table-scroll { overflow-x: visible; }
   /* The same selectors as the hiding rules, later in the sheet, so printing shows every tab. */
   .nm-tabs .nm-tabpanel:not(.nm-active), .nm-tabs .nm-part:not(.nm-has-active) { display: grid; }
 }
@@ -1756,10 +1882,31 @@ if (typeof document !== "undefined") {
       selected = chosen;
       selected.classList.add("nm-sel");
     }
+    /* D-091: a tap or click toggles an explanation; a click elsewhere or Escape closes them. */
+    function closeInfo(except) {
+      var open = document.querySelectorAll(".nm-info.nm-open");
+      for (var i = 0; i < open.length; i += 1) {
+        if (open[i] !== except) {
+          open[i].classList.remove("nm-open");
+          open[i].querySelector(".nm-info-btn").setAttribute("aria-expanded", "false");
+        }
+      }
+    }
     document.addEventListener("click", function (e) {
+      var button = e.target instanceof Element ? e.target.closest(".nm-info-btn") : null;
+      if (button) {
+        var box = button.parentElement;
+        closeInfo(box);
+        var opening = !box.classList.contains("nm-open");
+        box.classList.toggle("nm-open", opening);
+        button.setAttribute("aria-expanded", String(opening));
+        return;
+      }
+      closeInfo(null);
       if (e.target instanceof Element) { activate(e.target); }
     });
     document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { closeInfo(null); }
       var t = e.target;
       if ((e.key === "Enter" || e.key === " ") && t instanceof Element && t.matches("[data-events], .nm-col")) {
         e.preventDefault();
@@ -1797,7 +1944,8 @@ function renderPage(data: HtmlReportData): string {
     // seam, while every projected panel stays below it in the document (principle 2, D-084).
     renderTabBar(),
     '<section class="nm-part" id="nm-observed" aria-labelledby="nm-observed-h">',
-    `<h2 class="eyebrow" id="nm-observed-h">${escapeHtml(LABELS.observed)}</h2>`,
+    // The tab group's label already shows OBSERVED; the section keeps its heading for screen readers.
+    `<h2 class="eyebrow sr-only" id="nm-observed-h">${escapeHtml(LABELS.observed)}</h2>`,
     tabPanel(
       "overview",
       [renderCoverageSection(data, options), renderOverviewCards(data, options)].join("\n"),

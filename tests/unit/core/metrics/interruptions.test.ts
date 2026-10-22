@@ -291,6 +291,9 @@ describe("interruption metrics: hand-computed scenario", () => {
         // No logged auto-continuation in this scenario (D-077).
         auto_continuations: 0,
         first_auto_continuation_seconds: null,
+        // Each interval's hits come from one session: sa, sc, sd (D-090).
+        sessions: 1,
+        refused_requests: 2,
       },
       // sc: 12:45:00 → 15:00:00 = 8100 s; next request 15:20:00 = +1200 s.
       {
@@ -305,6 +308,9 @@ describe("interruption metrics: hand-computed scenario", () => {
         // No logged auto-continuation in this scenario (D-077).
         auto_continuations: 0,
         first_auto_continuation_seconds: null,
+        // Each interval's hits come from one session: sa, sc, sd (D-090).
+        sessions: 1,
+        refused_requests: 1,
       },
       // sd: 489600 s; no request after, and the reset is after the logs end.
       {
@@ -319,6 +325,10 @@ describe("interruption metrics: hand-computed scenario", () => {
         // No logged auto-continuation in this scenario (D-077).
         auto_continuations: 0,
         first_auto_continuation_seconds: null,
+        // Each interval's hits come from one session: sa, sc, sd (D-090).
+        sessions: 1,
+        // sd only reached 100% in the status line: no request was refused.
+        refused_requests: 0,
       },
     ]);
   });

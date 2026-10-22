@@ -76,9 +76,11 @@ const FULL: HtmlReportData = {
       window: "five_hour",
       resetAtUtc: at("13:00:00"),
       points: [
-        { atUtc: at("10:00:05"), used: 20, event: 11 },
-        { atUtc: at("10:00:20"), used: 60, event: 12 },
-        { atUtc: at("11:58:00"), used: 103, event: 13 },
+        { atUtc: at("10:00:05"), used: 20, event: 11, stale: false },
+        { atUtc: at("10:00:20"), used: 60, event: 12, stale: false },
+        { atUtc: at("11:58:00"), used: 103, event: 13, stale: false },
+        // Stale: below the 103 before it (D-089), so its hollow marker's wording is guarded too.
+        { atUtc: at("12:30:00"), used: 70, event: 15, stale: true },
       ],
       hits: [{ atUtc: at("12:00:00"), event: 8 }],
     },
@@ -86,8 +88,8 @@ const FULL: HtmlReportData = {
       window: "seven_day",
       resetAtUtc: "2026-09-10T00:00:00.000Z",
       points: [
-        { atUtc: at("10:00:05"), used: 10, event: 11 },
-        { atUtc: at("13:05:10"), used: 16, event: 14 },
+        { atUtc: at("10:00:05"), used: 10, event: 11, stale: false },
+        { atUtc: at("13:05:10"), used: 16, event: 14, stale: false },
       ],
       hits: [],
     },
@@ -98,6 +100,8 @@ const FULL: HtmlReportData = {
       lockedUntilUtc: at("13:00:00"),
       seconds: 3600,
       hits: 1,
+      refusedRequests: 1,
+      sessions: 1,
       resetToNextRequestSeconds: 310,
       resetAfterCoverage: false,
       events: [8],
@@ -253,6 +257,8 @@ const FULL: HtmlReportData = {
   ],
   home: "/home/example",
   missingHookPath: "/home/example/nilometer/hooks/statusline.sh",
+  // An alias, so the line naming it is guarded too (D-092).
+  repositoryAliases: [{ from: "/home/example/old-name", to: "/home/example/alpha" }],
   // Every sentence describeBurnRate can produce: limit before the reset, after it, already
   // reached, and with no projected time.
   burn: [
@@ -564,8 +570,9 @@ describe("the guards see what they look for", () => {
     // Hits 9 (no window) and 16 (no time) are in no column: 2.
     expect(text).toContain("Readings captured after their window's reset, not counted: 1");
     expect(text).toContain("2 limit hits aren't in any column");
-    expect(text).toContain("Hits with an unknown reset time, not included: 2");
-    expect(text).toContain("5-hour window: 2 | weekly window: 0 | window unknown: 1");
+    expect(text).toContain("Limit hits with an unknown reset time, in no lockout: 2");
+    // A zero part is left out of a split on the page (the text report keeps it).
+    expect(text).toContain("5-hour window: 2 | window unknown: 1");
   });
 
   it("reads a sentence built from inline elements as the reader sees it", () => {

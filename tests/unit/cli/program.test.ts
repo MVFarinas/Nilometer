@@ -697,6 +697,7 @@ describe("runCli", () => {
     ["plan-price"],
     ["plan-price set"],
     ["plan-price list"],
+    ["alias set"],
     ["uninstall"],
   ])("prints stable help for %s", (command) => {
     const { deps, out } = testDeps();
@@ -806,6 +807,43 @@ describe("runCli", () => {
     writeFileSync(settingsPath, "{");
     expect(runCli(["init", "--settings", settingsPath], deps)).toBe(1);
     expect(err[0]).toMatch(/is not valid JSON/);
+  });
+
+  it("sets, lists, and removes a repository alias, and the report names it (D-092)", () => {
+    const { deps, out, err } = testDeps();
+    ingestFixture06(deps);
+    // Fixture 06's one repository, as attributed: its cwd, which doesn't exist here.
+    out.length = 0;
+    expect(runCli(["report", "--json"], deps)).toBe(0);
+    const from = (JSON.parse(out.join("\n")) as { observed: { byRepo: { repository: string }[] } })
+      .observed.byRepo[0]?.repository as string;
+    const to = join(deps.home, "Projects", "renamed");
+    out.length = 0;
+    expect(runCli(["alias", "list"], deps)).toBe(0);
+    expect(runCli(["alias", "set", from, `${to}/`], deps)).toBe(0);
+    expect(runCli(["alias", "list"], deps)).toBe(0);
+    const shownTo = join("~", "Projects", "renamed");
+    expect(out.slice(0, 2)).toEqual([
+      "No aliases entered.",
+      `${from} now counts under ${shownTo}.`,
+    ]);
+    expect(out[2]).toMatch(/^Stored in /);
+    expect(out[3]).toBe(`${from} counts under ${shownTo}`);
+    // The report counts the requests under the new path and names the alias under the table.
+    out.length = 0;
+    expect(runCli(["report"], deps)).toBe(0);
+    expect(out.join("\n")).toContain(`  ${LABELS.alias}: ${from} counts under ${shownTo}`);
+    out.length = 0;
+    expect(runCli(["alias", "remove", from], deps)).toBe(0);
+    expect(out).toEqual([`${from} no longer counts under ${shownTo}.`]);
+    expectNoBannedWording(out);
+    // Refused with exit 1 and "Nothing was changed": a relative path, a second removal.
+    expect(runCli(["alias", "set", "relative/path", to], deps)).toBe(1);
+    expect(runCli(["alias", "remove", from], deps)).toBe(1);
+    expect(err.slice(-2)).toEqual([
+      'a repository path must be absolute, got "relative/path". Nothing was changed.',
+      `there's no alias for ${from}. Nothing was changed.`,
+    ]);
   });
 
   it("sets, replaces, and lists plan prices in the data directory", () => {

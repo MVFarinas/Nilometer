@@ -238,26 +238,26 @@ describe("loadHtmlData on the shared HTML fixture (html-fixture.ts)", () => {
         resetAtUtc: at("13:00:00"),
         // Each point is dated by the first line of the response it reports (D-045), not its capture.
         points: [
-          { atUtc: at("10:00:05"), used: 20, event: spool[1] },
-          { atUtc: at("10:00:20"), used: 60, event: spool[2] },
-          { atUtc: at("11:58:00"), used: 103, event: spool[3] },
+          { atUtc: at("10:00:05"), used: 20, event: spool[1], stale: false },
+          { atUtc: at("10:00:20"), used: 60, event: spool[2], stale: false },
+          { atUtc: at("11:58:00"), used: 103, event: spool[3], stale: false },
         ],
         hits: [{ atUtc: at("12:00:00"), event: log["h1"] }],
       },
       {
         window: "five_hour",
         resetAtUtc: at("18:00:00"),
-        points: [{ atUtc: at("13:05:10"), used: 2, event: spool[4] }],
+        points: [{ atUtc: at("13:05:10"), used: 2, event: spool[4], stale: false }],
         hits: [],
       },
       {
         window: "seven_day",
         resetAtUtc: "2026-09-10T00:00:00.000Z",
         points: [
-          { atUtc: at("10:00:05"), used: 10, event: spool[1] },
-          { atUtc: at("10:00:20"), used: 12, event: spool[2] },
-          { atUtc: at("11:58:00"), used: 15, event: spool[3] },
-          { atUtc: at("13:05:10"), used: 16, event: spool[4] },
+          { atUtc: at("10:00:05"), used: 10, event: spool[1], stale: false },
+          { atUtc: at("10:00:20"), used: 12, event: spool[2], stale: false },
+          { atUtc: at("11:58:00"), used: 15, event: spool[3], stale: false },
+          { atUtc: at("13:05:10"), used: 16, event: spool[4], stale: false },
         ],
         hits: [],
       },
@@ -275,6 +275,9 @@ describe("loadHtmlData on the shared HTML fixture (html-fixture.ts)", () => {
         // 13:00:00 - 12:00:00 = 3600 s.
         seconds: 3600,
         hits: 1,
+        // One logged hit, so one request refused, from one session (D-090).
+        refusedRequests: 1,
+        sessions: 1,
         // The first request at or after 13:00:00 is r4 at 13:05:10: 5 min 10 s = 310 s.
         resetToNextRequestSeconds: 310,
         // The logs run to 13:05:10, after the 13:00 reset.
@@ -564,6 +567,9 @@ describe("loadHtmlData on the report fixture (fixture.ts buildReportFixture)", (
         lockedUntilUtc: "2026-09-01T16:00:00.000Z",
         seconds: 7170,
         hits: 1,
+        // One logged hit, so one request refused, from one session (D-090).
+        refusedRequests: 1,
+        sessions: 1,
         // Requests: b1 08-20 15:00, a2 09-01 14:00:10, a6 09-01 16:30:05, b2 09-02 15:00. The first
         // at or after 16:00:00 is a6: 30 min 5 s = 1805 s.
         resetToNextRequestSeconds: 1805,
@@ -1432,6 +1438,8 @@ describe("loadHtmlData at the edges", () => {
       home: "",
       // D-081: no hook finding in the meta, so no warning.
       missingHookPath: null,
+      // D-092: no alias entered.
+      repositoryAliases: [],
       burn: [],
       months: [],
       // No priced request, so no reading date has requests before it and none is a lower bound.
@@ -1505,6 +1513,9 @@ describe("loadHtmlData at the edges", () => {
         // 13:00:00 - 12:00:00 = 3600 s.
         seconds: 3600,
         hits: 1,
+        // One logged hit, so one request refused, from one session (D-090).
+        refusedRequests: 1,
+        sessions: 1,
         // Nothing follows 13:00 in the logs, which end at 12:00:00.
         resetToNextRequestSeconds: null,
         resetAfterCoverage: true,

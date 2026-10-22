@@ -122,26 +122,26 @@ const DATA: HtmlReportData = {
       window: "five_hour",
       resetAtUtc: at("13:00:00"),
       points: [
-        { atUtc: at("10:00:05"), used: 20, event: 11 },
-        { atUtc: at("10:00:20"), used: 60, event: 12 },
-        { atUtc: at("11:58:00"), used: 103, event: 13 },
+        { atUtc: at("10:00:05"), used: 20, event: 11, stale: false },
+        { atUtc: at("10:00:20"), used: 60, event: 12, stale: false },
+        { atUtc: at("11:58:00"), used: 103, event: 13, stale: false },
       ],
       hits: [{ atUtc: at("12:00:00"), event: 8 }],
     },
     {
       window: "five_hour",
       resetAtUtc: at("18:00:00"),
-      points: [{ atUtc: at("13:05:10"), used: 2, event: 14 }],
+      points: [{ atUtc: at("13:05:10"), used: 2, event: 14, stale: false }],
       hits: [],
     },
     {
       window: "seven_day",
       resetAtUtc: "2026-09-10T00:00:00.000Z",
       points: [
-        { atUtc: at("10:00:05"), used: 10, event: 11 },
-        { atUtc: at("10:00:20"), used: 12, event: 12 },
-        { atUtc: at("11:58:00"), used: 15, event: 13 },
-        { atUtc: at("13:05:10"), used: 16, event: 14 },
+        { atUtc: at("10:00:05"), used: 10, event: 11, stale: false },
+        { atUtc: at("10:00:20"), used: 12, event: 12, stale: false },
+        { atUtc: at("11:58:00"), used: 15, event: 13, stale: false },
+        { atUtc: at("13:05:10"), used: 16, event: 14, stale: false },
       ],
       hits: [],
     },
@@ -152,6 +152,8 @@ const DATA: HtmlReportData = {
       lockedUntilUtc: at("13:00:00"),
       seconds: 3600,
       hits: 1,
+      refusedRequests: 1,
+      sessions: 1,
       resetToNextRequestSeconds: 310,
       resetAfterCoverage: false,
       events: [8],
@@ -197,6 +199,7 @@ const DATA: HtmlReportData = {
   ],
   home: "",
   missingHookPath: null,
+  repositoryAliases: [],
   // Both windows open at the last reading (13:05:10), latest reset first, as the text report lists them.
   // 7-day: 16% after 13 h 5 m 10 s (47,110 s), so 16 / (47110 / 3600) points per hour, reaching
   // 100% at 2026-09-03 00:00 + 100 * 47110 / 16 s = 2026-09-06 09:47:17.5. 5-hour: 2% after 310 s,
@@ -380,7 +383,10 @@ function parseTables(html: string): ParsedTable[] {
     const body = table.slice(table.indexOf("<tbody>"));
     return {
       caption: /<caption>([^<]*)<\/caption>/.exec(table)?.[1] ?? "",
-      headers: [...table.matchAll(/<th scope="col">([^<]*)<\/th>/g)].map((m) => m[1] ?? ""),
+      // A number column's header carries class="num" (right-aligned over its numbers).
+      headers: [...table.matchAll(/<th scope="col"(?: class="num")?>([^<]*)<\/th>/g)].map(
+        (m) => m[1] ?? "",
+      ),
       rows: body
         .split("<tr>")
         .slice(1)
@@ -498,6 +504,58 @@ describe("the page shell", () => {
     // A details element in a grid would otherwise grow to its table's width (min-width: auto).
     expect(style).toContain("details.nm-table, .nm-series { min-width: 0; max-width: 100%; }");
     expect(style).toContain(".table-scroll { overflow-x: auto; max-width: 100%;");
+  });
+});
+
+describe("explanations behind an i beside each heading (D-091)", () => {
+  const html = renderHtmlReport(DATA);
+
+  it("gives each explained section one button that names what it explains and controls its text", () => {
+    for (const [id, heading] of [
+      ["nm-gauge", LABELS.windows],
+      ["nm-lockouts", HTML_LABELS.lockoutElapsed],
+      ["nm-repos", HTML_LABELS.repos],
+      ["nm-months", LABELS.apiListPrice],
+    ] as const) {
+      const part = section(html, id);
+      expect(part).toContain(
+        `<button type="button" class="nm-info-btn" aria-expanded="false" aria-controls="${id}-info" aria-label="${escapeHtml(`About: ${heading}`)}">i</button>`,
+      );
+      expect(part).toContain(`<span class="nm-info-text" id="${id}-info" role="note">`);
+    }
+    // The usage windows' explanations, in order: how to read the values, "open", how to select.
+    expect(section(html, "nm-gauge")).toContain(
+      `<span>${escapeHtml(`${LABELS.windowsCaveat} ${HTML_LABELS.over100}`)}</span><span>${escapeHtml(LABELS.openNote)}</span><span>${escapeHtml(HTML_LABELS.seriesHint)}</span>`,
+    );
+  });
+
+  it("opens on hover, keyboard focus, or the script's tap toggle, and prints every one in full", () => {
+    const style = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    expect(style).toContain(
+      ".nm-info:hover .nm-info-text, .nm-info:focus-within .nm-info-text, .nm-info.nm-open .nm-info-text { display: block; }",
+    );
+    const print = style.slice(style.indexOf("@media print"));
+    expect(print).toContain(".nm-info-btn { display: none; }");
+    expect(print).toContain(".nm-info-text { display: block; position: static;");
+    // Paper can't scroll a table's box, so its cells wrap there (2026-10-22 print check).
+    expect(print).toContain("td { white-space: normal; }");
+    // A narrow screen opens it as a sheet along the bottom, not off the right edge.
+    expect(style).toContain(
+      ".nm-info-text { position: fixed; left: 12px; right: 12px; top: auto; bottom: 12px;",
+    );
+    // The script toggles the class and aria-expanded together, and Escape closes every one.
+    expect(html).toContain('button.setAttribute("aria-expanded", String(opening));');
+    expect(html).toContain('if (e.key === "Escape") { closeInfo(null); }');
+  });
+
+  it("keeps the caveats that change what a number means in the body, not behind the i", () => {
+    expect(section(html, "nm-lockouts")).toContain(
+      `<p class="caveat">${escapeHtml(HTML_LABELS.lockoutCaveat)}</p>`,
+    );
+    expect(section(html, "nm-months")).toContain(escapeHtml(HTML_LABELS.notABill));
+    // "A lower bound" stays in the gauge's legend.
+    expect(section(html, "nm-gauge")).toContain(escapeHtml(HTML_LABELS.legendLast));
+    expect(HTML_LABELS.legendLast).toContain("lower bound");
   });
 });
 
@@ -645,8 +703,8 @@ describe("the sections", () => {
         window: "five_hour",
         resetAtUtc: at("13:00:00"),
         points: [
-          { atUtc: at("12:00:00"), used: 100, event: 13 },
-          { atUtc: at("12:30:00"), used: 101, event: 14 },
+          { atUtc: at("12:00:00"), used: 100, event: 13, stale: false },
+          { atUtc: at("12:30:00"), used: 101, event: 14, stale: false },
         ],
         hits: [{ atUtc: at("12:00:00"), event: 8 }],
       },
@@ -746,15 +804,24 @@ describe("the sections", () => {
     expect(lockouts).toContain(
       '<p class="total"><span class="num" data-events="8" data-label="Elapsed lockout time">1 h 0 m</span> across 1 lockout</p>',
     );
-    expect(lockouts).toContain(`<h3 id="nm-lockouts-h">${escapeHtml(LABELS.lockout)}</h3>`);
-    expect(lockouts).toContain(escapeHtml(HTML_LABELS.lockoutCaveat));
+    // A short heading; its definition and the hits note are behind its "i" (D-091), the caveat
+    // that what happened during a lockout isn't observed stays in the body.
+    expect(lockouts).toContain(
+      `<h3 id="nm-lockouts-h">${escapeHtml(HTML_LABELS.lockoutElapsed)}<span class="nm-info">`,
+    );
+    expect(lockouts).toContain(
+      `<span class="nm-info-text" id="nm-lockouts-info" role="note"><span>${escapeHtml(HTML_LABELS.lockoutDefinition)}</span><span>${escapeHtml(LABELS.limitHitsNote)}</span></span>`,
+    );
+    expect(lockouts).toContain(`<p class="caveat">${escapeHtml(HTML_LABELS.lockoutCaveat)}</p>`);
     // The auto-resume caveat qualifies the not-resumed counts, which the page doesn't print.
     expect(lockouts).not.toContain(escapeHtml(LABELS.autoResumeCaveat));
     // Reset at 13:00:00 to the next request at 13:05:10 is 310 s: 5 m 10 s, from r4 on line 10.
     expect(lockouts).toContain(
       '<td class="num" data-events="10" data-label="Reset to next Claude Code request, Lockout from 2026-09-03 12:00">5 m 10 s</td>',
     );
-    expect(lockouts).toContain('<th scope="col">Reset to next Claude Code request</th>');
+    expect(lockouts).toContain(
+      '<th scope="col" class="num">Reset to next Claude Code request</th>',
+    );
   });
 
   it("prints the text report's interruption counts beside the lockouts, each with its events", () => {
@@ -784,24 +851,24 @@ describe("the sections", () => {
     const lockouts = section(html, "nm-lockouts");
     // The phrases of render.ts renderObserved, one paragraph each.
     expect(lockouts).toContain(
-      '<p class="count" data-events="8 13 30 31" data-label="Rate-limit interruptions">Rate-limit interruptions: 4</p>',
+      '<p class="count" data-events="8 13 30 31" data-label="Limit hits">Limit hits: 4 in 1 lockout</p>',
     );
     // Each split number carries only its own hits, not every hit the line divides up.
     expect(lockouts).toContain(
-      '<p class="sub">5-hour window: <span class="num" data-events="8 13" data-label="Rate-limit interruptions, 5-hour window">2</span> | weekly window: <span class="num" data-events="30" data-label="Rate-limit interruptions, weekly window">1</span> | window unknown: <span class="num" data-events="31" data-label="Rate-limit interruptions, window unknown">1</span></p>',
+      '<p class="sub">5-hour window: <span class="num" data-events="8 13" data-label="Limit hits, 5-hour window">2</span> | weekly window: <span class="num" data-events="30" data-label="Limit hits, weekly window">1</span> | window unknown: <span class="num" data-events="31" data-label="Limit hits, window unknown">1</span></p>',
     );
     expect(lockouts).toContain(
-      '<p class="sub">From the session logs: <span class="num" data-events="8 13 30" data-label="Rate-limit interruptions, from the session logs">3</span> | seen only in the status line: <span class="num" data-events="31" data-label="Rate-limit interruptions, seen only in the status line">1</span></p>',
+      '<p class="sub">From the session logs: <span class="num" data-events="8 13 30" data-label="Limit hits, from the session logs">3</span> | seen only in the status line: <span class="num" data-events="31" data-label="Limit hits, seen only in the status line">1</span></p>',
     );
     expect(lockouts).toContain(
-      '<p class="sub" data-events="30 31" data-label="Hits with an unknown reset time">Hits with an unknown reset time, not included: 2</p>',
+      '<p class="sub" data-events="30 31" data-label="Limit hits with an unknown reset time">Limit hits with an unknown reset time, in no lockout: 2</p>',
     );
     // The unknown-reset line sits right under the total it qualifies, as in the text report.
-    expect(lockouts.indexOf("Hits with an unknown reset")).toBeGreaterThan(
+    expect(lockouts.indexOf("Limit hits with an unknown reset")).toBeGreaterThan(
       lockouts.indexOf('<p class="total">'),
     );
-    expect(lockouts.indexOf("Hits with an unknown reset")).toBeLessThan(
-      lockouts.indexOf("Rate-limit interruptions: 4"),
+    expect(lockouts.indexOf("Limit hits with an unknown reset")).toBeLessThan(
+      lockouts.indexOf("Limit hits: 4"),
     );
   });
 
@@ -822,6 +889,8 @@ describe("the sections", () => {
       lockedUntilUtc: at("15:30:00"),
       seconds: 1799.6,
       hits: 2,
+      refusedRequests: 2,
+      sessions: 1,
       resetToNextRequestSeconds: null,
       resetAfterCoverage: true,
       events: [20, 8],
@@ -874,9 +943,18 @@ describe("the sections", () => {
 
   it("shows the monthly amounts with the text report's scope and plan-price notes", () => {
     const months = section(renderHtmlReport(DATA), "nm-months");
-    expect(months).toContain('<p class="eyebrow">Projected</p>');
-    expect(months).toContain(`<h3 id="nm-months-h">${escapeHtml(LABELS.apiListPrice)}</h3>`);
-    expect(months).toContain(escapeHtml(`Months in UTC. ${LABELS.apiListPriceScope}`));
+    expect(months).toContain('<p class="eyebrow projected">Projected</p>');
+    expect(months).toContain(
+      `<h3 id="nm-months-h">${escapeHtml(LABELS.apiListPrice)}<span class="nm-info">`,
+    );
+    // Claude Code only and "not a bill" stay beside the amounts; the zone and the reasoning are
+    // behind the heading's "i" (D-091).
+    expect(months).toContain(
+      `<p class="caveat">${escapeHtml(`${LABELS.apiListPriceScope} ${HTML_LABELS.notABill}`)}</p>`,
+    );
+    expect(months).toContain(
+      `<span class="nm-info-text" id="nm-months-info" role="note"><span>Months in UTC.</span><span>${escapeHtml(HTML_LABELS.repricing)}</span></span>`,
+    );
     // $0.0123 is shown as dollars and cents: $0.01.
     expect(months).toContain('data-label="At API list price, 2026-09">$0.01</td>');
     expect(months).toContain("<td>none entered</td>");
@@ -1082,9 +1160,9 @@ describe("the tabs (step G2.1, D-084)", () => {
       `<p class="count" data-events="14" data-label="${HTML_LABELS.weeklyNow}">${HTML_LABELS.weeklyNow}: 16% at 2026-09-03 13:05; resets 2026-09-10 00:00</p>`,
     );
     expect(overview).toContain(`data-events="14" data-label="${HTML_LABELS.weeklyPeak}"`);
-    // One hit (line 8), inside the one lockout of 1 h.
+    // One hit (line 8), inside the one lockout of 1 h; the lockout leads (D-090).
     expect(overview).toContain(
-      `<p class="count" data-events="8" data-label="${LABELS.limitHits}">${LABELS.limitHits}: 1</p>`,
+      `<p class="sub" data-events="8" data-label="${LABELS.limitHits}">${LABELS.limitHits}: 1 in 1 lockout</p>`,
     );
     expect(overview).toContain(
       `data-events="8" data-label="${HTML_LABELS.lockoutElapsed}">${HTML_LABELS.lockoutElapsed}: 1 h 0 m across 1 lockout</p>`,
@@ -1144,7 +1222,7 @@ describe("the tabs (step G2.1, D-084)", () => {
 
   it("states each open window's burn rate in the text report's words, with the reading behind it", () => {
     const burn = section(renderHtmlReport(DATA), "nm-burn");
-    expect(burn).toContain('<p class="eyebrow">Projected</p>');
+    expect(burn).toContain('<p class="eyebrow projected">Projected</p>');
     expect(burn).toContain(escapeHtml(LABELS.burnRatePremise));
     for (const window of DATA.burn) {
       expect(burn).toContain(
@@ -1247,7 +1325,7 @@ describe("interruptions per plan period (step G2.2, D-075)", () => {
       `<details class="nm-table" open><summary>Table view: ${HTML_LABELS.byPlanCaption}</summary>`,
     );
     expect(lockouts).toContain(
-      '<td>Max 5x</td><td>2026-09 onward</td><td class="num" data-events="8" data-label="Hits, Max 5x, 2026-09 onward">1</td>',
+      '<td>Max 5x</td><td>2026-09 onward</td><td class="num" data-events="8" data-label="Limit hits, Max 5x, 2026-09 onward">1</td>',
     );
     expect(lockouts).toContain(
       'data-label="Elapsed lockout time, Max 5x, 2026-09 onward">1 h 0 m</td>',
@@ -1268,10 +1346,10 @@ describe("interruptions per plan period (step G2.2, D-075)", () => {
     const html = renderHtmlReport(PLANS);
     const card = section(html, "nm-card-interruptions");
     expect(card).toContain(
-      `<p class="sub" data-events="8" data-label="${LABELS.limitHits}, Max 5x">Max 5x, 2026-09 onward: 1 limit hit</p>`,
+      `<p class="sub" data-events="8" data-label="${LABELS.columns.lockouts}, Max 5x">Max 5x, 2026-09 onward: 1 lockout</p>`,
     );
     expect(card).toContain(
-      `data-events="" data-label="${LABELS.limitHits}, no plan entered">no plan entered, before 2026-09: 0 limit hits</p>`,
+      `data-events="" data-label="${LABELS.columns.lockouts}, no plan entered">no plan entered, before 2026-09: 0 lockouts</p>`,
     );
     // The chart is drawn with each bar's period, so it can draw its lanes.
     expect(charts.renderLockouts).toHaveBeenCalledWith(PLANS.lockouts, {

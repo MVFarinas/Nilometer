@@ -45,6 +45,16 @@ import {
   runVerify,
 } from "../core/verify/verify.js";
 import { type OpenResult, openPage } from "../core/util/open-page.js";
+import {
+  type AliasEntry,
+  type AliasRow,
+  RepositoryAliasError,
+  listAliases,
+  normalizeRepositoryPath,
+  removeAlias,
+  setAlias,
+  validateAlias,
+} from "../core/plans/repository-aliases.js";
 import { METRIC_NAMES, UnknownMetricError, explain, renderExplanation } from "../viewer/explain.js";
 import { formatNumber } from "../viewer/format.js";
 import {
@@ -234,6 +244,44 @@ export function describePlanPriceSet(
         ]),
     `Stored in ${databasePath}`,
   ];
+}
+
+/**
+ * Describes a stored alias (D-092).
+ * @param entry - The alias entered.
+ * @param previous - The alias it replaced, if any.
+ * @param databasePath - Where it's stored.
+ * @param home - Home directory, so paths print as `~/...`.
+ * @returns Lines for stdout.
+ */
+export function describeAliasSet(
+  entry: AliasEntry,
+  previous: AliasRow | null,
+  databasePath: string,
+  home: string,
+): string[] {
+  return [
+    `${displayPath(entry.from, home)} now counts under ${displayPath(entry.to, home)}.`,
+    ...(previous === null || previous.to === entry.to
+      ? []
+      : [`Before, it counted under ${displayPath(previous.to, home)}.`]),
+    `Stored in ${displayPath(databasePath, home)}`,
+  ];
+}
+
+/**
+ * Describes the stored aliases.
+ * @param rows - Rows from `listAliases`.
+ * @param home - Home directory, so paths print as `~/...`.
+ * @returns Lines for stdout.
+ */
+export function describeAliasList(rows: readonly AliasRow[], home: string): string[] {
+  if (rows.length === 0) {
+    return ["No aliases entered."];
+  }
+  return rows.map(
+    (row) => `${displayPath(row.from, home)} counts under ${displayPath(row.to, home)}`,
+  );
 }
 
 /**
@@ -591,6 +639,7 @@ export function isReportedError(error: unknown): error is Error {
     error instanceof DiscoveryError ||
     error instanceof PriceTableError ||
     error instanceof PlanPriceError ||
+    error instanceof RepositoryAliasError ||
     error instanceof NoDatabaseError ||
     error instanceof UnknownMetricError
   );
@@ -909,6 +958,74 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
           );
           noteTightened(deps, tightened);
           return { exitCode: 0, lines: describePlanPriceList(result) };
+        }),
+      );
+    });
+
+  // D-092: a renamed or moved project's old path counts under its new one.
+  const alias = program
+    .command("alias")
+    .description("Count a renamed or moved project's old path under its new one.");
+
+  alias
+    .command("set <old-path> <new-path>")
+    .description(
+      "Count every request under <old-path> as <new-path>. Re-entering an old path replaces its target.",
+    )
+    .option("--data-dir <path>", "data directory holding the database")
+    .action((from: string, to: string, flags: PlanPriceFlags) => {
+      setExitCode(
+        report(deps, () => {
+          // Validate before opening the database, so a typo creates nothing.
+          const entry = validateAlias(from, to, deps.home);
+          const { databasePath, result, tightened } = withPlanDatabase(
+            toPlanDatabaseOptions(flags, deps),
+            (db) => setAlias(db, entry, deps.now),
+          );
+          noteTightened(deps, tightened);
+          return {
+            exitCode: 0,
+            lines: describeAliasSet(entry, result, databasePath, deps.home),
+          };
+        }),
+      );
+    });
+
+  alias
+    .command("list")
+    .description("List the entered aliases.")
+    .option("--data-dir <path>", "data directory holding the database")
+    .action((flags: PlanPriceFlags) => {
+      setExitCode(
+        report(deps, () => {
+          const { result, tightened } = withPlanDatabase(
+            toPlanDatabaseOptions(flags, deps),
+            listAliases,
+          );
+          noteTightened(deps, tightened);
+          return { exitCode: 0, lines: describeAliasList(result, deps.home) };
+        }),
+      );
+    });
+
+  alias
+    .command("remove <old-path>")
+    .description("Stop counting <old-path> under another path.")
+    .option("--data-dir <path>", "data directory holding the database")
+    .action((from: string, flags: PlanPriceFlags) => {
+      setExitCode(
+        report(deps, () => {
+          const path = normalizeRepositoryPath(from, deps.home);
+          const { result, tightened } = withPlanDatabase(toPlanDatabaseOptions(flags, deps), (db) =>
+            removeAlias(db, path),
+          );
+          noteTightened(deps, tightened);
+          return {
+            exitCode: 0,
+            lines: [
+              `${displayPath(result.from, deps.home)} no longer counts under ${displayPath(result.to, deps.home)}.`,
+            ],
+          };
         }),
       );
     });

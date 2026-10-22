@@ -183,13 +183,14 @@ describe.skipIf(IS_WINDOWS)("interruptions per plan period (D-075)", () => {
     const start = lines.findIndex((line) => line.startsWith("  By plan period:"));
     expect(start).toBeGreaterThan(0);
     expect(lines.slice(start + 1, start + 7)).toEqual([
-      // Months is as wide as "2026-08 to 2026-09" (18); durations right-align under their 20-wide header.
-      "    Plan             Months              Hits  Lockouts  Elapsed lockout time  Covers",
-      "    ---------------  ------------------  ----  --------  --------------------  ------------------------------------",
-      "    no plan entered  before 2026-08         1         1               1 h 0 m  2026-07-15 10:00 to 2026-07-20 12:00",
-      "    Pro              2026-08 to 2026-09     2         2              4 h 30 m  2026-08-05 09:00 to 2026-09-30 23:00",
-      "    Max 5x           2026-10 onward         1         1               1 h 0 m  2026-10-02 10:00 to 2026-10-03 08:00",
-      "    time unknown     no time                1         0                   0 s",
+      // Months is as wide as "2026-08 to 2026-09" (18); counts right-align under "Limit hits" (10,
+      // D-090) and durations under their 20-wide header.
+      "    Plan             Months              Limit hits  Lockouts  Elapsed lockout time  Covers",
+      "    ---------------  ------------------  ----------  --------  --------------------  ------------------------------------",
+      "    no plan entered  before 2026-08               1         1               1 h 0 m  2026-07-15 10:00 to 2026-07-20 12:00",
+      "    Pro              2026-08 to 2026-09           2         2              4 h 30 m  2026-08-05 09:00 to 2026-09-30 23:00",
+      "    Max 5x           2026-10 onward               1         1               1 h 0 m  2026-10-02 10:00 to 2026-10-03 08:00",
+      "    time unknown     no time                      1         0                   0 s",
     ]);
   });
 
