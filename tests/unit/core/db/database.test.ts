@@ -4,6 +4,7 @@
 import { chmodSync, existsSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { HAS_POSIX_MODES } from "../../../setup/platform.js";
@@ -12,9 +13,12 @@ import {
   type Migration,
   MigrationListError,
   applyMigrations,
+  blobBytes,
   listMigrations,
   openDatabase,
+  pragmaValue,
   schemaVersion,
+  transaction,
 } from "../../../../core/db/database.js";
 
 /**
@@ -178,9 +182,9 @@ describe("openDatabase", () => {
     const path = join(mkdtempSync(join(tmpdir(), "aua-db-")), "nested", "dir", "usage.db");
     const db = openDatabase(path, migrationsDir(TWO));
     expect(existsSync(path)).toBe(true);
-    expect(db.pragma("journal_mode", { simple: true })).toBe("wal");
-    expect(db.pragma("busy_timeout", { simple: true })).toBe(5000);
-    expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
+    expect(pragmaValue(db, "journal_mode")).toBe("wal");
+    expect(pragmaValue(db, "busy_timeout")).toBe(5000);
+    expect(pragmaValue(db, "foreign_keys")).toBe(1);
     db.close();
   });
 
@@ -228,5 +232,77 @@ describe("openDatabase", () => {
       MigrationListError,
     );
     expect(existsSync(path)).toBe(false);
+  });
+});
+
+describe("transaction (D-093)", () => {
+  /**
+   * An in-memory database with one empty table.
+   * @returns The database.
+   */
+  function withTable() {
+    const db = new DatabaseSync(":memory:");
+    db.exec("CREATE TABLE t (x INTEGER)");
+    return db;
+  }
+
+  /**
+   * Reads the table's values in insertion order.
+   * @param db - The database.
+   * @returns The values.
+   */
+  const values = (db: DatabaseSync) =>
+    db
+      .prepare("SELECT x FROM t ORDER BY rowid")
+      .all()
+      .map((r) => r["x"]);
+
+  it("commits what the work wrote and returns its result", () => {
+    const db = withTable();
+    const result = transaction(db, () => {
+      db.exec("INSERT INTO t VALUES (1)");
+      return "done";
+    });
+    expect(result).toBe("done");
+    expect(db.isTransaction).toBe(false);
+    expect(values(db)).toEqual([1]);
+  });
+
+  it("rolls everything back when the work throws, and rethrows", () => {
+    const db = withTable();
+    expect(() =>
+      transaction(db, () => {
+        db.exec("INSERT INTO t VALUES (1)");
+        throw new Error("inside");
+      }),
+    ).toThrow("inside");
+    expect(db.isTransaction).toBe(false);
+    expect(values(db)).toEqual([]);
+  });
+
+  it("undoes only a nested call's work when it throws, keeping the outer work", () => {
+    const db = withTable();
+    transaction(db, () => {
+      db.exec("INSERT INTO t VALUES (1)");
+      expect(() =>
+        transaction(db, () => {
+          db.exec("INSERT INTO t VALUES (2)");
+          throw new Error("inner");
+        }),
+      ).toThrow("inner");
+      // A nested call that succeeds is kept with the outer work.
+      transaction(db, () => db.exec("INSERT INTO t VALUES (3)"));
+    });
+    expect(values(db)).toEqual([1, 3]);
+  });
+});
+
+describe("blobBytes (D-093)", () => {
+  it("decodes a stored blob as text, where the plain Uint8Array would not", () => {
+    const db = new DatabaseSync(":memory:");
+    const blob = db.prepare("SELECT CAST('{\"a\":1}' AS BLOB) AS b").get()?.["b"] as Uint8Array;
+    // The trap D-093 records: no error, just the byte values joined by commas.
+    expect(blob.toString()).toBe("123,34,97,34,58,49,125");
+    expect(blobBytes(blob).toString("utf8")).toBe('{"a":1}');
   });
 });

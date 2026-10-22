@@ -8,7 +8,7 @@
  */
 import { join } from "node:path";
 
-import { type Db, openDatabase } from "../db/database.js";
+import { type Db, openDatabase, transaction } from "../db/database.js";
 import { DATABASE_FILE } from "../ingest/command.js";
 import { resolveDataDir } from "../install/locations.js";
 import { securePrivateDataDir } from "../install/private-files.js";
@@ -86,7 +86,7 @@ export function validatePlanPrice(
  * @returns The row it replaced, or null when the month had none.
  */
 export function setPlanPrice(db: Db, entry: PlanPriceEntry, now: () => Date): PlanPriceRow | null {
-  return db.transaction(() => {
+  return transaction(db, () => {
     const previous = readRow(db, entry.month);
     db.prepare(
       `INSERT INTO plan_prices (effective_month, plan_name, usd_per_month, entered_at) VALUES (?, ?, ?, ?)
@@ -94,7 +94,7 @@ export function setPlanPrice(db: Db, entry: PlanPriceEntry, now: () => Date): Pl
          plan_name = excluded.plan_name, usd_per_month = excluded.usd_per_month, entered_at = excluded.entered_at`,
     ).run(entry.month, entry.planName, entry.usdPerMonth, now().toISOString());
     return previous;
-  })();
+  });
 }
 
 /**
@@ -108,7 +108,7 @@ export function listPlanPrices(db: Db): PlanPriceRow[] {
       .prepare(
         "SELECT effective_month, plan_name, usd_per_month, entered_at FROM plan_prices ORDER BY effective_month",
       )
-      .all() as StoredRow[]
+      .all() as unknown as StoredRow[]
   ).map(toRow);
 }
 

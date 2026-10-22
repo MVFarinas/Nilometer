@@ -320,7 +320,7 @@ function loadCoverage(db: Db): CoverageRow[] {
   return (
     db
       .prepare("SELECT source, covers_from, covers_to FROM source_coverage ORDER BY source")
-      .all() as CoverageSqlRow[]
+      .all() as unknown as CoverageSqlRow[]
   ).map((row) => ({ source: row.source, span: { from: row.covers_from, to: row.covers_to } }));
 }
 
@@ -378,7 +378,7 @@ function loadWindows(db: Db, at: number): WindowSqlRow[] {
        WHERE h.readings > 0
        ORDER BY h.reset_at_utc, h.window`,
     )
-    .all({ at }) as WindowSqlRow[];
+    .all({ at }) as unknown as WindowSqlRow[];
 }
 
 /**
@@ -497,7 +497,7 @@ function loadLockouts(db: Db, withPeriods = false): LockoutBar[] {
        -- Intervals are numbered in start order, as loadObserved reads them.
        ORDER BY i.interval_number`,
     )
-    .all() as LockoutSqlRow[];
+    .all() as unknown as LockoutSqlRow[];
   const periods = new Map(
     (withPeriods
       ? (db
@@ -508,7 +508,7 @@ function loadLockouts(db: Db, withPeriods = false): LockoutBar[] {
                  THEN strftime('%Y-%m', until_month || '-01', '-1 month') END AS to_month
              FROM obs_lockout_by_plan_events`,
           )
-          .all() as LockoutPeriodSqlRow[])
+          .all() as unknown as LockoutPeriodSqlRow[])
       : []
     ).map((row) => [row.interval_number, periodRef(row)]),
   );
@@ -548,14 +548,14 @@ function loadInterruptions(
   totals?: Pick<ObservedReport, "limitHits" | "lockout" | "interruptionsByPlan">,
 ): InterruptionTotals {
   const { limitHits, lockout, interruptionsByPlan } = totals ?? {
-    limitHits: db.prepare("SELECT * FROM obs_limit_hits").get() as LimitHits,
-    lockout: db.prepare("SELECT * FROM obs_lockout_time").get() as LockoutTime,
+    limitHits: db.prepare("SELECT * FROM obs_limit_hits").get() as unknown as LimitHits,
+    lockout: db.prepare("SELECT * FROM obs_lockout_time").get() as unknown as LockoutTime,
     interruptionsByPlan: db
       .prepare(
         `SELECT * FROM obs_interruptions_by_plan
          ORDER BY CASE period_kind WHEN 'none' THEN 0 WHEN 'plan' THEN 1 ELSE 2 END, from_month`,
       )
-      .all() as PlanPeriodRow[],
+      .all() as unknown as PlanPeriodRow[],
   };
   const row = db
     .prepare(
@@ -588,7 +588,7 @@ function loadInterruptions(
        -- Ungrouped, lists always has one row, and json_group_array gives [] over no rows.
        SELECT * FROM lists`,
     )
-    .get() as InterruptionListsRow;
+    .get() as unknown as InterruptionListsRow;
   return {
     hits: limitHits.hits,
     fiveHourHits: limitHits.five_hour_hits,
@@ -710,7 +710,7 @@ function loadAfterReset(db: Db): AfterResetReadings {
        JOIN raw_lines l ON l.id = r.raw_line_id
        WHERE r.after_reset = 1`,
     )
-    .get() as AfterResetSqlRow;
+    .get() as unknown as AfterResetSqlRow;
   return { count: row.count, events: parseIds(row.ids) };
 }
 
@@ -735,7 +735,7 @@ function loadModels(db: Db): ModelBar[] {
        LEFT JOIN members x ON x.model = m.model
        ORDER BY m.output_tokens DESC, m.model`,
     )
-    .all() as ModelSqlRow[];
+    .all() as unknown as ModelSqlRow[];
   return rows.map((row) => ({
     model: row.model,
     requests: row.requests,
@@ -769,7 +769,7 @@ function loadRepos(db: Db): RepoBar[] {
        LEFT JOIN members x ON x.repository IS r.repository AND x.repo_kind = r.repo_kind
        ORDER BY r.output_tokens DESC, r.repository`,
     )
-    .all() as RepoSqlRow[];
+    .all() as unknown as RepoSqlRow[];
   return rows.map((row) => ({
     repository: row.repository,
     kind: row.repo_kind,
@@ -803,7 +803,7 @@ function loadBurn(db: Db, at: number): BurnWindow[] {
        WHERE b.window_open = 1 AND unixepoch(b.reset_at_utc, 'subsec') > :at
        ORDER BY b.reset_at_utc DESC, b.window`,
     )
-    .all({ at }) as BurnSqlRow[];
+    .all({ at }) as unknown as BurnSqlRow[];
   return rows.map((row) => ({
     window: row.window,
     resetAtUtc: row.reset_at_utc,
@@ -853,7 +853,7 @@ function loadMonths(db: Db): MonthBar[] {
        LEFT JOIN members x ON x.month = p.month
        ORDER BY p.month`,
     )
-    .all() as MonthSqlRow[];
+    .all() as unknown as MonthSqlRow[];
   return rows.map((row) => ({
     month: row.month,
     apiListPriceUsd: row.api_list_price_usd,
@@ -900,7 +900,7 @@ function loadEvents(db: Db, ids: readonly number[]): EventTable {
        WHERE l.id IN (SELECT value FROM json_each(?))
        ORDER BY ${CANONICAL}`,
     )
-    .all(JSON.stringify(ids)) as EventSqlRow[];
+    .all(JSON.stringify(ids)) as unknown as EventSqlRow[];
   const files: string[] = [];
   const fileIndex = new Map<string, number>();
   const events: Record<number, EventDetail> = {};

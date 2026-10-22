@@ -12,13 +12,20 @@
     "url": "https://github.com/MVFarinas/Nilometer/issues"
   },
   "homepage": "https://github.com/MVFarinas/Nilometer#readme",
-  "private": true,
   "type": "module",
   "bin": {
     "nilometer": "dist/cli/main.cli.js"
   },
+  "files": [
+    "dist/**/*.js",
+    "core/schema/*.sql",
+    "core/pricing/prices.json",
+    "hooks/statusline.sh",
+    "docs/requirements.md",
+    "CHANGELOG.md"
+  ],
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=24"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -39,7 +46,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.13.4",
     "@vitest/coverage-v8": "^5.0.5",
     "@vitest/eslint-plugin": "^1.6.27",
@@ -52,7 +58,6 @@
     "vitest": "^5.0.5"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
     "commander": "^15.0.0"
   }
 }

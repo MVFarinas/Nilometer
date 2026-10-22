@@ -134,14 +134,14 @@ describe("withPlanDatabase", () => {
     expect(result).toBeNull();
     expect(databasePath).toBe(join(home, "data", "nested", "usage.db"));
     expect(existsSync(databasePath)).toBe(true);
-    let captured: { open: boolean } | undefined;
+    let captured: { isOpen: boolean } | undefined;
     expect(() =>
       withPlanDatabase(options, (db) => {
         captured = db;
         throw new Error("inside");
       }),
     ).toThrow("inside");
-    expect(captured?.open).toBe(false);
+    expect(captured?.isOpen).toBe(false);
     expect(withPlanDatabase(options, listPlanPrices).result).toHaveLength(1);
   });
 

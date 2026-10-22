@@ -8,7 +8,7 @@
  */
 import { createHash } from "node:crypto";
 
-import type { Db } from "./database.js";
+import { type Db, blobBytes } from "./database.js";
 
 /** A table name that doesn't exist. Nothing is hashed when this is raised. */
 export class UnknownTableError extends Error {
@@ -24,13 +24,13 @@ export class UnknownTableError extends Error {
 
 /**
  * Serializes one SQLite value unambiguously.
- * @param value - A value as better-sqlite3 returns it.
+ * @param value - A value as `node:sqlite` returns it (a blob is a `Uint8Array`; a `Buffer` is one too).
  * @returns A JSON-safe value. Blobs become `{"blob": "<hex>"}` so they can never collide with text,
  *   and bigints become `{"int": "<decimal>"}` so large integers keep full precision.
  */
 export function canonicalValue(value: unknown): unknown {
-  if (Buffer.isBuffer(value)) {
-    return { blob: value.toString("hex") };
+  if (value instanceof Uint8Array) {
+    return { blob: blobBytes(value).toString("hex") };
   }
   if (typeof value === "bigint") {
     return { int: value.toString() };
@@ -60,12 +60,12 @@ export function fingerprintTables(db: Db, tableNames: readonly string[]): Record
   const result: Record<string, string> = {};
   for (const table of tableNames) {
     // The name was validated against sqlite_master above; quoting guards unusual characters.
-    const rows = db
-      .prepare(`SELECT * FROM "${table.replaceAll('"', '""')}"`)
-      .raw()
-      .all() as unknown[][];
+    const rows = db.prepare(`SELECT * FROM "${table.replaceAll('"', '""')}"`);
+    // Arrays rather than objects: column order is part of the content, and names are not.
+    rows.setReturnArrays(true);
+    const values = rows.all() as unknown as unknown[][];
     // Sort serialized rows so the digest ignores physical order but not content.
-    const serialized = rows.map((row) => JSON.stringify(row.map(canonicalValue))).sort();
+    const serialized = values.map((row) => JSON.stringify(row.map(canonicalValue))).sort();
     const hash = createHash("sha256");
     for (const row of serialized) {
       hash.update(row);

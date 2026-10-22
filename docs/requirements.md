@@ -7,8 +7,8 @@ have it, and how to get it if you don't. When everything below checks out, conti
 | You need | Why | Check with |
 |---|---|---|
 | **Claude Code**, signed in with a Pro or Max subscription | Nilometer reads what Claude Code records | `claude --version` |
-| **Node.js 24** (npm comes with it) | Nilometer is built and run with it | `node --version` prints `v24.` followed by more numbers |
-| **git** | To download Nilometer | `git --version` |
+| **Node.js 24 or 26** (npm comes with it) | Nilometer is built and run with it | `node --version` prints `v24.` or `v26.` followed by more numbers |
+| **git**, only to install from a clone | To download Nilometer's source; `npm install -g nilometer` doesn't need it | `git --version` |
 | **Windows only: Git for Windows** | It provides Git Bash, which the status line hook and every Nilometer command run in | Git Bash is in the Start menu |
 
 ## First, open a terminal
@@ -19,22 +19,25 @@ have it, and how to get it if you don't. When everything below checks out, conti
   PowerShell or Command Prompt.
 - **Linux:** open your terminal.
 
-Run the three checks from the table. If one prints `command not found` (or, on Windows, "is not
+Run the checks from the table. If one prints `command not found` (or, on Windows, "is not
 recognized"), follow that section below. After installing anything, close the terminal and open a
 new one, so it sees the new program.
 
-## Node.js 24
+## Node.js 24 or 26
 
-Nilometer needs **Node.js 24** specifically, not just any recent Node.js:
+Nilometer needs **Node.js 24 or 26**, the long-term support releases it's tested on. If you
+already have one of them, skip this section. If you're installing Node.js now, either works; the
+steps below use 24.
 
-- **Older versions don't work.** Nilometer's database library crashes on them, so `nilometer`
-  checks first and stops with a message instead:
-  `Nilometer needs Node.js 24, and this is Node.js 22.11.0. ...`
-- **Newer versions aren't tested.** Nilometer runs on them and prints a one-line warning each
-  time. If anything fails, switch to 24.
-- **"The latest Node.js" may not be 24.** nodejs.org also offers newer releases, and
-  `brew install node` installs the newest one. Choose 24 on purpose, using one of the two ways
-  below.
+- **Older versions don't work.** Nilometer uses the SQLite built into Node.js, which older
+  versions lack or have only as an experiment, so `nilometer` checks first and stops with a
+  message instead:
+  `Nilometer needs Node.js 24 or newer, and this is Node.js 22.11.0. ...`
+- **Other versions aren't tested.** Nilometer runs on them (25, or anything newer than 26) and
+  prints a one-line warning each time. If anything fails, switch to 24 or 26.
+- **"The latest Node.js" may not be one of them.** nodejs.org also offers newer releases, and
+  `brew install node` installs the newest one. Choose 24 or 26 on purpose, using one of the two
+  ways below.
 
 ### The simple way: the official installer (macOS, Windows)
 
@@ -103,8 +106,8 @@ a version number.
 | What you see | What it means |
 |---|---|
 | `node: command not found`, or `npm: command not found` | Node.js isn't installed, or the terminal was open before you installed it. Open a new terminal. |
-| `Nilometer needs Node.js 24, and this is Node.js ...` | Your Node.js is older than 24. Install 24 as above. Nothing was changed. |
-| `Nilometer is tested on Node.js 24, and this is Node.js ...` | Your Node.js is newer than 24. The command still runs. If it fails, switch to 24. |
+| `Nilometer needs Node.js 24 or newer, and this is Node.js ...` | Your Node.js is older than 24. Install 24 as above. Nothing was changed. |
+| `Nilometer is tested on Node.js 24 or 26, and this is Node.js ...` | Your Node.js is neither. The command still runs. If it fails, switch to 24 or 26. |
 | `EBADENGINE` warnings during `npm ci`, on a Node.js 24 older than 24.15 | Harmless: three development tools ask for a newer 24. The install still succeeds. |
 | `spawn sh ENOENT`, or `sh` not found, on Windows | The command ran in PowerShell or Command Prompt. Run it in Git Bash. |
 | `git: command not found` | Install git as above, then open a new terminal. |

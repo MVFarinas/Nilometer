@@ -8,7 +8,7 @@
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Db } from "../db/database.js";
+import { type Db, transaction } from "../db/database.js";
 import { type ListDir, discoverLogFiles } from "./discover.js";
 import { DEFAULT_CHUNK_SIZE, type FileStat, readCompleteLines, readStart } from "./reader.js";
 import {
@@ -145,11 +145,14 @@ export function normalizeWindowsRelativePaths(db: Db, platform: NodeJS.Platform)
   if (platform !== "win32") {
     return 0;
   }
-  return db
-    .prepare(
-      "UPDATE source_files SET relative_path = replace(relative_path, char(92), '/') WHERE kind = 'log' AND instr(relative_path, char(92)) > 0",
-    )
-    .run().changes;
+  // node:sqlite types changes as number or bigint; a row count here never nears 2^53.
+  return Number(
+    db
+      .prepare(
+        "UPDATE source_files SET relative_path = replace(relative_path, char(92), '/') WHERE kind = 'log' AND instr(relative_path, char(92)) > 0",
+      )
+      .run().changes,
+  );
 }
 
 /**
@@ -168,7 +171,7 @@ function ingestFile(db: Db, file: FileRef, run: RunContext): void {
   }
   // One transaction per file: its lines and its new offset commit together, so a crash can
   // never save an offset past lines that weren't stored.
-  db.transaction(() => {
+  transaction(db, () => {
     const row = findOrCreateSourceFile(db, { ...file, stat: current }, runId);
     const start =
       options.mode === "full"
@@ -206,7 +209,7 @@ function ingestFile(db: Db, file: FileRef, run: RunContext): void {
       },
       runId,
     );
-  })();
+  });
 }
 
 /**

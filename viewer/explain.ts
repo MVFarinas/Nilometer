@@ -262,7 +262,7 @@ function readingEvents(db: Db, instance: InstanceRow, what: string): ExplainEven
        FROM window_readings e ${LOCATION_JOIN}
        WHERE e.raw_line_id = ? AND e.window = ? AND e.reset_at_utc = ?`,
     )
-    .get(instance.reading, instance.window, instance.reset_at_utc) as ReadingRow;
+    .get(instance.reading, instance.window, instance.reset_at_utc) as unknown as ReadingRow;
   return [
     {
       at: row.observed_at_utc,
@@ -296,7 +296,7 @@ function staleEvents(db: Db, instance: InstanceRow): ExplainEvent[] {
        WHERE e.window = ? AND e.reset_at_utc = ? AND e.after_reset = 0 AND e.stale = 1
        ORDER BY e.observed_at_s, e.raw_line_id`,
     )
-    .all(instance.window, instance.reset_at_utc) as (Located & {
+    .all(instance.window, instance.reset_at_utc) as unknown as (Located & {
     observed_at_utc: string;
     used_percentage: number;
     session_id: string | null;
@@ -354,7 +354,7 @@ const BUILDERS = {
             .prepare(
               `SELECT e.*, ${LOCATION_COLUMNS} FROM obs_limit_hits_events e ${LOCATION_JOIN} ORDER BY e.hit_at_utc, e.raw_line_id`,
             )
-            .all() as HitRow[]
+            .all() as unknown as HitRow[]
         ).map(hitEvent),
       },
     ],
@@ -378,7 +378,7 @@ const BUILDERS = {
             .prepare(
               `SELECT e.*, ${LOCATION_COLUMNS} FROM obs_mid_task_interruptions_events e ${LOCATION_JOIN} ORDER BY e.hit_at_utc, e.raw_line_id`,
             )
-            .all() as HitRow[]
+            .all() as unknown as HitRow[]
         ).map(hitEvent),
       },
     ],
@@ -416,7 +416,7 @@ const BUILDERS = {
           events: intervals.map((interval) => ({
             at: interval.locked_from_utc,
             description: `locked until ${interval.locked_until_utc} | ${interval.hits === 1 ? "1 hit" : `${interval.hits} hits`}`,
-            location: (hits.all(interval.interval_number) as Located[])
+            location: (hits.all(interval.interval_number) as unknown as Located[])
               .map(formatLocation)
               .join(", "),
             contributions: [interval.lockout_seconds],
@@ -441,7 +441,7 @@ const BUILDERS = {
                 `SELECT e.*, ${LOCATION_COLUMNS} FROM obs_auto_continuation_events e ${LOCATION_JOIN}
                  ORDER BY e.continued_at_utc, e.raw_line_id`,
               )
-              .all() as (Located & {
+              .all() as unknown as (Located & {
               continued_at_utc: string;
               session_id: string;
               seconds_after_reset: number;
@@ -464,7 +464,7 @@ const BUILDERS = {
         `SELECT * FROM obs_interruptions_by_plan
          ORDER BY CASE period_kind WHEN 'none' THEN 0 WHEN 'plan' THEN 1 ELSE 2 END, from_month`,
       )
-      .all() as PlanPeriodRow[];
+      .all() as unknown as PlanPeriodRow[];
     // Each period's hits: obs_limit_hits_events' own rows, so every hit reads as limit-hits lists it.
     const hits = db.prepare(
       `SELECT e.*, ${LOCATION_COLUMNS} FROM obs_limit_hits_events e
@@ -489,7 +489,9 @@ const BUILDERS = {
           {
             title: `${name}: limit hits`,
             measures: [{ label: "Limit hits", kind: "count" as const, reported: period.hits }],
-            events: (hits.all(period.period_kind, period.from_month) as HitRow[]).map(hitEvent),
+            events: (hits.all(period.period_kind, period.from_month) as unknown as HitRow[]).map(
+              hitEvent,
+            ),
           },
           {
             title: `${name}: elapsed lockout time`,
@@ -513,7 +515,7 @@ const BUILDERS = {
             ).map((interval) => ({
               at: interval.locked_from_utc,
               description: `locked until ${interval.locked_until_utc} | ${interval.hits === 1 ? "1 hit" : `${interval.hits} hits`}`,
-              location: (intervalHits.all(interval.interval_number) as Located[])
+              location: (intervalHits.all(interval.interval_number) as unknown as Located[])
                 .map(formatLocation)
                 .join(", "),
               contributions: [interval.lockout_seconds],
@@ -544,7 +546,7 @@ const BUILDERS = {
                FROM (SELECT *, last_hit_raw_line_id AS raw_line_id FROM obs_sessions_not_resumed_events) e ${LOCATION_JOIN}
                ORDER BY e.last_hit_at_utc`,
             )
-            .all() as (Located & {
+            .all() as unknown as (Located & {
             session_id: string;
             last_hit_at_utc: string;
             reset_at_utc: string | null;
@@ -568,7 +570,7 @@ const BUILDERS = {
           `SELECT window, reset_at_utc, last_used_percentage AS value, last_reading_raw_line_id AS reading
            FROM obs_window_headroom ORDER BY reset_at_utc, window`,
         )
-        .all() as InstanceRow[]
+        .all() as unknown as InstanceRow[]
     ).map((row) => ({
       title: instanceTitle(row),
       measures: [
@@ -587,7 +589,7 @@ const BUILDERS = {
           `SELECT window, reset_at_utc, peak_used_percentage AS value, peak_reading_raw_line_id AS reading
            FROM obs_window_peak ORDER BY reset_at_utc, window`,
         )
-        .all() as InstanceRow[]
+        .all() as unknown as InstanceRow[]
     ).map((row) => ({
       title: instanceTitle(row),
       measures: [{ label: "Peak usage", kind: "percent", reported: row.value }],
@@ -606,7 +608,7 @@ const BUILDERS = {
              used_percentage AS value, raw_line_id AS reading
            FROM obs_weekly_crossings ORDER BY reset_at_utc, threshold`,
         )
-        .all() as (InstanceRow & { threshold: number; seconds_before_reset: number })[]
+        .all() as unknown as (InstanceRow & { threshold: number; seconds_before_reset: number })[]
     ).map((row) => ({
       title: `${instanceTitle(row)}: first reading at or above ${String(row.threshold)}%, ${formatNumber(row.seconds_before_reset, "duration")} before the reset`,
       measures: [{ label: "Usage at that reading", kind: "percent", reported: row.value }],
@@ -627,7 +629,7 @@ const BUILDERS = {
           .prepare(
             "SELECT window, reset_at_utc, unattributed_percentage_points AS value, readings FROM obs_unattributed_usage ORDER BY reset_at_utc, window",
           )
-          .all() as (InstanceRow & { readings: number })[]
+          .all() as unknown as (InstanceRow & { readings: number })[]
       ).map((row) => ({
         title: instanceTitle(row),
         measures: [
@@ -640,7 +642,7 @@ const BUILDERS = {
           },
         ],
         events: (
-          pairs.all(row.window, row.reset_at_utc) as (Located & {
+          pairs.all(row.window, row.reset_at_utc) as unknown as (Located & {
             previous_observed_at_utc: string;
             observed_at_utc: string;
             change_percentage_points: number;
@@ -669,7 +671,7 @@ const BUILDERS = {
           .all() as Record<string, number | null>[]
       ).map((summary) => {
         const model = summary["model"] as unknown as string;
-        return tokenGroup(model, summary, requests.all(model) as UsageRow[]);
+        return tokenGroup(model, summary, requests.all(model) as unknown as UsageRow[]);
       }),
     };
   },
@@ -692,7 +694,7 @@ const BUILDERS = {
         return tokenGroup(
           `${repository ?? "unknown (no working directory)"} | ${repoKindName(kind)}`,
           summary,
-          requests.all(repository, kind) as UsageRow[],
+          requests.all(repository, kind) as unknown as UsageRow[],
         );
       }),
     };
@@ -709,7 +711,7 @@ const BUILDERS = {
            JOIN obs_window_headroom h ON h.window = b.window AND h.reset_at_utc = b.reset_at_utc
            ORDER BY b.reset_at_utc, b.window`,
         )
-        .all() as InstanceRow[]
+        .all() as unknown as InstanceRow[]
     ).map((row) => ({
       title: `${instanceTitle(row)}: projected from this reading, with the window's usage at 0% when it began`,
       measures: [
@@ -761,7 +763,7 @@ const BUILDERS = {
           },
         ],
         events: (
-          requests.all(month.month) as (Located & {
+          requests.all(month.month) as unknown as (Located & {
             dedup_key: string | null;
             model: string;
             timestamp_utc: string;

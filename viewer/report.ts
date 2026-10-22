@@ -172,7 +172,7 @@ export function summarizeStoredData(options: ReportDatabaseOptions): StoredDataS
                (SELECT MIN(timestamp_utc) FROM requests_dedup) AS firstRequestUtc,
                (SELECT MAX(timestamp_utc) FROM requests_dedup) AS lastRequestUtc`,
           )
-          .get() as StoredDataSummary,
+          .get() as unknown as StoredDataSummary,
     );
   } catch (error) {
     // Nothing recorded yet is not a failure: there is simply nothing to describe.

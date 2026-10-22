@@ -5,7 +5,7 @@
  * arrive, and a full rebuild produces the same rows. Cross-line logic (dedup winners, totals) lives
  * in SQL views over these tables.
  */
-import type { Db } from "../db/database.js";
+import { type Db, blobBytes, transaction } from "../db/database.js";
 import {
   type EventFields,
   type LineClass,
@@ -200,7 +200,7 @@ export function deriveNewLines(db: Db): number {
        LEFT JOIN parsed_lines p ON p.raw_line_id = l.id
        WHERE p.raw_line_id IS NULL ORDER BY l.id`,
     )
-    .all() as { id: number; bytes: Buffer }[];
+    .all() as unknown as { id: number; bytes: Uint8Array }[];
   const insertParsed = db.prepare(
     "INSERT INTO parsed_lines (raw_line_id, class, session_id, type, subtype, timestamp_raw, timestamp_utc, cwd, git_branch, cc_version, is_sidechain, uuid, parent_uuid, origin_kind, user_content, is_meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
@@ -213,9 +213,9 @@ export function deriveNewLines(db: Db): number {
   const insertProblem = db.prepare(
     "INSERT INTO line_problems (raw_line_id, problem, detail) VALUES (?, ?, ?)",
   );
-  db.transaction(() => {
+  transaction(db, () => {
     for (const { id, bytes } of pending) {
-      const derived = deriveLine(bytes);
+      const derived = deriveLine(blobBytes(bytes));
       const p = derived.parsed;
       insertParsed.run(
         id,
@@ -278,7 +278,7 @@ export function deriveNewLines(db: Db): number {
         insertProblem.run(id, problem, detail);
       }
     }
-  })();
+  });
   return pending.length;
 }
 
@@ -298,7 +298,7 @@ export const DERIVED_TABLES = [
  * @returns Number of raw lines derived (log and spool).
  */
 export function rebuildDerived(db: Db): number {
-  return db.transaction(() => {
+  return transaction(db, () => {
     for (const table of DERIVED_TABLES) {
       db.prepare(`DELETE FROM ${table}`).run();
     }
@@ -307,7 +307,7 @@ export function rebuildDerived(db: Db): number {
       "INSERT INTO derive_meta (key, value) VALUES ('parser_version', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
     ).run(PARSER_VERSION);
     return count;
-  })();
+  });
 }
 
 /**

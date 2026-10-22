@@ -172,8 +172,8 @@ Claude Code marks its own continuation in the log: a line with `origin.kind: "au
 
 ## Tech stack
 
-- TypeScript on Node.js 24 LTS ([D-015](decisions.md))
-- SQLite via `better-sqlite3` ([D-014](decisions.md))
+- TypeScript on Node.js 24 LTS, also tested on 26 ([D-015](decisions.md), [D-094](decisions.md))
+- SQLite via Node's built-in `node:sqlite`, so installing compiles nothing ([D-093](decisions.md))
 - Tests, lint, and docstring rules run by one `npm run audit`, locally and in GitHub Actions ([D-016](decisions.md))
 
 **Analysis logic lives in SQL, not in application code.** Views and queries do the work, not rows fetched and filtered in JS. This keeps the core portable if a Rust-backed desktop client ever happens (see below).
@@ -193,15 +193,24 @@ docs/      development standards, the audit, and the build history.
 
 ## Install and use
 
-Install from a clone: Nilometer isn't published to npm yet. There's no GUI, installer, or auto-updater. Configuration was always the hard part, not packaging, and a desktop app writes to `settings.json` no better than a CLI does.
+There's no GUI, installer, or auto-updater. Configuration was always the hard part, not packaging, and a desktop app writes to `settings.json` no better than a CLI does.
 
-**Requirements:** Node.js 24 (the version in `.nvmrc`), git, and Claude Code signed in with a Pro or Max subscription. On Windows, also Git for Windows. **If you don't have these yet, or aren't sure, start with [`docs/requirements.md`](docs/requirements.md)**: how to check each one and how to install it, including how to get Node.js 24 and not a newer one. Nilometer stops with a message on a Node.js older than 24, and warns on a newer one ([D-066](decisions.md)). Running `npm run audit` also needs Python 3, gitleaks, and shellcheck.
+**Requirements:** Node.js 24 or 26, and Claude Code signed in with a Pro or Max subscription. On Windows, also Git for Windows. **If you don't have these yet, or aren't sure, start with [`docs/requirements.md`](docs/requirements.md)**: how to check each one and how to install it, including how to get Node.js 24 or 26 and not another version. Nilometer stops with a message on a Node.js older than 24, and warns on any other untested one ([D-066](decisions.md), [D-094](decisions.md)).
 
-On Node 24 before 24.15, `npm ci` prints `EBADENGINE` warnings for three lint plugins that ask for a newer Node. They're development dependencies, they don't affect Nilometer, and the install still succeeds.
+```sh
+npm install -g nilometer
+nilometer init
+```
+
+Installing compiles nothing: the database is the SQLite built into Node.js ([D-093](decisions.md)). To try a command without installing, use `npx nilometer <command>`.
 
 - **macOS:** tested.
-- **Linux:** the test suite passes in CI.
+- **Linux:** the test suite and an install from the package pass in CI.
 - **Windows:** tested with **Git for Windows** installed ([D-049](decisions.md)). Claude Code runs the status line through Git Bash when Git for Windows is present, so the shell hook works unchanged; without it, Claude Code uses PowerShell and the hook can't run. Run the commands below in Git Bash. On Windows the hook adds roughly 110 ms per reply at p95, against about 35 ms on macOS (2026-09-17).
+
+**Updating:** `npm install -g nilometer@latest`, then `nilometer init` again. It's safe to repeat, and it refreshes the hook when a release changes it.
+
+**From a clone,** to work on Nilometer or run its audit, which also needs git, Python 3, gitleaks, and shellcheck:
 
 ```sh
 git clone https://github.com/MVFarinas/Nilometer.git nilometer
@@ -211,6 +220,8 @@ npm run build
 npm link          # optional: puts the `nilometer` command on your PATH
 nilometer init    # or, without npm link: npm start -- init
 ```
+
+On Node 24 before 24.15, `npm ci` prints `EBADENGINE` warnings for three lint plugins that ask for a newer Node. They're development dependencies, they don't affect Nilometer, and the install still succeeds.
 
 `init` registers the status line hook in `~/.claude/settings.json`. If you already have a status line, it keeps running unchanged. It backs up the settings file, then backfills from every session log still on disk.
 
@@ -223,8 +234,9 @@ nilometer init    # or, without npm link: npm start -- init
 | `nilometer plan-price set <YYYY-MM> <usd> --name <plan>` | Record your plan's USD list price per month from that month on, shown beside API list price. `plan-price list` shows what's entered |
 | `nilometer alias set <old-path> <new-path>` | Count a renamed or moved project's old path under its new one, so it shows as one repository. The report lists every alias you entered under the repository table. `alias list` shows them; `alias remove <old-path>` undoes one ([D-092](decisions.md)) |
 | `nilometer uninstall` | Remove the hook and restore the status line setting it replaced. Recorded data is kept |
+| `nilometer --version` | Print the installed version |
 
-**Removing it:** `nilometer uninstall` restores your previous status line and keeps the recorded data. To delete the data too, remove the data directory below. It may hold session history that Claude Code has already deleted, so that history is then gone for good.
+**Removing it:** `nilometer uninstall` restores your previous status line and keeps the recorded data; then `npm uninstall -g nilometer` removes the command. To delete the data too, remove the data directory below. It may hold session history that Claude Code has already deleted, so that history is then gone for good.
 
 **Where data lives:**
 - **Database and status line readings:** `~/.local/share/nilometer`. Override it with `NILOMETER_HOME` or `--data-dir`. Everything there is readable only by your account, since the database holds copies of your session logs ([D-043](decisions.md)). On Windows, file modes don't exist: the folder, under your user profile, relies on that profile's permissions instead ([D-049](decisions.md)).

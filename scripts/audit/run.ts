@@ -105,6 +105,13 @@ export const AUDIT_CHECKS: readonly AuditCheck[] = [
   },
   // The hook is shell (D-018), so shellcheck stands in for tsc and eslint there.
   { id: "A11", name: "Shell hook lint", command: "shellcheck", args: ["hooks/statusline.sh"] },
+  // What npm would publish: nothing beyond the allowlist, nothing the program reads left out (G5.3).
+  {
+    id: "A23",
+    name: "Package contents",
+    command: "tsx",
+    args: ["scripts/audit/package-contents.cli.ts"],
+  },
 ];
 
 /**

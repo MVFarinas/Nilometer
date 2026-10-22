@@ -11,6 +11,8 @@ import { dirname } from "node:path";
 
 import { Command, CommanderError } from "commander";
 
+import { transaction } from "../core/db/database.js";
+
 import { type IngestCommandOutcome, runIngestCommand } from "../core/ingest/command.js";
 import { DiscoveryError } from "../core/ingest/discover.js";
 import {
@@ -18,6 +20,7 @@ import {
   deleteDataFiles,
   describeTightened,
 } from "../core/install/private-files.js";
+import { packageVersion } from "../core/install/locations.js";
 import { InstallRecordError } from "../core/install/record.js";
 import {
   type PlanDatabaseOptions,
@@ -714,6 +717,8 @@ function openSaved(deps: CliDeps, htmlPath: string | undefined): string[] {
 export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void): Command {
   const program = new Command("nilometer")
     .description("Reports the observed cost of a Claude subscription.")
+    // Lower-case -v, as npm users expect; commander's default is -V.
+    .version(packageVersion(deps.packageRoot), "-v, --version", "print the installed version")
     // Tests and embedding need errors as exceptions, not an exiting process.
     .exitOverride()
     .configureOutput({
@@ -833,7 +838,7 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
               // One read transaction for the text and the page: they come from one snapshot of the
               // database, so an ingest finishing between the two reads can't make them disagree
               // (D-070: "the same views, so the two can't disagree").
-              db.transaction(() => {
+              transaction(db, () => {
                 const read = readReport(db, databasePath, reportOptions);
                 return {
                   input: read,
@@ -856,7 +861,7 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
                         )
                       : undefined,
                 };
-              })(),
+              }),
             onTightened,
           );
           const printed =

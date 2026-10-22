@@ -3,7 +3,7 @@
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type Database from "better-sqlite3";
+import type { StatementResultingChanges } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { type Db, openDatabase, schemaVersion } from "../../../../core/db/database.js";
@@ -32,7 +32,7 @@ describe("migration 001: ingestion tables", () => {
    * @param fields - Column overrides.
    * @returns The insert result.
    */
-  function insertLine(fields: Partial<Record<string, unknown>> = {}): Database.RunResult {
+  function insertLine(fields: Partial<Record<string, unknown>> = {}): StatementResultingChanges {
     const row = {
       source_file_id: 1,
       line_number: 1,

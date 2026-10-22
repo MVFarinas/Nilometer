@@ -1,7 +1,8 @@
 /**
  * @file Opening the SQLite database and applying numbered SQL migrations (docs/development.md P3.1).
  *
- * Implements README § Tech stack ("analysis logic lives in SQL") and D-014 (better-sqlite3).
+ * Implements README § Tech stack ("analysis logic lives in SQL") and D-093 (Node's built-in `node:sqlite`,
+ * which replaced better-sqlite3 so an npm install needs no native module).
  * Schema is owned by numbered files in `core/schema/` (`001_name.sql`, `002_name.sql`, ...), never
  * by application code. Migrations run every time the database is opened, including for read-only
  * commands, so an older database is always brought up to date before it is queried. phuryn's
@@ -10,12 +11,65 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 
 import { ensurePrivateDir, ensurePrivateFile, tightenMode } from "../install/private-files.js";
 
-/** A better-sqlite3 database handle. */
-export type Db = Database.Database;
+/** A `node:sqlite` database handle. */
+export type Db = DatabaseSync;
+
+/**
+ * Runs `work` in one transaction: committed when it returns, rolled back when it throws. Inside another
+ * transaction it becomes a savepoint, so an inner failure undoes only the inner work, as better-sqlite3's
+ * `db.transaction()` did before D-093.
+ * @param db - An open database.
+ * @param work - The statements to run together.
+ * @returns What `work` returns.
+ * @throws {Error} Whatever `work` throws, after the rollback.
+ */
+export function transaction<T>(db: Db, work: () => T): T {
+  const nested = db.isTransaction;
+  // A savepoint name only has to be unique among the ones open at once, and nesting is strictly LIFO.
+  const begin = nested ? "SAVEPOINT nilometer_nested" : "BEGIN";
+  db.exec(begin);
+  try {
+    const result = work();
+    db.exec(nested ? "RELEASE nilometer_nested" : "COMMIT");
+    return result;
+  } catch (error) {
+    if (nested) {
+      // ROLLBACK TO keeps the savepoint open, so it's released too, leaving the outer transaction as it was.
+      db.exec("ROLLBACK TO nilometer_nested");
+      db.exec("RELEASE nilometer_nested");
+    } else if (db.isTransaction) {
+      // SQLite may already have rolled back on its own (a full disk, an interrupt); rolling back twice errors.
+      db.exec("ROLLBACK");
+    }
+    throw error;
+  }
+}
+
+/**
+ * Views a BLOB read from the database as a Buffer, without copying it. node:sqlite returns blobs as
+ * plain `Uint8Array`s, whose `toString("utf8")` doesn't decode: it joins the byte values with commas,
+ * so a line read without this would parse as malformed instead of failing (D-093).
+ * @param blob - A BLOB column's value.
+ * @returns The same bytes as a Buffer.
+ */
+export function blobBytes(blob: Uint8Array): Buffer {
+  return Buffer.from(blob.buffer, blob.byteOffset, blob.byteLength);
+}
+
+/**
+ * Reads one pragma's value.
+ * @param db - An open database.
+ * @param name - The pragma, e.g. `journal_mode`.
+ * @returns The first column of its first row, or undefined when it returns none.
+ */
+export function pragmaValue(db: Db, name: string): unknown {
+  const row = db.prepare(`PRAGMA ${name}`).get();
+  return row === undefined ? undefined : Object.values(row)[0];
+}
 
 /** One migration file. */
 export interface Migration {
@@ -120,10 +174,10 @@ export function applyMigrations(
   const applied: number[] = [];
   for (const migration of migrations.filter((m) => m.version > current)) {
     // A transaction per migration: a failure leaves the schema at the last complete version.
-    db.transaction(() => {
+    transaction(db, () => {
       db.exec(migration.sql);
       record.run(migration.version, migration.name, now().toISOString());
-    })();
+    });
     applied.push(migration.version);
   }
   return applied;
@@ -148,12 +202,13 @@ export function openDatabase(path: string, migrationsDir: string): Db {
       tightenMode(file);
     }
   }
-  const db = new Database(path);
-  // WAL lets the viewer read while an ingest writes; the busy timeout waits out short write locks.
-  db.pragma("journal_mode = WAL");
-  db.pragma("busy_timeout = 5000");
-  // SQLite leaves foreign keys off unless asked, per connection.
-  db.pragma("foreign_keys = ON");
+  // The timeout is SQLite's busy timeout: it waits out short write locks instead of failing at once.
+  const db = new DatabaseSync(path, { timeout: 5000 });
+  // WAL lets the viewer read while an ingest writes.
+  db.exec("PRAGMA journal_mode = WAL");
+  // SQLite leaves foreign keys off unless asked, per connection. node:sqlite turns them on by default;
+  // saying so here keeps the requirement visible rather than inherited.
+  db.exec("PRAGMA foreign_keys = ON");
   applyMigrations(db, migrations);
   return db;
 }

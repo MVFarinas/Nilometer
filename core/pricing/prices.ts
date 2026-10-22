@@ -8,7 +8,7 @@
  */
 import { readFileSync } from "node:fs";
 
-import type { Db } from "../db/database.js";
+import { type Db, transaction } from "../db/database.js";
 
 /** Rates for one pricing mode, USD per million tokens. */
 export interface Rates {
@@ -178,7 +178,7 @@ export function syncPrices(db: Db, rows: readonly PriceRow[]): number {
        standard_rate_max_input_tokens, source_url, verified_on)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
-  db.transaction(() => {
+  transaction(db, () => {
     // The file is the whole truth: rows removed from it must disappear from the table too.
     db.prepare("DELETE FROM prices").run();
     for (const row of rows) {
@@ -200,6 +200,6 @@ export function syncPrices(db: Db, rows: readonly PriceRow[]): number {
         row.verified_on,
       );
     }
-  })();
+  });
   return rows.length;
 }

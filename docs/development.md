@@ -84,6 +84,7 @@ extraction is the evidence it changed nothing.
 | A9 | Banned-phrase test over rendered viewer output | `vitest run tests/wording` | P7.1 |
 | A10a–c | Secret and personal-data scan | `gitleaks git` (history) · `gitleaks dir` (working tree) · `npm run scan:personal` | P0.2 |
 | A11 | Shell hook lint | `shellcheck hooks/*.sh` (D-018) | P1.1 |
+| A23 | Package contents: `npm pack` holds exactly the allowlist, with every compiled source, migration, the price table, the hook and the requirements guide, and no stale compiled file | `tsx scripts/audit/package-contents.cli.ts` | G5.3 |
 
 **Pass means every check passes, with zero skipped tests on macOS and Linux.** A `.only` test fails the audit everywhere. On Windows, only the platform skips named under [Testing](#testing) are allowed.
 

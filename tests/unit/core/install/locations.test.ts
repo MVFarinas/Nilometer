@@ -10,6 +10,7 @@ import {
   DATA_DIR_NAME,
   HOOK_RELATIVE_PATH,
   findPackageRoot,
+  packageVersion,
   resolveDataDir,
 } from "../../../../core/install/locations.js";
 
@@ -108,5 +109,38 @@ describe("findPackageRoot", () => {
     expect(() => findPackageRoot("/x/y", () => false)).toThrow(
       `could not find ${HOOK_RELATIVE_PATH} above /x/y`,
     );
+  });
+});
+
+describe("packageVersion (G5.5)", () => {
+  it("reads the version from package.json at the package root", () => {
+    /**
+     * Answers for package.json only.
+     * @param path - The file asked for.
+     * @returns A package.json with a version.
+     */
+    const read = (path: string) => {
+      expect(path).toBe(join("/pkg", "package.json"));
+      return '{"name":"nilometer","version":"0.1.0"}';
+    };
+    expect(packageVersion("/pkg", read)).toBe("0.1.0");
+  });
+
+  it("says unknown, without throwing, when the file is missing, damaged, or has no version", () => {
+    /**
+     * A file that isn't there.
+     * @throws {Error} Always, as readFileSync does for a missing file.
+     */
+    const missing = () => {
+      throw new Error("ENOENT");
+    };
+    expect(packageVersion("/pkg", missing)).toBe("unknown");
+    expect(packageVersion("/pkg", () => "{")).toBe("unknown");
+    expect(packageVersion("/pkg", () => '{"version":1}')).toBe("unknown");
+  });
+
+  it("reads this package's own version by default", () => {
+    const root = findPackageRoot(dirname(fileURLToPath(import.meta.url)));
+    expect(packageVersion(root)).toMatch(/^\d+\.\d+\.\d+/);
   });
 });

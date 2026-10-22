@@ -6,6 +6,7 @@ exports[`runCli > prints help and exits 0 with no arguments 1`] = `
 Reports the observed cost of a Claude subscription.
 
 Options:
+  -v, --version               print the installed version
   -h, --help                  display help for command
 
 Commands:

@@ -42,9 +42,21 @@ describe("AUDIT_CHECKS", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("covers the checks added so far: A1-A7, A9, A10, and A11", () => {
+  it("covers the checks added so far: A1-A7, A9, A10, A11, and A23", () => {
     const prefixes = new Set(AUDIT_CHECKS.map((check) => check.id.replace(/[a-z]$/, "")));
-    expect([...prefixes]).toEqual(["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A9", "A10", "A11"]);
+    expect([...prefixes]).toEqual([
+      "A1",
+      "A2",
+      "A3",
+      "A4",
+      "A5",
+      "A6",
+      "A7",
+      "A9",
+      "A10",
+      "A11",
+      "A23",
+    ]);
   });
 });
 

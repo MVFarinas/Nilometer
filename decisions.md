@@ -223,7 +223,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 
 ## D-014: SQLite library is `better-sqlite3` (2026-09-12)
 
-- **Status:** accepted
+- **Status:** superseded by [D-093](decisions.md) (2026-10-22): `node:sqlite`, for the npm package
 - **Context:** The analysis lives in `.sql` files, so the Node database layer is thin: open, run migrations, prepare, iterate. The status line hook never touches the database (D-008), so library load time doesn't matter per turn.
 - **Options:**
   - (a) `better-sqlite3`: mature, synchronous, prebuilt native binaries.
@@ -803,7 +803,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 
 ## D-057: Node 24 with `better-sqlite3` stays; `node:sqlite` is measured and kept in reserve (2026-09-18)
 
-- **Status:** accepted. Closes R2.3, which had been "decide from the spike" since the release plan was written.
+- **Status:** accepted; its reserved option was taken by [D-093](decisions.md) (2026-10-22), for the npm package. Closes R2.3, which had been "decide from the spike" since the release plan was written.
 - **Context:** The runtime is what the tool asks of someone else's machine. `better-sqlite3` is a native module: it needs a prebuilt binary for the platform or a compiler, and it is compiled against one Node major version — a mismatch doesn't degrade, it crashes. That was observed on the development machine, where the shell's older Node segfaults on the module built for Node 24. Node's built-in `node:sqlite` would remove the native dependency entirely. The question was whether it produces the same numbers, which is the only thing that matters here.
 - **The spike (2026-09-18), both drivers against the same real database, read-only:**
 
@@ -965,7 +965,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 
 ## D-066: Nilometer checks the Node.js version first, stops below 24, and warns above it (2026-09-24)
 
-- **Status:** accepted. Refines [D-057](decisions.md), which it leaves standing: Node 24 is still the one supported version.
+- **Status:** accepted. Refines [D-057](decisions.md), which it leaves standing: Node 24 is still the one supported version. Amended by [D-094](decisions.md) (2026-10-22): Node 24 and 26 are both tested; other majors from 24 on warn.
 - **Context:** A beta tester tried to install without Node.js at all, and the README gave one line of requirements. Getting it wrong is worse than it looks, because nothing on the install path stops a wrong version:
   - **`npm ci` only warns.** `engines` is `>=24 <25`, but npm doesn't enforce it unless told to.
   - **An older Node.js crashes without a word.** *Observed 2026-09-24 on Node 22.11.0:* `--help` works, then `ingest` and `report` both exit 139 (a segfault) the moment the database opens, with nothing printed. A user sees a crash, not "you need Node.js 24".
@@ -1518,3 +1518,81 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
     - the current checkout holds 3,721,571 output tokens, its 2,728,045 plus the old path's 993,526, and the old row is gone.
     - The text report took 17.9 s before and 19.0 s after, under 10%.
   - **The user's live install** gets the alias only when the user enters it, after the public sync.
+
+## D-093: The database is Node's built-in `node:sqlite`, so an npm install compiles nothing (2026-10-22)
+
+- **Status:** accepted. Supersedes [D-014](decisions.md)'s choice of `better-sqlite3`, and takes the option [D-057](decisions.md) kept in reserve.
+- **Context:** Publishing to npm (plan step G5) makes the install path a stranger's machine. `better-sqlite3` is a native module: an install downloads a prebuilt binary matching the user's Node version and platform, or compiles one, which fails without a C++ toolchain — most often on Windows, where both beta testers are. It also needs install scripts, which anyone running with `ignore-scripts` (as this repository does) has turned off. D-057 named "publishing to a registry" as the reason to revisit, and measured the alternative: 0 mismatches across every report view.
+- **Options:**
+  - (a) **Port to `node:sqlite`.** No native module and no install script. Chosen.
+  - (b) Keep `better-sqlite3` and widen `engines` to Node 22–26, with a CI job per version. Rejected: every install still depends on a matching prebuilt binary or a compiler.
+  - (c) Keep Node 24 only, with `better-sqlite3`. Rejected: it leaves the install friction the package exists to remove.
+- **Decision:** (a).
+  - **The port:** `transaction(db, work)` replaces `db.transaction()`, and a nested call becomes a savepoint, as before. Pragmas run through `exec`. The fingerprint reads rows as arrays with `setReturnArrays`.
+  - **Blobs come back as `Uint8Array`, not `Buffer`.** That was the one trap D-057 found, and it's quieter than D-057 said: a `Uint8Array`'s `toString("utf8")` doesn't throw, it joins the byte values with commas, so a missed conversion would have made every stored line parse as malformed. Both reads of `raw_lines.bytes` go through `blobBytes()`, and the fingerprint hashes a blob's bytes the same way under either driver.
+- **Proof, both drivers side by side on Node 24.21 (SQLite 3.53.4 in both):**
+  - **A fresh ingest** of one snapshot of real logs and spool into two empty data directories: 13 of 17 tables have identical fingerprints. The other four differ only in run timestamps (`ingest_runs`, `repositories.resolved_at`, `schema_migrations.applied_at`) and each copy's own spool path (`source_files`). Every log file row is identical.
+  - **`report --json`** on two copies of a real database holding three months of history: identical apart from the database path. The saved text report and HTML page differ only in the minute they were produced.
+  - **Speed:** the report with the page took 49.1–49.3 s, against 44.6–46.1 s before: about 7–10% slower, in line with D-057's 12%. A fresh ingest took 5.3 s, against 5.8 s.
+  - **Tests:** all 1,385 pass. One changed: it compared a stored blob with a `Buffer`.
+- **Node versions, run on the same machine:**
+  - **Node 22.23:** `node:sqlite` prints an experimental warning on every run, and Node 22.11 needs a flag to load it at all. The version check keeps stopping below 24; its message now gives this reason instead of the old segfault.
+  - **Node 26.12 bundles SQLite 3.54.0, and two views fail to prepare there: "VIEWs and/or subqueries nested too deep"** (`obs_lockout_time` and `obs_interruptions_by_plan`; 79 tests fail). This isn't the driver: `better-sqlite3` will meet the same error once it bundles 3.54. Node 26 becomes the newest LTS this month, so it's the next step (G5.2) before publishing.
+- **Consequences:**
+  - **No native dependency is left.** The runtime dependencies are `commander` and Node itself.
+  - **`engines` stays at Node 24** until G5.2 makes the views prepare on SQLite 3.54 and a CI job runs Node 26.
+
+## D-094: The lockout views read each costly view once, and Node 26 joins Node 24 as tested (2026-10-22)
+
+- **Status:** accepted. Amends [D-066](decisions.md): the version check now knows the tested majors, 24 and 26, instead of one.
+- **Context:** G5.1 found that Node 26.12, which bundles SQLite 3.54.0, can't prepare `obs_lockout_time` or `obs_interruptions_by_plan`: "VIEWs and/or subqueries nested too deep". Node 26 becomes the newest LTS this month, and an npm package reaches whatever Node a user has.
+  - **The cause is in SQLite.** 3.54.0 refuses a statement once a CTE's cursor number passes `SQLITE_LIMIT_EXPR_DEPTH` (1,000). That's a fix for an earlier bug (SQLite's "Bug 2026-10-04"), and its side effect was reported on the SQLite forum on 2026-10-16. Trunk replaced it on 2026-10-18 (check-in `b32709ea06`) with a separate `SQLITE_LIMIT_CTES` limit that defaults to 50,000. When that reaches a Node release isn't known.
+  - **Why these two views:**
+    - Every reference to a view expands it again, cursors and all.
+    - `obs_lockout_intervals` read the lockout hits four times. Measured by the lowest expression-depth limit it prepares under on 3.54, that comes to 593.
+    - `obs_lockout_time` read it twice more, plus the hit views, and `obs_interruptions_by_plan` read the hit views six times: both over 1,000.
+    - No simple chain of views comes close. 100 views stacked one on another, or a view tree that expands to 4,096 copies, prepare on 3.54 without CTEs.
+- **Options:**
+  - (a) **Restructure the views so each costly view is read once.** Chosen.
+  - (b) Wait for a Node 26 release with a fixed SQLite. Rejected: no date, and Node 26 users would see the interruption views fail meanwhile.
+  - (c) Raise the limit at runtime. Rejected: 1,000 is the compiled maximum, so it can only be lowered.
+  - (d) Turn off SQLite's defensive mode. Rejected: in 3.54.0 the check doesn't depend on it; that's only in the proposed fix.
+  - (e) Store the lockout intervals in a table at ingest. Rejected for now: analysis lives in views (README § Tech stack), and (a) is enough.
+- **Decision:** (a), in migration 031. Same rows, same columns and order, same values and SQLite types.
+  - **`obs_lockout_intervals`:** one pass over the lockout hits. Auto-continuations are counted per hit before the join, so each hit stays one row. The earliest continuation minus the reset gives the first one's delay, since the reset is one time per lockout.
+  - **`obs_lockout_time`:** aggregates `obs_lockout_intervals` once. Its hits with a known reset are the intervals' hits added up, because each is in exactly one interval.
+  - **`obs_interruptions_by_plan`:** counts hits and lockouts per period with `GROUP BY`, then joins. Before, every count was its own subquery, each reading the views again.
+- **Proof:**
+  - **Real data,** a copy holding three months of history, on Node 24, before and after the migration: all four affected views identical, including SQLite types.
+  - **Speed:** reading those four views went from 18.5 s to 9.1 s.
+  - **`report --json` on Node 24 and on Node 26:** identical to the `better-sqlite3` baseline from G5.1, apart from the database path. The saved page differs only in the minute it was produced.
+  - **The report with the page:** 46.0–47.7 s on Node 24, against 49.1–49.3 s before this step and 44.6–46.1 s with `better-sqlite3`. Most of D-093's slowdown is gone.
+  - **Margin on 3.54**, as the lowest limit each view prepares under:
+    - `obs_interruptions_by_plan`: 619, the largest; it had been over 1,000.
+    - `obs_lockout_time`: 335; it had been over 1,000.
+    - `obs_lockout_intervals`: 170; it had been 593.
+  - **Tests:** all 1,393 pass on Node 24 and on Node 26.
+- **Consequences:**
+  - **Supported Node:** `engines` becomes `>=24`. Node 24 and 26 run quietly. Other majors from 24 on (25, or anything after 26) run with a warning. Below 24 still stops.
+  - **CI:** the public workflow runs the suite on Linux, macOS and Windows under Node 24 and 26. A test keeps that list and the version check in step.
+  - **A guard for the margin:** a test prepares every view with the limit lowered to 800. On SQLite 3.54 or later that caps CTE cursors, so it fails a view that grows within 20% of the real limit, before Node 26 users see it. It runs on every version, as the audit requires, and CI runs it under Node 26. With migration 031 removed, it fails on Node 26 and names both views.
+  - **Revisit when Node bundles an SQLite with `SQLITE_LIMIT_CTES`:** the budget then becomes 50,000, and the test can check the new limit instead.
+
+## D-095: npm releases come from a GitHub release, through trusted publishing, as the rehearsed tarball (2026-10-22)
+
+- **Status:** accepted. Carries out plan-public R5.4, and changes Q7 to (a) for this step (G5.6).
+- **Context:** A published version can be deprecated but not taken back, and a stolen npm token is the usual way a package gets replaced. The maintainer made an npm account with 2FA on 2026-10-22.
+- **Options:**
+  - (a) **A workflow, run by publishing a GitHub release, that publishes through npm's trusted publishing.** npm trusts the workflow file by name and exchanges the run's OIDC token for a one-time credential. Chosen.
+  - (b) An npm token stored as a repository secret. Rejected: a long-lived credential that anyone with write access to the workflows could use.
+  - (c) Publish from the maintainer's machine each time. Rejected: no provenance, and the published files are whatever that checkout's `dist/` held. G5.3 showed `tsc` leaves stale output behind.
+- **Decision:** (a).
+  - **The workflow refuses** a release whose tag isn't `v` plus `package.json`'s version.
+  - **What gets published:** it builds from an empty `dist/`, runs the tests, A23 and the install rehearsal (G5.4), and publishes **that rehearsed tarball**, not a fresh pack.
+  - **Pre-releases:** a version with a pre-release part goes to the `next` tag, so `npm install -g nilometer` doesn't pick it up.
+  - **The first version is published by hand,** because npm configures a trusted publisher on a package that already exists. The hand-publish follows the same steps: a clean build, A23, and the rehearsal.
+  - **`private: true` is removed from `package.json`,** in this repository too, since the export copies it. A23 now fails a private manifest, a command whose file isn't shipped, a missing license, or a missing Node range. Publishing still needs the maintainer's npm login and 2FA.
+  - **Price changes** reach users only through a release, since an npm install can't edit `prices.json` (R2.6). CONTRIBUTING says so.
+- **Consequences:**
+  - **After the first publish,** the maintainer adds the trusted publisher on npmjs.com: the repository and `publish.yml`. Requiring 2FA and disallowing tokens for publishing then means only that workflow, or the maintainer with 2FA, can publish.
+  - **A publish now triggers R7** (D-054): development moves to the public repository when that's decided.

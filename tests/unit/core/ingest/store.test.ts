@@ -104,7 +104,10 @@ describe("store operations", () => {
     expect(rawLineWriter(db, id, run2)({ bytes, offset: 9, lineNumber: 4 })).toBe(false);
     expect(
       db.prepare("SELECT line_number, byte_offset, first_run_id, bytes FROM raw_lines").all(),
-    ).toEqual([{ line_number: 1, byte_offset: 0, first_run_id: run1, bytes }]);
+    ).toEqual([
+      // node:sqlite returns a BLOB as a plain Uint8Array, not a Buffer (D-093).
+      { line_number: 1, byte_offset: 0, first_run_id: run1, bytes: new Uint8Array(bytes) },
+    ]);
   });
 
   it("records problems with and without a file", () => {

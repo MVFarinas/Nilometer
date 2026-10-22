@@ -689,6 +689,19 @@ describe("runCli", () => {
     expect(out.join("\n")).toMatchSnapshot();
   });
 
+  it("prints the installed version for --version and -v, and exits 0 (G5.5)", () => {
+    const version = (
+      JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")) as {
+        version: string;
+      }
+    ).version;
+    for (const flag of ["--version", "-v"]) {
+      const { deps, out } = testDeps();
+      expect(runCli([flag], deps)).toBe(0);
+      expect(out).toEqual([version]);
+    }
+  });
+
   it.each([
     ["init"],
     ["ingest"],

@@ -108,7 +108,9 @@ function line(
  * @returns The row.
  */
 function cost(db: Db, key: string): CostRow {
-  return db.prepare("SELECT * FROM request_costs WHERE dedup_key = ?").get(key) as CostRow;
+  return db
+    .prepare("SELECT * FROM request_costs WHERE dedup_key = ?")
+    .get(key) as unknown as CostRow;
 }
 
 describe("request_costs: fixture costs computed by hand", () => {

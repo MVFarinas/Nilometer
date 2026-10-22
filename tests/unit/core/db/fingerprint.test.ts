@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -19,8 +19,8 @@ import {
  * @param rows - Rows of (id, text, blob).
  * @returns The database.
  */
-function dbWith(rows: [number, string | null, Buffer | null][]): Database.Database {
-  const db = new Database(":memory:");
+function dbWith(rows: [number, string | null, Buffer | null][]): DatabaseSync {
+  const db = new DatabaseSync(":memory:");
   db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, label TEXT, data BLOB)");
   const insert = db.prepare("INSERT INTO t VALUES (?, ?, ?)");
   rows.forEach((row) => insert.run(...row));
@@ -58,7 +58,7 @@ describe("fingerprintTables", () => {
      * @returns The table's fingerprint.
      */
     const build = (labels: string[]): Record<string, string> => {
-      const db = new Database(":memory:");
+      const db = new DatabaseSync(":memory:");
       db.exec("CREATE TABLE u (label TEXT, n INTEGER)");
       const insert = db.prepare("INSERT INTO u VALUES (?, 1)");
       labels.forEach((label) => insert.run(label));
@@ -75,7 +75,7 @@ describe("fingerprintTables", () => {
 
   it("distinguishes a blob from text with the same characters", () => {
     const asBlob = fingerprintTables(dbWith([[1, null, Buffer.from("ab")]]), ["t"]);
-    const db = new Database(":memory:");
+    const db = new DatabaseSync(":memory:");
     db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, label TEXT, data BLOB)");
     db.prepare("INSERT INTO t VALUES (1, NULL, 'ab')").run();
     expect(fingerprintTables(db, ["t"])["t"]).not.toBe(asBlob["t"]);
@@ -96,12 +96,12 @@ describe("fingerprintTables", () => {
 
   it("is stable across a database file closed and reopened", () => {
     const path = join(mkdtempSync(join(tmpdir(), "aua-fp-")), "x.db");
-    const first = new Database(path);
+    const first = new DatabaseSync(path);
     first.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, label TEXT, data BLOB)");
     first.prepare("INSERT INTO t VALUES (1, 'a', x'00ff')").run();
     const before = fingerprintTables(first, ["t"]);
     first.close();
-    expect(fingerprintTables(new Database(path), ["t"])).toEqual(before);
+    expect(fingerprintTables(new DatabaseSync(path), ["t"])).toEqual(before);
   });
 
   it("throws for an unknown table before hashing anything", () => {

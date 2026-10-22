@@ -304,7 +304,7 @@ export function loadObserved(db: Db, reportedAt?: Date): ObservedReport {
          JOIN obs_window_peak p ON p.window = h.window AND p.reset_at_utc = h.reset_at_utc
          ORDER BY open_at_report DESC, h.reset_at_utc DESC, h.window`,
       )
-      .all({ at }) as WindowRow[],
+      .all({ at }) as unknown as WindowRow[],
     // Newest window first, as the windows table lists them; within one, the lower level first.
     weeklyCrossings: observed<CrossingRow>(
       db,
@@ -336,7 +336,7 @@ export function loadProjected(db: Db, reportedAt?: Date): ProjectedReport {
          FROM proj_burn_rate
          ORDER BY open_at_report DESC, reset_at_utc DESC, window`,
       )
-      .all({ at }) as BurnRateRow[],
+      .all({ at }) as unknown as BurnRateRow[],
     apiListPrice: projected<ApiListPriceRow>(db, "proj_api_list_price", "month"),
     // Grouped by reading date so each count stays beside its own date. The month view's
     // verified_on is the latest date in the month, which isn't the date its count refers to once
@@ -349,7 +349,7 @@ export function loadProjected(db: Db, reportedAt?: Date): ProjectedReport {
          GROUP BY verified_on
          ORDER BY verified_on`,
       )
-      .all() as RateReadingRow[],
+      .all() as unknown as RateReadingRow[],
   };
 }
 

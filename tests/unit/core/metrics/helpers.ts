@@ -232,7 +232,7 @@ export function hit(
  * @returns The rows.
  */
 export function rows(db: Db, view: string, order = "1"): Record<string, unknown>[] {
-  return db.prepare(`SELECT * FROM ${view} ORDER BY ${order}`).all() as Record<string, unknown>[];
+  return db.prepare(`SELECT * FROM ${view} ORDER BY ${order}`).all();
 }
 
 /**

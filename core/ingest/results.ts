@@ -179,7 +179,7 @@ export function readResult(db: Db): IngestResult {
   const totalsByModel: Record<string, Totals> = {};
   for (const row of db
     .prepare(`SELECT model, ${TOTALS_COLUMNS} FROM requests_dedup GROUP BY model ORDER BY model`)
-    .all() as (Totals & { model: string })[]) {
+    .all() as unknown as (Totals & { model: string })[]) {
     totalsByModel[row.model] = toTotals(row);
   }
 
@@ -190,7 +190,7 @@ export function readResult(db: Db): IngestResult {
        FROM requests_dedup WHERE timestamp_utc IS NOT NULL
        GROUP BY day, model ORDER BY day, model`,
     )
-    .all() as (Totals & { day: string; model: string })[]) {
+    .all() as unknown as (Totals & { day: string; model: string })[]) {
     (totalsByDay[row.day] ??= {})[row.model] = toTotals(row);
   }
 

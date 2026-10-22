@@ -5,7 +5,7 @@
  * directory, never inside `~/.claude`"). The data directory holds the spool, the hook's error log,
  * and the install record; later phases add the database there.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 import { expandHome } from "../util/paths.js";
@@ -97,5 +97,26 @@ export function findPackageRoot(
       throw new Error(`could not find ${HOOK_RELATIVE_PATH} above ${startDir}`);
     }
     current = parent;
+  }
+}
+
+/**
+ * Reads the package's own version, for `nilometer --version` (G5.5).
+ * @param packageRoot - From {@link findPackageRoot}.
+ * @param read - Reads a file's text, injectable for tests.
+ * @returns The `version` in its package.json, or `unknown` when that can't be read: the version is
+ *   only ever printed, so a damaged file shouldn't stop a command.
+ */
+export function packageVersion(
+  packageRoot: string,
+  read: (path: string) => string = (path) => readFileSync(path, "utf8"),
+): string {
+  try {
+    const { version } = JSON.parse(read(join(packageRoot, "package.json"))) as {
+      version?: unknown;
+    };
+    return typeof version === "string" ? version : "unknown";
+  } catch {
+    return "unknown";
   }
 }

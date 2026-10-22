@@ -7,7 +7,7 @@
  * payload that isn't base64 or isn't JSON, and window values out of range. Monitor clamps
  * percentages up to 101 down to 100; this module doesn't.
  */
-import type { Db } from "../db/database.js";
+import { type Db, blobBytes, transaction } from "../db/database.js";
 import { type LogObject, isNumber, isObject, objectField } from "./classify.js";
 
 /** Rate-limit windows the payload is documented to carry. */
@@ -214,16 +214,16 @@ export function deriveNewSpoolLines(db: Db): number {
        LEFT JOIN status_readings s ON s.raw_line_id = l.id
        WHERE s.raw_line_id IS NULL ORDER BY l.id`,
     )
-    .all() as { id: number; bytes: Buffer }[];
+    .all() as unknown as { id: number; bytes: Uint8Array }[];
   const insertReading = db.prepare(
     "INSERT INTO status_readings (raw_line_id, status, captured_at_s, hook_version, session_id, transcript_path, model_id, cc_version, cost_total_usd, has_rate_limits) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const insertWindow = db.prepare(
     "INSERT INTO rate_limit_windows (raw_line_id, window, used_percentage, resets_at, validity) VALUES (?, ?, ?, ?, ?)",
   );
-  db.transaction(() => {
+  transaction(db, () => {
     for (const { id, bytes } of pending) {
-      const { reading: r, windows } = deriveSpoolLine(bytes);
+      const { reading: r, windows } = deriveSpoolLine(blobBytes(bytes));
       insertReading.run(
         id,
         r.status,
@@ -240,6 +240,6 @@ export function deriveNewSpoolLines(db: Db): number {
         insertWindow.run(id, w.window, w.usedPercentage, w.resetsAt, w.validity);
       }
     }
-  })();
+  });
   return pending.length;
 }

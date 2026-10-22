@@ -1,5 +1,5 @@
 # Runs the standard audit (docs/development.md § Audits, D-016) on every push and pull request, and
-# the test suite on macOS and Windows (D-049).
+# the test suite on Linux, macOS and Windows under each tested Node.js major (D-049, D-094).
 # Real session logs never exist in CI, so real-log checks stay local (docs/development.md § Testing).
 name: audit
 
@@ -49,8 +49,8 @@ jobs:
           rm -f "$archive"
 
       - name: Install dependencies
-        # .npmrc sets ignore-scripts, so no dependency runs code at install time; better-sqlite3
-        # ships prebuilt binaries, so nothing needs one.
+        # .npmrc sets ignore-scripts, so no dependency runs code at install time; the database is
+        # Node's built-in node:sqlite (D-093), so nothing needs one.
         run: npm ci
 
       - name: Audit
@@ -58,11 +58,19 @@ jobs:
 
   tests:
     # The full audit needs Python, gitleaks, and shellcheck, so it runs on Linux above. The test suite
-    # runs everywhere Nilometer is supported. On Windows, Git Bash provides `sh` on PATH (D-049).
+    # runs everywhere Nilometer is supported, under every Node.js major it's tested on
+    # (TESTED_NODE_MAJORS in core/util/node-version.ts; a test keeps the two in step). Each major
+    # bundles its own SQLite, which is what broke on Node 26 (D-094). On Windows, Git Bash provides
+    # `sh` on PATH (D-049).
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ["24", "26"]
+        exclude:
+          # The audit job above already runs the suite on Linux under .nvmrc's Node 24.
+          - os: ubuntu-latest
+            node: "24"
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -74,7 +82,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version-file: .nvmrc
+          node-version: ${{ matrix.node }}
           cache: npm
 
       - name: Install dependencies
@@ -82,3 +90,38 @@ jobs:
 
       - name: Tests
         run: npx vitest run
+
+  install:
+    # The packed tarball, installed as a user would in an empty home: init, a status line reading, the
+    # package removed (the hook must still record, D-056), ingest, report, and an uninstall that must
+    # leave settings.json byte-identical (G5.4). It uses the network: npm fetches the dependency.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ["24", "26"]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and pack
+        # npm run build explicitly: .npmrc's ignore-scripts turns off prepack (G5.3).
+        run: |
+          npm run build
+          npm pack --ignore-scripts
+
+      - name: Install rehearsal
+        run: npx tsx scripts/install/rehearse.cli.ts nilometer-*.tgz

@@ -14,7 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { slash } from "../../../setup/platform.js";
 
@@ -464,7 +464,7 @@ describe("resolveRepositories", () => {
   });
 
   it("migration 013 carries repo and not_git rows and drops missing ones for re-resolution", () => {
-    const db = new Database(":memory:");
+    const db = new DatabaseSync(":memory:");
     const all = listMigrations(join(ROOT, "core/schema"));
     applyMigrations(
       db,

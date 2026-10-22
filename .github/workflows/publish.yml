@@ -1,0 +1,67 @@
+# Publishes to npm when a GitHub release is published (plan step G5.6, plan-public R5.4).
+# Trusted publishing: npm trusts this workflow file by name, so no npm token is stored anywhere, and
+# every version gets a provenance attestation linking it to this repository and commit.
+# The first version was published by hand, since npm only lets a package that exists trust a workflow.
+name: publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  # The OIDC token npm exchanges for a one-time publish credential.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+
+      - name: The release tag names the version in package.json
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "release tag $GITHUB_REF_NAME doesn't match package.json version $version" >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Clean build
+        # Explicitly, and from an empty dist/: .npmrc's ignore-scripts turns off prepack, and tsc never
+        # deletes output whose source is gone (G5.3).
+        run: |
+          rm -rf dist
+          npm run build
+
+      - name: Tests
+        run: npx vitest run
+
+      - name: Package contents (A23)
+        run: npx tsx scripts/audit/package-contents.cli.ts
+
+      - name: Pack and rehearse the install (G5.4)
+        run: |
+          npm pack --ignore-scripts
+          npx tsx scripts/install/rehearse.cli.ts nilometer-*.tgz
+
+      - name: Publish the rehearsed tarball
+        # A version with a pre-release part (0.2.0-beta.1) goes to the "next" tag, so a plain
+        # `npm install -g nilometer` never picks it up.
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          case "$version" in
+            *-*) tag=next ;;
+            *) tag=latest ;;
+          esac
+          npm publish nilometer-*.tgz --access public --tag "$tag"

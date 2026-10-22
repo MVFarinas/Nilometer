@@ -10,9 +10,10 @@ import { fileURLToPath } from "node:url";
 
 import { checkNodeVersion } from "../core/util/node-version.js";
 
-// Checked before the program is imported: on an older Node.js, the native SQLite module crashes
-// with a segfault and no message the moment a database opens (D-066). The program is loaded with
-// a dynamic import below so nothing that could load that module runs before this check.
+// Checked before the program is imported: on an older Node.js, the built-in `node:sqlite` is missing
+// (22.11 throws on import without a flag) or experimental (22.23 warns on every run), and Nilometer
+// isn't tested there (D-066, D-093). The program is loaded with a dynamic import below so nothing
+// that loads `node:sqlite` runs before this check.
 const nodeCheck = checkNodeVersion(process.versions.node);
 if (nodeCheck.message !== undefined) {
   console.error(nodeCheck.message);

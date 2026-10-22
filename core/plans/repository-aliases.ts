@@ -8,7 +8,7 @@
  */
 import { isAbsolute, posix, win32 } from "node:path";
 
-import type { Db } from "../db/database.js";
+import { type Db, transaction } from "../db/database.js";
 
 /** An alias entry. */
 export interface AliasEntry {
@@ -83,7 +83,7 @@ export function validateAlias(from: string, to: string, home: string): AliasEntr
  *   chain: its new path is another alias's old one, or its old path is another alias's new one.
  */
 export function setAlias(db: Db, entry: AliasEntry, now: () => Date): AliasRow | null {
-  return db.transaction(() => {
+  return transaction(db, () => {
     // Attributed before any alias: the path a request had, whether or not an alias moved it since.
     const recorded = db
       .prepare(
@@ -116,7 +116,7 @@ export function setAlias(db: Db, entry: AliasEntry, now: () => Date): AliasRow |
          to_repository = excluded.to_repository, entered_at = excluded.entered_at`,
     ).run(entry.from, entry.to, now().toISOString());
     return previous;
-  })();
+  });
 }
 
 /**
@@ -146,7 +146,7 @@ export function listAliases(db: Db): AliasRow[] {
       .prepare(
         "SELECT from_repository, to_repository, entered_at FROM repository_aliases ORDER BY from_repository",
       )
-      .all() as StoredRow[]
+      .all() as unknown as StoredRow[]
   ).map(toRow);
 }
 

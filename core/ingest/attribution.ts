@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename, dirname } from "node:path";
 
-import type { Db } from "../db/database.js";
+import { type Db, transaction } from "../db/database.js";
 
 /** How a missing working directory got its repository (D-028). */
 export type MissingVia = "last_known" | "parent" | "none";
@@ -158,7 +158,7 @@ export function resolveRepositories(
       .prepare(
         "SELECT cwd, kind, repo_root, root_exists, resolved_via FROM repositories ORDER BY cwd",
       )
-      .all() as CachedRow[]
+      .all() as unknown as CachedRow[]
   ).filter((row) => isStale(row, exists));
   const upsert = db.prepare(
     `INSERT INTO repositories (cwd, kind, repo_root, root_exists, resolved_via, resolved_at)
@@ -184,7 +184,7 @@ export function resolveRepositories(
       now().toISOString(),
     );
   };
-  db.transaction(() => {
+  transaction(db, () => {
     for (const { cwd } of pending) {
       store(cwd, null);
     }
@@ -193,6 +193,6 @@ export function resolveRepositories(
       const verified = row.resolved_via === "git" || row.resolved_via === "last_known";
       store(row.cwd, verified ? row.repo_root : null);
     }
-  })();
+  });
   return pending.length + stale.length;
 }
