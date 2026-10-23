@@ -18,6 +18,10 @@ Commands:
   report [options]            Print what was observed, then projections in a
                               separate section, from the database. Run ingest
                               first for the latest data.
+  view [options]              Show the report page in your browser from your own
+                              computer (127.0.0.1), with a Refresh button that
+                              reads new log lines and rebuilds it. Runs until
+                              you press Ctrl+C.
   explain [options] <metric>  List the events behind a number in the report,
                               with where each was read from, and re-add them.
                               Metrics: limit-hits, mid-task, lockout, by-plan,

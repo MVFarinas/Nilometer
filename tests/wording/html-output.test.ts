@@ -713,3 +713,47 @@ describe("the hostile report", () => {
     expect(findBanned(Object.values(HTML_LABELS).join("\n"), bannedPhrases())).toEqual([]);
   });
 });
+
+describe("the page as nilometer view serves it (D-097)", () => {
+  const serving = { refreshPath: "/tok3n/refresh" };
+  const served = renderHtmlReport(FULL, serving);
+  const saved = renderHtmlReport(FULL);
+
+  it("(a) has no banned phrase in its visible text, spoken attributes, or script strings", () => {
+    const phrases = bannedPhrases();
+    expect(findBanned(visibleText(served), phrases)).toEqual([]);
+    expect(findBanned(spokenAttributes(served), phrases)).toEqual([]);
+    expect(findBanned(scriptStrings(served), phrases)).toEqual([]);
+  });
+
+  it("(b) makes one network request, the Refresh button's POST to its own server", () => {
+    // The only network pattern it trips is the script-call one, and only through one fetch.
+    expect(networkReferences(served)).toHaveLength(1);
+    expect(served.match(/\bfetch\s*\(/g)).toHaveLength(1);
+    expect(served).not.toMatch(
+      /importScripts|\bimport\s*\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon/,
+    );
+    expect(served).toContain('data-path="/tok3n/refresh"');
+    expect(served).toContain('fetch(button.getAttribute("data-path"), { method: "POST" })');
+  });
+
+  it("says where it's served from, and the saved page keeps its own wording and no button", () => {
+    expect(visibleText(served)).toContain(HTML_LABELS.privacyServed);
+    expect(visibleText(served)).not.toContain(HTML_LABELS.privacy);
+    expect(served).toContain(`>${HTML_LABELS.refresh}</button>`);
+    expect(saved).not.toContain('id="nm-refresh"');
+    expect(saved).not.toContain(HTML_LABELS.privacyServed);
+  });
+
+  it("is ASCII only, and differs from the saved page only in the header and the added script", () => {
+    expect(nonAscii(served)).toEqual([]);
+    /**
+     * From the end of the header to the end of the page script: everything the reader sees and uses.
+     * @param page - A rendered page.
+     * @returns That part of it.
+     */
+    const body = (page: string) =>
+      page.slice(page.indexOf("</header>"), page.indexOf("</script>", page.indexOf("<script>")));
+    expect(body(served)).toBe(body(saved));
+  });
+});

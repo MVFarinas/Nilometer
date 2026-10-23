@@ -17,9 +17,11 @@ Only the latest release gets fixes.
 - **Exposure of recorded data:** the database holds copies of Claude Code session logs, so anything that makes it readable by another account, sends it anywhere, or leaks it into output is in scope.
 - **Changes to Claude Code's settings:** `init` and `uninstall` edit `settings.json`. Anything that clobbers a user's settings, runs an unexpected command, or mishandles a backup is in scope.
 - **The status line hook:** it runs after every Claude Code reply. Anything that lets it write outside the data directory or change what the status bar shows is in scope.
+- **`nilometer view`'s local server:** while it runs, it serves the report page on 127.0.0.1 and ingests when the page asks. Anything that lets another page, site, or machine read the page or trigger a refresh is in scope: it checks a per-run token in the address, the Host header, and the Origin of every refresh.
 
 Nilometer makes no network requests while it collects or reports: not when the hook runs, not during
-`ingest`, and not when a report is built. A report that it does is in scope too.
+`ingest`, and not when a report is built. A report that it does is in scope too. `nilometer view`
+listens on 127.0.0.1 for your own browser while it runs; it makes no outgoing requests either.
 
 Two commands reach the network, both by fetching a pinned
 [ccusage](https://github.com/ryoppippi/ccusage) through `npx`, and neither runs unless you run it:

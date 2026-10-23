@@ -6,6 +6,7 @@
  * in SQL views over these tables.
  */
 import { type Db, blobBytes, transaction } from "../db/database.js";
+import { refreshStoredViews } from "./stored-views.js";
 import {
   type EventFields,
   type LineClass,
@@ -312,7 +313,7 @@ export function rebuildDerived(db: Db): number {
 
 /**
  * Brings derived tables up to date: a full rebuild if the parser version changed, otherwise only
- * the raw lines not yet derived.
+ * the raw lines not yet derived. Then refills the stored views when their inputs changed (D-096).
  * @param db - Open, migrated database.
  * @returns Number of raw lines derived and whether a rebuild happened.
  */
@@ -320,7 +321,13 @@ export function ensureDerived(db: Db): { derived: number; rebuilt: boolean } {
   const row = db.prepare("SELECT value FROM derive_meta WHERE key = 'parser_version'").get() as
     { value: string } | undefined;
   if (row?.value !== PARSER_VERSION) {
-    return { derived: rebuildDerived(db), rebuilt: true };
+    const derived = rebuildDerived(db);
+    // Every derived row was replaced, so the stored views are refilled even if the counts match (D-096).
+    refreshStoredViews(db, true);
+    return { derived, rebuilt: true };
   }
-  return { derived: deriveNewLines(db) + deriveNewSpoolLines(db), rebuilt: false };
+  const derived = deriveNewLines(db) + deriveNewSpoolLines(db);
+  // After deriving, so the report's stored rows include this run's lines (D-096).
+  refreshStoredViews(db);
+  return { derived, rebuilt: false };
 }

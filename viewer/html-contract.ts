@@ -454,5 +454,14 @@ export interface BurnChartInput {
  */
 export type RenderChart<T> = (input: T, options: ChartOptions) => string;
 
-/** `renderHtmlReport` in `viewer/html.ts`: the whole self-contained page, with no network references. */
-export type RenderHtmlReport = (data: HtmlReportData) => string;
+/** How `nilometer view` serves the page (D-097); a saved page has none. */
+export interface PageServing {
+  /** The path the Refresh button posts to, with this run's token. */
+  readonly refreshPath: string;
+}
+
+/**
+ * `renderHtmlReport` in `viewer/html.ts`: the whole self-contained page. Saved, it has no network
+ * references; served by `nilometer view`, its Refresh button posts to that server only (D-097).
+ */
+export type RenderHtmlReport = (data: HtmlReportData, serving?: PageServing) => string;

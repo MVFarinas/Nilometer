@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.2.0 (2026-10-22)
+
+- **`nilometer view`:** shows the report page in your browser with a **Refresh** button that reads new log lines and rebuilds the page in place, on the tab you're on. It runs until you press Ctrl+C, listening on 127.0.0.1 only, behind a random address made for each run; a refresh must come from that page. `report --save --html` still writes a page you can keep or share, with no button.
+- **Reports in seconds:** on three months of real data, `report` went from 23 s to under 2 s, and `report --save --html` from 53 s to under 7 s, with the same output. Ingest now stores the two building blocks every report query read, instead of each query recomputing them. The first `ingest` after updating takes a few seconds longer, once.
+
+## 0.1.0 (2026-10-22)
 
 First public version.
 

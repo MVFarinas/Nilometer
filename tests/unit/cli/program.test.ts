@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import { HAS_POSIX_MODES } from "../../setup/platform.js";
 
 import {
+  BAD_PORT,
   type CliDeps,
   describeIngest,
   describeInit,
@@ -29,6 +30,7 @@ import {
   HTML_NEEDS_SAVE,
   OPEN_NEEDS_HTML,
   TERMINAL_ONLY_NOTE,
+  parsePort,
   report,
   runCli,
   toIngestOptions,
@@ -48,6 +50,7 @@ import { PriceTableError } from "../../../core/pricing/prices.js";
 import { SettingsError } from "../../../core/settings/settings-file.js";
 import { buildHookCommand } from "../../../core/settings/statusline.js";
 import { LABELS } from "../../../viewer/render.js";
+import type { ListenOptions } from "../../../core/view/server.js";
 
 /** This repository's root, which contains hooks/statusline.sh. */
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -1274,5 +1277,135 @@ describe("runCli", () => {
       },
     };
     expect(() => runCli(["init"], broken)).toThrow("clock broke");
+  });
+});
+
+describe("parsePort (D-097)", () => {
+  it("reads a port from 1 to 65535, and 0 (any free port) when none is given", () => {
+    expect(parsePort(undefined)).toBe(0);
+    expect(parsePort("8080")).toBe(8080);
+    expect(parsePort("65535")).toBe(65_535);
+    for (const bad of ["0", "65536", "abc", "1e3", "-1", "80.5", "123456"]) {
+      expect(parsePort(bad)).toBeUndefined();
+    }
+  });
+});
+
+describe("view (D-097)", () => {
+  /**
+   * Deps that keep the server's options instead of opening a port, and record what opened.
+   * @returns The deps, the captured options, what was opened, and the output.
+   */
+  function viewDeps(): {
+    deps: CliDeps;
+    served: ListenOptions[];
+    opened: string[];
+    out: string[];
+    err: string[];
+  } {
+    const base = testDeps();
+    ingestFixture06(base.deps);
+    base.out.length = 0;
+    const served: ListenOptions[] = [];
+    const opened: string[] = [];
+    const deps: CliDeps = {
+      ...base.deps,
+      viewToken: () => "tok",
+      serveView: (options) => {
+        served.push(options);
+      },
+      openPage: (path) => {
+        opened.push(path);
+        return { opened: true };
+      },
+    };
+    return { deps, served, opened, out: base.out, err: base.err };
+  }
+
+  it("ingests, serves the page with a Refresh button, and opens it once listening", () => {
+    const { deps, served, opened, out } = viewDeps();
+    expect(runCli(["view"], deps)).toBe(0);
+    expect(served).toHaveLength(1);
+    const options = served[0] as ListenOptions;
+    expect([options.token, options.port]).toEqual(["tok", 0]);
+    expect(options.page()).toContain('data-path="/tok/refresh"');
+    expect(options.page()).toContain(LABELS.title);
+    // Nothing is printed or opened until the server is listening.
+    expect([out, opened]).toEqual([[], []]);
+    options.onListening("http://127.0.0.1:4000/tok/");
+    expect(out).toEqual([
+      "Showing the report at http://127.0.0.1:4000/tok/",
+      "Refresh on the page reads new log lines and rebuilds it. Press Ctrl+C here to stop.",
+    ]);
+    expect(opened).toEqual(["http://127.0.0.1:4000/tok/"]);
+  });
+
+  it("reads new log lines and rebuilds the page on refresh", () => {
+    const { deps, served } = viewDeps();
+    runCli(["view", "--port", "4000"], deps);
+    const options = served[0] as ListenOptions;
+    expect(options.port).toBe(4000);
+    expect(options.refresh()).toEqual({ ok: true, message: "0 new lines read" });
+    const before = options.page();
+    writeFileSync(
+      join(deps.home, ".claude", "projects", "-fixture-demo", "t.jsonl"),
+      `${JSON.stringify({
+        type: "assistant",
+        sessionId: "s-new",
+        uuid: "u-new",
+        timestamp: "2026-09-12T23:00:00Z",
+        message: {
+          id: "m-new",
+          model: "claude-sonnet-5",
+          usage: { input_tokens: 1, output_tokens: 7 },
+        },
+      })}\n`,
+    );
+    expect(options.refresh()).toEqual({ ok: true, message: "1 new line read" });
+    expect(options.page()).not.toBe(before);
+  });
+
+  it("prints the address without opening anything with --no-open, and says when a browser can't open", () => {
+    const quiet = viewDeps();
+    runCli(["view", "--no-open"], quiet.deps);
+    (quiet.served[0] as ListenOptions).onListening("http://127.0.0.1:4000/tok/");
+    expect(quiet.opened).toEqual([]);
+    const blocked = viewDeps();
+    const deps: CliDeps = {
+      ...blocked.deps,
+      openPage: () => ({ opened: false, reason: "xdg-open exited with 3" }),
+    };
+    runCli(["view"], deps);
+    (blocked.served[0] as ListenOptions).onListening("http://127.0.0.1:4000/tok/");
+    expect(blocked.err).toEqual([
+      "Couldn't open a browser (xdg-open exited with 3). Open the address above.",
+    ]);
+  });
+
+  it("refuses a bad --port before reading anything, and reports a server that stops", () => {
+    const { deps, served, err } = viewDeps();
+    expect(runCli(["view", "--port", "99999"], deps)).toBe(1);
+    expect(served).toEqual([]);
+    expect(err).toEqual([BAD_PORT]);
+    err.length = 0;
+    const exitCode = process.exitCode;
+    try {
+      runCli(["view"], deps);
+      (served[0] as ListenOptions).onError("port 4000 on 127.0.0.1 is in use");
+      expect(err).toEqual(["nilometer view stopped: port 4000 on 127.0.0.1 is in use"]);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = exitCode;
+    }
+  });
+
+  it("defaults to a fresh random token each run", () => {
+    const { deps, served } = viewDeps();
+    const random: CliDeps = { ...deps, viewToken: undefined };
+    runCli(["view"], random);
+    runCli(["view"], random);
+    const [a, b] = served.map((o) => o.token);
+    expect(a).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(a).not.toBe(b);
   });
 });

@@ -104,7 +104,7 @@ Usage percentages exist only from the moment the collector is installed, and onl
 
 ## MVP scope
 
-One screen. No daemon, no desktop app, no live updating. Every metric below is retrospective.
+One screen. No daemon, no desktop app, no live updating: `nilometer view` serves the page from your own computer only while you run it, and its Refresh button rebuilds the page when you ask ([D-097](decisions.md)). Every metric below is retrospective.
 
 ### Observed: "Is my plan too small?"
 
@@ -200,9 +200,10 @@ There's no GUI, installer, or auto-updater. Configuration was always the hard pa
 ```sh
 npm install -g nilometer
 nilometer init
+nilometer view
 ```
 
-Installing compiles nothing: the database is the SQLite built into Node.js ([D-093](decisions.md)). To try a command without installing, use `npx nilometer <command>`.
+`init` installs the hook and reads the session logs already on disk. `view` opens the report page in your browser; press **Refresh** on it whenever you want it brought up to date. Installing compiles nothing: the database is the SQLite built into Node.js ([D-093](decisions.md)). To try a command without installing, use `npx nilometer <command>`.
 
 - **macOS:** tested.
 - **Linux:** the test suite and an install from the package pass in CI.
@@ -230,6 +231,7 @@ On Node 24 before 24.15, `npm ci` prints `EBADENGINE` warnings for three lint pl
 | `nilometer init` | Install the hook (wrapping any existing status line), then backfill from session logs |
 | `nilometer ingest` | Read new session log lines and status line readings into the database. `--full` rereads everything; `--json` prints the outcome as JSON |
 | `nilometer report` | Print what was observed, then projections in a separate section. `--json` prints unrounded rows and every label. `--save` also writes a dated copy (`report_YYYY-MM-DD_HHMMSS.txt` and `.json`) to `~/.local/share/nilometer/reports/`; `--save --html` adds a self-contained `.html` page with the same name, which works offline and makes no network requests. The page opens on an overview, has one tab per chart, and keeps the projections in their own labelled tabs. `--save --html --open` also opens the saved page in your browser; if it can't, the command says where the page is and still succeeds |
+| `nilometer view` | Show the report page in your browser from your own computer, with a **Refresh** button that reads new log lines and rebuilds the page in place, on the tab you're on. Runs until you press Ctrl+C. It listens on 127.0.0.1 only, behind a random address made for each run. `--port <n>` picks the port; `--no-open` prints the address without opening a browser |
 | `nilometer explain <metric>` | List the events behind a number in the report, with the file, line, and byte each came from, and add them back up. Metrics: `limit-hits`, `mid-task`, `lockout`, `by-plan`, `not-resumed`, `headroom`, `peak`, `crossings`, `unattributed`, `by-model`, `by-repo`, `burn-rate`, `api-list-price` |
 | `nilometer plan-price set <YYYY-MM> <usd> --name <plan>` | Record your plan's USD list price per month from that month on, shown beside API list price. `plan-price list` shows what's entered |
 | `nilometer alias set <old-path> <new-path>` | Count a renamed or moved project's old path under its new one, so it shows as one repository. The report lists every alias you entered under the repository table. `alias list` shows them; `alias remove <old-path>` undoes one ([D-092](decisions.md)) |
@@ -244,7 +246,7 @@ On Node 24 before 24.15, `npm ci` prints `EBADENGINE` warnings for three lint pl
 
 ### Privacy
 
-- **Everything stays on your computer.** Nilometer reads Claude Code's session logs and status line payload, and copies them into a local SQLite database. It makes no network requests when it runs, and it sends no telemetry.
+- **Everything stays on your computer.** Nilometer reads Claude Code's session logs and status line payload, and copies them into a local SQLite database. It makes no network requests when it runs, and it sends no telemetry. `nilometer view` listens on 127.0.0.1 for your own browser while it runs, and nothing else can reach it.
 - **The database holds copies of your session logs:** prompts, code, and file paths. That's why the data directory is readable only by your account.
 - **Reports contain spend figures and project names.** Think before sharing one. `nilometer explain` output also names session files and IDs.
 

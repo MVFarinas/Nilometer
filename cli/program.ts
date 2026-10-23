@@ -7,6 +7,7 @@
  * calls it, and turns outcomes into words. All wording here follows CLAUDE.md "Wording is part of
  * correctness": messages state what happened, never advice or judgment.
  */
+import { randomBytes } from "node:crypto";
 import { dirname } from "node:path";
 
 import { Command, CommanderError } from "commander";
@@ -48,6 +49,7 @@ import {
   runVerify,
 } from "../core/verify/verify.js";
 import { type OpenResult, openPage } from "../core/util/open-page.js";
+import { type ListenOptions, listenView } from "../core/view/server.js";
 import {
   type AliasEntry,
   type AliasRow,
@@ -68,9 +70,16 @@ import {
   withReportDatabase,
 } from "../viewer/report.js";
 import { loadHtmlData } from "../viewer/html-data.js";
+import type { PageServing } from "../viewer/html-contract.js";
 import { renderHtmlReport } from "../viewer/html.js";
 import { saveReport } from "../viewer/save.js";
-import { displayPath, plural, renderReport, reportJson } from "../viewer/render.js";
+import {
+  type ReportInput,
+  displayPath,
+  plural,
+  renderReport,
+  reportJson,
+} from "../viewer/render.js";
 
 /** Everything the program needs from its environment, injected so tests never touch real homes. */
 export interface CliDeps {
@@ -98,6 +107,13 @@ export interface CliDeps {
    * so they never launch a browser (D-082).
    */
   readonly openPage?: (path: string) => OpenResult;
+  /**
+   * Starts `nilometer view`'s server; defaults to {@link listenView}. Overridden in tests so no port
+   * is opened (D-097).
+   */
+  readonly serveView?: (options: ListenOptions) => void;
+  /** A fresh token for `nilometer view`'s address; defaults to 24 random bytes. Fixed in tests. */
+  readonly viewToken?: (() => string) | undefined;
 }
 
 /** Flags shared by `init` and `uninstall`. */
@@ -143,6 +159,33 @@ interface ReportFlags {
   readonly html?: boolean;
   /** `--open`: with `--save --html`, open the saved page (D-082). */
   readonly open?: boolean;
+}
+
+/** Flags of the `view` command (D-097). */
+interface ViewFlags {
+  /** `--data-dir <path>` */
+  readonly dataDir?: string | undefined;
+  /** `--port <number>`: the port on 127.0.0.1; any free one when omitted. */
+  readonly port?: string;
+  /** False with `--no-open`: print the address without opening a browser. */
+  readonly open?: boolean;
+}
+
+/** Refusal for a `--port` that isn't a port number. */
+export const BAD_PORT =
+  "--port needs a whole number from 1 to 65535, or leave it out for any free port. Nothing was changed.";
+
+/**
+ * Reads `--port`.
+ * @param value - The flag's text, if given.
+ * @returns The port, 0 for any free one, or undefined when the text isn't a port.
+ */
+export function parsePort(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return 0;
+  }
+  const port = /^\d{1,5}$/.test(value) ? Number(value) : NaN;
+  return port >= 1 && port <= 65_535 ? port : undefined;
 }
 
 /**
@@ -709,6 +752,72 @@ function openSaved(deps: CliDeps, htmlPath: string | undefined): string[] {
 }
 
 /**
+ * Reads the report, and the page when asked, from one snapshot of the database: one read
+ * transaction, so an ingest finishing between the two reads can't make them disagree (D-070: "the
+ * same views, so the two can't disagree"). Shared by `report` and `view` (D-097).
+ * @param deps - Program dependencies.
+ * @param flags - The command's flags.
+ * @param flags.dataDir - `--data-dir`, if given.
+ * @param reportedAt - The report's time: a window is open only until its reset, as of now (D-083).
+ * @param withPage - Whether to render the page too.
+ * @param serving - How `view` serves the page; omitted for a saved page.
+ * @returns The text report's input, and the page when asked.
+ */
+function readSnapshot(
+  deps: CliDeps,
+  flags: { readonly dataDir?: string | undefined },
+  reportedAt: Date,
+  withPage: boolean,
+  serving?: PageServing,
+): { input: ReportInput; html: string | undefined } {
+  const reportOptions = {
+    ...toPlanDatabaseOptions(flags, deps),
+    timeZone: deps.timeZone,
+    reportedAt,
+    // Where init would look, so the warning checks the same file it would fix (D-081).
+    settingsPath: locateSettings({
+      home: deps.home,
+      claudeConfigDir: deps.env["CLAUDE_CONFIG_DIR"],
+    }),
+  };
+  return withReportDatabase(
+    reportOptions,
+    (db, databasePath) =>
+      transaction(db, () => {
+        const read = readReport(db, databasePath, reportOptions);
+        return {
+          input: read,
+          html: withPage
+            ? renderHtmlReport(
+                // Reuses what readReport just read from this snapshot, so the costliest views are
+                // computed once (D-070). The home directory shortens repository paths to ~/..., as
+                // in the text report.
+                loadHtmlData(
+                  db,
+                  {
+                    timeZone: deps.timeZone,
+                    generatedAt: reportedAt,
+                    home: deps.home,
+                    missingHookPath: read.missingHookPath,
+                  },
+                  read,
+                ),
+                serving,
+              )
+            : undefined,
+        };
+      }),
+    /**
+     * Says on stderr that data paths were made owner-only (D-043).
+     * @param tightened - Paths that were tightened.
+     */
+    (tightened) => {
+      noteTightened(deps, tightened);
+    },
+  );
+}
+
+/**
  * Builds the command-line program.
  * @param deps - Program dependencies.
  * @param setExitCode - Receives the exit code chosen by the command that ran.
@@ -811,58 +920,15 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
           if (flags.html === true && flags.save !== true) {
             return { exitCode: 1, lines: [], errors: [HTML_NEEDS_SAVE] };
           }
-          /**
-           * Says on stderr that data paths were made owner-only.
-           * @param tightened - Paths that were tightened.
-           */
-          const onTightened = (tightened: readonly string[]): void => {
-            noteTightened(deps, tightened);
-          };
           // One instant is the report's time (D-083: a window is open only until its reset, as
           // of now), names the saved files, and dates the page, so none of them can disagree.
           const reportedAt = deps.now();
-          const reportOptions = {
-            ...toPlanDatabaseOptions(flags, deps),
-            timeZone: deps.timeZone,
-            reportedAt,
-            // Where init would look, so the warning checks the same file it would fix (D-081).
-            settingsPath: locateSettings({
-              home: deps.home,
-              claudeConfigDir: deps.env["CLAUDE_CONFIG_DIR"],
-            }),
-          };
           const at = flags.save === true ? reportedAt : undefined;
-          const { input, html } = withReportDatabase(
-            reportOptions,
-            (db, databasePath) =>
-              // One read transaction for the text and the page: they come from one snapshot of the
-              // database, so an ingest finishing between the two reads can't make them disagree
-              // (D-070: "the same views, so the two can't disagree").
-              transaction(db, () => {
-                const read = readReport(db, databasePath, reportOptions);
-                return {
-                  input: read,
-                  html:
-                    at !== undefined && flags.html === true
-                      ? renderHtmlReport(
-                          // Reuses what readReport just read from this snapshot, so the costliest
-                          // views are computed once (D-070).
-                          // The home directory shortens repository paths to ~/..., as in the text report.
-                          loadHtmlData(
-                            db,
-                            {
-                              timeZone: deps.timeZone,
-                              generatedAt: at,
-                              home: deps.home,
-                              missingHookPath: read.missingHookPath,
-                            },
-                            read,
-                          ),
-                        )
-                      : undefined,
-                };
-              }),
-            onTightened,
+          const { input, html } = readSnapshot(
+            deps,
+            flags,
+            reportedAt,
+            at !== undefined && flags.html === true,
           );
           const printed =
             flags.json === true ? JSON.stringify(reportJson(input), null, 2) : renderReport(input);
@@ -885,6 +951,68 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
             return { exitCode: 0, lines: [printed], errors: notOpened };
           }
           return { exitCode: 0, lines: [printed, "", note], errors: notOpened };
+        }),
+      );
+    });
+
+  program
+    .command("view")
+    .description(
+      "Show the report page in your browser from your own computer (127.0.0.1), with a Refresh button that reads new log lines and rebuilds it. Runs until you press Ctrl+C.",
+    )
+    .option("--data-dir <path>", "data directory holding the database and spool")
+    .option("--port <number>", "port on 127.0.0.1 (default: any free port)")
+    .option("--no-open", "print the address without opening a browser")
+    .action((flags: ViewFlags) => {
+      setExitCode(
+        report(deps, () => {
+          const port = parsePort(flags.port);
+          if (port === undefined) {
+            return { exitCode: 1, lines: [], errors: [BAD_PORT] };
+          }
+          const token = (deps.viewToken ?? (() => randomBytes(24).toString("base64url")))();
+          const serving = { refreshPath: `/${token}/refresh` };
+          /**
+           * Ingests, then renders the page from what's stored now.
+           * @returns The page, and how many new lines the ingest stored.
+           */
+          const build = (): { page: string; stored: number } => {
+            const outcome = runIngestCommand(toIngestOptions(flags, deps));
+            const { html } = readSnapshot(deps, flags, deps.now(), true, serving);
+            return { page: html ?? "", stored: outcome.run.linesStored };
+          };
+          let current = build();
+          (deps.serveView ?? listenView)({
+            token,
+            port,
+            page: () => current.page,
+            refresh: () => {
+              current = build();
+              return {
+                ok: true,
+                message: `${plural(current.stored, "new line", "new lines")} read`,
+              };
+            },
+            onListening: (url) => {
+              deps.print(`Showing the report at ${url}`);
+              deps.print(
+                "Refresh on the page reads new log lines and rebuilds it. Press Ctrl+C here to stop.",
+              );
+              if (flags.open !== false) {
+                const opened = (deps.openPage ?? openPage)(url);
+                if (!opened.opened) {
+                  deps.printError(
+                    `Couldn't open a browser (${opened.reason}). Open the address above.`,
+                  );
+                }
+              }
+            },
+            onError: (message) => {
+              deps.printError(`nilometer view stopped: ${message}`);
+              process.exitCode = 1;
+            },
+          });
+          return { exitCode: 0, lines: [] };
         }),
       );
     });

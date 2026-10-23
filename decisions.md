@@ -1596,3 +1596,79 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 - **Consequences:**
   - **After the first publish,** the maintainer adds the trusted publisher on npmjs.com: the repository and `publish.yml`. Requiring 2FA and disallowing tokens for publishing then means only that workflow, or the maintainer with 2FA, can publish.
   - **A publish now triggers R7** (D-054): development moves to the public repository when that's decided.
+
+## D-096: Ingest stores the two views every report statement is built on (2026-10-22)
+
+- **Status:** accepted. Refines [D-002](decisions.md) ("store every raw line; derive everything else in views"): the derivation stays in views, and ingest keeps a stored copy of two of them. Step G6.1, the speed a refresh button needs (G6).
+- **Context:**
+  - **The report and page took 45–53 s on three months of real data,** too slow behind a button.
+  - **Profiling found no single slow query.** About 20 statements each recomputed the same two views from the raw tables:
+    - `window_readings` pairs each of about 35,000 rate-limit readings with its API response through correlated lookups, about 0.3 s each time;
+    - `requests_dedup` ranks every request line.
+  - **They're read everywhere:** `source_coverage`, `window_instances` and every limit-hit and lockout view read them, often several times per statement.
+  - **SQLite can't share the work across statements.** A view always reads the original, so a temporary table under the same name doesn't stand in for it. That was tested.
+- **Options:**
+  - (a) **Store both views' rows in tables that ingest refills; keep the definitions as views named `*_computed`.** Chosen.
+  - (b) Rewrite the report as one statement with shared CTEs. Rejected: `explain`, the text report and the page each read the views on their own, so every reader would need rewriting, and each rewrite proving equal.
+  - (c) Store every metric's rows. Rejected: the two base views are the shared cost. Metric views stay views, so a definition change needs no refill logic.
+  - (d) Speed up `window_readings` itself. Rejected for now: it would still be computed about 20 times per report.
+- **Decision:** (a), in migration 032.
+  - **The two tables:** `requests_dedup` and `window_readings` are STRICT tables with ANY columns, so values are stored exactly as the view returned them, with no type affinity. Each has indexes for how other views read it.
+  - **The definitions:** they're unchanged, under `requests_dedup_computed` and `window_readings_computed`, so every row still traces back to its raw lines (principle 4).
+  - **When the tables are refilled:**
+    - ingest refills them after deriving, but only when an input changed. The check uses each input table's row count and highest rowid, plus every source file's root and path; it takes 17 ms on real data.
+    - A full rebuild of derived rows always refills.
+    - The migration fills them on upgrade.
+  - **The refill:** delete and insert, then `ANALYZE` so SQLite's planner has table statistics. On real data that's 0.8 s plus 0.4 s.
+  - **A test** compares every row, value and SQLite type of each table with its view, in both directions: after an ingest, after a later ingest, and after migration 032 on a database that already held data. With the refresh removed from ingest, it fails.
+- **Proof, on two copies of a real database with three months of history:** both ingested one frozen snapshot of the logs, one with 0.1.0 and one with this build.
+  - **Output:** `report --json` is identical apart from the ingest time and the database path. The saved text report and page differ only in the minute they were produced.
+  - **Speed:**
+    - `report`: 23.4 s → 1.8 s.
+    - `report --save --html`: 53.1 s → 6.5 s.
+    - An ingest with nothing new: 1.5 s → 0.4 s, since its summary counts the stored table.
+    - The first ingest after upgrading took 11.7 s, once, because the tables are filled by the migration and again by the first refresh.
+- **Consequences:**
+  - **Anything that writes the views' inputs outside `ensureDerived` must refill.** Today nothing does; the signature and the test guard it.
+  - **A future migration that redefines either computed view** must refill its table, as 032 does.
+  - **The rest of the page's time** is the repository totals with aliases (about 3.7 s) and drawing (about 1 s). They're left for now.
+
+## D-097: `nilometer view` serves the page on 127.0.0.1 with a Refresh button (2026-10-22)
+
+- **Status:** accepted. Step G6.2. Revises the README's "no daemon, no live updating" line to say what `view` does, and doesn't reverse [D-074](decisions.md).
+- **Context:**
+  - **What the maintainer had in mind from the start:** "a person can click a button and that automatically runs the ingest and other commands and it updates the existing page they are on".
+  - **Why the saved page can't do it:** it's a file, and a browser won't let a file run programs.
+  - **What D-074 dropped is different:** the live features (the status bar display, `watch`, a tray app, a background agent), because `/usage` already shows live state. This is on demand and retrospective: the record is brought up to date when the reader asks.
+  - **Speed came first:** D-096 brought the page from 53 s to 6.5 s, so a click is answered in seconds.
+- **Options:**
+  - (a) **A command that serves the page on the loopback address while it runs, with a Refresh button that posts to it.** Chosen.
+  - (b) A desktop app. Rejected: D-039's reasons, size and attack surface, and a second way to ship.
+  - (c) A `nilometer://` link registered with the operating system. Rejected: a per-OS install step, and any page on the web could trigger it.
+  - (d) A background service that rebuilds the page on a timer. Rejected: that's the background agent D-074 dropped.
+- **Decision:** (a), as `nilometer view [--data-dir] [--port <n>] [--no-open]`.
+  - **Startup:** it ingests, builds the page, and serves it at `http://127.0.0.1:<port>/<token>/`, where the token is 24 random bytes made for each run. It prints the address and opens the browser.
+  - **Refresh:** the button posts to `/<token>/refresh`. The server ingests, rebuilds the page, and answers. The page then reloads the same address, so the tab in the address stays open. While it waits, the page counts seconds. If the server is gone, it says so.
+  - **What the server accepts:**
+    - it listens on 127.0.0.1 only;
+    - it answers only the token's paths;
+    - the Host header must name it, which defeats DNS rebinding;
+    - a refresh must be a POST whose Origin is the server itself, so a page on another site can't trigger one;
+    - it does one thing, refresh.
+  - **Its response headers:** a Content-Security-Policy that limits the page to its own inline script and style and to talking only to this server, `no-referrer`, and `no-store`.
+  - **The saved page is unchanged:** no button and no script that reaches anything. The served page's privacy line says where it's served from instead.
+  - **It runs in the foreground** and stops with Ctrl+C or the terminal. Nothing starts by itself.
+- **Proof:**
+  - **Tests:**
+    - the routing rules as a pure function;
+    - a real server sent the requests a browser, another site, and a rebinding page would send;
+    - the served page's wording (A9), and that its only network reference is that one POST;
+    - the command with the server stubbed.
+  - **Live, on a copy of real data:** curl got 200 for the page, 404 for a wrong token, and 403 for a forged Host, a POST without Origin, and a POST from another site. A refresh from the page took 6.1 s.
+  - **In a real browser** (headless Brave over its debugging protocol), on the Interruptions tab:
+    - a click disabled the button, showed the counting status, and reloaded the page on the same tab with new ingest and report times;
+    - with the server stopped, a click said it couldn't reach `view`.
+  - **Rendering:** the served page in light mode at phone width has no horizontal scroll.
+- **Consequences:**
+  - **The README and SECURITY.md say what `view` listens on.** Its server is in the security scope.
+  - **The first `view` on a database opened by an older version** takes longer, once: migration 032 fills the stored views.

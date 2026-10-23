@@ -11,14 +11,15 @@ import { ingest } from "./helpers.js";
 
 /** Views that aren't metrics themselves: building blocks shared by metric views. */
 const HELPER_VIEWS = new Set([
-  "requests_dedup",
+  // D-096 (step G6.1): requests_dedup and window_readings are tables filled from these two.
+  "requests_dedup_computed",
   "request_repositories",
   "request_costs",
   "unpriced_requests",
   "source_coverage",
   "logged_limit_hits",
   "status_limit_groups",
-  "window_readings",
+  "window_readings_computed",
   "window_instances",
   "window_reading_pairs",
   // D-075 (step G2.2): plan names and months only, the one way an observed view may read plans.

@@ -38,6 +38,7 @@ import type {
   LockoutBar,
   ModelBar,
   MonthBar,
+  PageServing,
   PlanPeriodRef,
   RenderHtmlReport,
   RepoBar,
@@ -68,6 +69,14 @@ export const EVENT_LIST_LIMIT = 200;
 export const HTML_LABELS = {
   privacy:
     "Privacy: this file holds session IDs and the paths of your session logs, like nilometer explain output, and it makes no network requests. Think before sharing it.",
+  // D-097 (step G6.2): the page as nilometer view serves it.
+  privacyServed:
+    "Privacy: nilometer view shows this page from your own computer (127.0.0.1) while it runs. Refresh asks it to read new log lines and rebuild the page; nothing leaves this computer. The page holds session IDs and the paths of your session logs.",
+  refresh: "Refresh",
+  refreshHint: "Read new log lines and status line readings, then rebuild this page",
+  refreshing: "Reading new log lines and rebuilding the page",
+  refreshFailed: "Refresh failed",
+  refreshStopped: "Couldn't reach nilometer view. Is it still running in your terminal?",
   // 2026-10-22 click-through: "What each number covers" with two bars didn't say why they differ.
   coverage: "Where the numbers come from",
   coverageWhy:
@@ -482,9 +491,10 @@ function legend(entries: readonly (readonly [string, string])[]): string {
 /**
  * Renders the header: title, zone, last ingest, and the privacy note (README section Privacy).
  * @param data - Report data.
+ * @param serving - How `nilometer view` serves the page; omitted for a saved page.
  * @returns The header HTML.
  */
-function renderHeader(data: HtmlReportData): string {
+function renderHeader(data: HtmlReportData, serving?: PageServing): string {
   const zone = data.timeZone;
   const ingest = data.lastIngestAt === null ? "none yet" : formatInstant(data.lastIngestAt, zone);
   const meta = `Times are in ${zone}. Last ingest: ${ingest}. Report produced: ${formatInstant(data.generatedAtUtc, zone)}.`;
@@ -501,12 +511,23 @@ function renderHeader(data: HtmlReportData): string {
           ),
           "</div>",
         ];
+  // Served by nilometer view: the button and where its progress shows (D-097).
+  const refresh =
+    serving === undefined
+      ? []
+      : [
+          '<div class="nm-refresh">',
+          `<button type="button" id="nm-refresh" data-path="${escapeHtml(serving.refreshPath)}" title="${escapeHtml(HTML_LABELS.refreshHint)}">${escapeHtml(HTML_LABELS.refresh)}</button>`,
+          '<span id="nm-refresh-status" class="meta" role="status" aria-live="polite"></span>',
+          "</div>",
+        ];
   return [
     '<header class="nm-head">',
     `<h1>${escapeHtml(LABELS.title)}</h1>`,
     para(meta, "meta"),
+    ...refresh,
     ...hook,
-    para(HTML_LABELS.privacy, "privacy"),
+    para(serving === undefined ? HTML_LABELS.privacy : HTML_LABELS.privacyServed, "privacy"),
     "</header>",
   ].join("\n");
 }
@@ -1602,6 +1623,10 @@ p { margin: 0; }
 .nm-head { display: grid; gap: 6px; }
 .meta, .span, .note { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .privacy { font-size: 13px; color: var(--ink-2); }
+.nm-refresh { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.nm-refresh button { font: inherit; font-size: 14px; font-weight: 600; color: var(--ink); background: var(--surface); border: 1px solid var(--ink-2); border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+.nm-refresh button:disabled { cursor: progress; opacity: .6; }
+@media print { .nm-refresh { display: none; } }
 .hook-warning { display: grid; gap: 4px; border-left: 3px solid var(--ink); padding: 8px 12px; background: var(--surface); font-weight: 600; }
 .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--water); font-weight: 600; }
 .eyebrow.projected { color: var(--silt); }
@@ -1918,14 +1943,54 @@ if (typeof document !== "undefined") {
 `;
 
 /**
+ * The Refresh button's script, for a page `nilometer view` serves (D-097): it posts to the server,
+ * counts the seconds while the server ingests and rebuilds, then reloads the same address, so the
+ * tab in the address (#windows, #interruptions...) stays open.
+ * @returns The script, with its wording from {@link HTML_LABELS}.
+ */
+function refreshScript(): string {
+  const text = JSON.stringify({
+    refreshing: HTML_LABELS.refreshing,
+    failed: HTML_LABELS.refreshFailed,
+    stopped: HTML_LABELS.refreshStopped,
+  }).replace(/</g, "\\u003c");
+  return `
+"use strict";
+(function () {
+  var TEXT = ${text};
+  var button = document.getElementById("nm-refresh");
+  var status = document.getElementById("nm-refresh-status");
+  if (button === null || status === null) { return; }
+  button.addEventListener("click", function () {
+    var started = Date.now();
+    button.disabled = true;
+    function tick() { status.textContent = TEXT.refreshing + " (" + Math.round((Date.now() - started) / 1000) + " s)"; }
+    tick();
+    var timer = setInterval(tick, 1000);
+    function stop(message) { clearInterval(timer); button.disabled = false; status.textContent = message; }
+    fetch(button.getAttribute("data-path"), { method: "POST" })
+      .then(function (response) {
+        return response.json().then(function (body) {
+          if (response.ok && body.ok) { clearInterval(timer); location.reload(); return; }
+          stop(TEXT.failed + ": " + body.message);
+        });
+      })
+      .catch(function () { stop(TEXT.stopped); });
+  });
+})();
+`;
+}
+
+/**
  * Renders the whole page (step G1.3, D-070): header, coverage, the observed sections, the seam,
  * and the projected monthly section, in the text report's order, with the event table embedded for
  * the script and a table view under every chart.
  * @param data - Everything the report draws, from `loadHtmlData`.
+ * @param serving - How `nilometer view` serves the page (D-097); omitted for a saved page.
  * @returns One self-contained, ASCII-only HTML document; never throws for well-formed data.
  * @see D-070
  */
-function renderPage(data: HtmlReportData): string {
+function renderPage(data: HtmlReportData, serving?: PageServing): string {
   const options: ChartOptions = { timeZone: data.timeZone, width: CHART_WIDTH };
   const embedded = embedJson({ timeZone: data.timeZone, files: data.files, events: data.events });
   return [
@@ -1939,7 +2004,7 @@ function renderPage(data: HtmlReportData): string {
     "</head>",
     "<body>",
     "<main>",
-    renderHeader(data),
+    renderHeader(data, serving),
     // Navigation only: its labels name the tabs, so the projected group's label sits above the
     // seam, while every projected panel stays below it in the document (principle 2, D-084).
     renderTabBar(),
@@ -1967,6 +2032,8 @@ function renderPage(data: HtmlReportData): string {
     "</main>",
     `<script type="application/json" id="nm-data">${embedded}</script>`,
     `<script>${PAGE_SCRIPT}</script>`,
+    // Only when served: a saved page makes no network requests (D-097).
+    ...(serving === undefined ? [] : [`<script>${refreshScript()}</script>`]),
     "</body>",
     "</html>",
     "",
