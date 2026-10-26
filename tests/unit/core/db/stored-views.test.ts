@@ -23,7 +23,7 @@ import {
   STORED_VIEWS,
   inputSignature,
   refreshStoredViews,
-} from "../../../../core/ingest/stored-views.js";
+} from "../../../../core/db/stored-views.js";
 import { epoch, now, request } from "../metrics/helpers.js";
 
 /** Repository root. */
@@ -162,6 +162,26 @@ describe("stored views (D-096)", () => {
       requests_dedup: { rows: 2, same: true },
       window_readings: { rows: 2, same: true },
     });
+  });
+
+  it("are refilled when the database is next opened, if something wrote their inputs without refilling (M15)", () => {
+    const { root, spoolDir } = scenarioFiles();
+    const path = join(mkdtempSync(join(tmpdir(), "nilometer-stale-")), "usage.db");
+    const db = openDatabase(path, join(ROOT, "core/schema"));
+    ingestLogs(db, { roots: [root], mode: "incremental", now, spoolDir });
+    ensureDerived(db);
+    // What a build without the refresh did: new lines stored and derived, the stored table left alone.
+    writeFileSync(
+      join(root, "projects", "-p", "s2.jsonl"),
+      `${JSON.stringify(request("s2", "c", null, "2026-09-01T12:30:00Z"))}\n`,
+    );
+    ingestLogs(db, { roots: [root], mode: "incremental", now, spoolDir });
+    deriveNewLines(db);
+    expect(compare(db).requests_dedup).toEqual({ rows: 2, same: false });
+    db.close();
+    const reopened = openDatabase(path, join(ROOT, "core/schema"));
+    expect(compare(reopened).requests_dedup).toEqual({ rows: 3, same: true });
+    reopened.close();
   });
 
   it("change their signature when an input row is added or a source path changes", () => {

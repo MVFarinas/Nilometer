@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 (2026-10-26)
+
+- **A clone pulled without `npm run build` no longer reports old numbers.** Its compiled code ran newer migrations it didn't know how to keep up to date, so the report and `verify` read a copy of the requests that stopped at the pull. Nilometer now stops with "run npm run build" when its schema files or its database are newer than its code, and opening the database refreshes that copy whenever it has fallen behind. npm installs weren't affected.
+
 ## 0.2.0 (2026-10-22)
 
 - **`nilometer view`:** shows the report page in your browser with a **Refresh** button that reads new log lines and rebuilds the page in place, on the tab you're on. It runs until you press Ctrl+C, listening on 127.0.0.1 only, behind a random address made for each run; a refresh must come from that page. `report --save --html` still writes a page you can keep or share, with no button.

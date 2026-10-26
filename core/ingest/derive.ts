@@ -6,7 +6,7 @@
  * in SQL views over these tables.
  */
 import { type Db, blobBytes, transaction } from "../db/database.js";
-import { refreshStoredViews } from "./stored-views.js";
+import { refreshStoredViews } from "../db/stored-views.js";
 import {
   type EventFields,
   type LineClass,

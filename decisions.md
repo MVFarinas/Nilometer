@@ -1672,3 +1672,44 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 - **Consequences:**
   - **The README and SECURITY.md say what `view` listens on.** Its server is in the security scope.
   - **The first `view` on a database opened by an older version** takes longer, once: migration 032 fills the stored views.
+
+## D-098: A build refuses schema files or a database newer than itself, and opening a database refreshes stale stored views (2026-10-26)
+
+- **Status:** accepted. Maintenance step M15. Amends [D-096](decisions.md), whose consequence "anything that writes the views' inputs outside `ensureDerived` must refill; today nothing does" missed a case.
+- **Context:** weekly pass 4 on a second machine, running the public clone, found `verify` failing. The report and ingest gave no sign.
+  - **The skew:** the clone had been pulled after its last build. The migration files there were 030–032, from Oct 22 at 23:55. `dist/` was from Oct 22 at 05:18 and contained no refresh code.
+  - **How it broke:** Nilometer reads migrations from `core/schema` on disk but runs compiled code from `dist/`. So the old code applied migration 032, which filled `requests_dedup` once. No later ingest refreshed it.
+  - **The effect:** every report and `verify` read a copy that stopped on Oct 22. 218 deduplicated requests were missing, including 255,037 output tokens on claude-opus-5.
+  - **The live view was right:** `requests_dedup_computed` matched ccusage. Only the stored copy was stale.
+  - **npm installs can't be hit:** the package ships compiled code and migrations together. The maintainer's Mac, on npm, matched ccusage on all 18 days.
+- **Options:**
+  - (a) **Both: the compiled code names the newest migration it knows and refuses anything newer, and opening a database refills stale stored views.** Chosen.
+  - (b) Only the version check. Rejected: a database left stale by an old build stays wrong until the next ingest with new code, and `report` and `verify` would keep reading it.
+  - (c) Only the refill on open. Rejected: old code would still apply migrations it doesn't understand, and the next such migration might not be a stored view.
+  - (d) Compile the migrations into `dist/`. Rejected: they're plain SQL, read by the audit's schema check, the export and the package check. Two copies would be a new way to disagree.
+- **Decision:** (a).
+  - **`BUILT_SCHEMA_VERSION`** in `core/db/database.ts` (32). A test keeps it equal to the newest file in `core/schema`.
+  - **`openDatabase` refuses** before creating or applying anything:
+    - when the schema folder holds a newer migration: "the compiled code is older than its schema files. In a clone, run npm run build after pulling";
+    - when the database's applied version is newer: "updated by a newer Nilometer".
+    - Both are reported errors, ending "Nothing was changed."
+  - **On every open, `openDatabase` refreshes the stored views when their inputs' signature changed.** That's a 17 ms check, or about 1.2 s when they need refilling.
+  - **Module layout:** `stored-views.ts` and `transaction()` move into `core/db`, so the database layer doesn't depend on ingest.
+- **Proof:**
+  - **The failure, reproduced:** the published 0.1.0 code, given the current migrations, ran two ingests. The stored table held 0 rows against 2 computed.
+  - **The repair:** the fixed build's `report` alone, with no ingest, refilled it to 2 of 2.
+  - **The refusal:** with a migration 033 added to the folder, the fixed build refused with the rebuild message.
+  - **Tests:**
+    - the constant matches the files;
+    - newer schema files are refused before the database file is created;
+    - a newer database is refused and left at its version;
+    - a stale table left the way the old build left it is refilled on the next open;
+    - the CLI prints the refusal.
+  - **Guard proofs:**
+    - with the refill on open disabled, the stale-table test failed;
+    - with the constant set one below the files, 236 tests failed.
+  - **A23 caught the module move:** the old `dist/core/ingest/stored-views.js` was left behind, and A23 named it until `dist/` was rebuilt clean.
+- **Consequences:**
+  - **Every new migration bumps `BUILT_SCHEMA_VERSION`;** the test fails otherwise.
+  - **A clone pulled without a build** now stops with an instruction instead of reporting old numbers.
+  - **A build from before this change can't be protected.** The second machine needs `npm run build`, or the npm package. Its next open then refills the table.

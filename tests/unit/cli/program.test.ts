@@ -51,6 +51,8 @@ import { SettingsError } from "../../../core/settings/settings-file.js";
 import { buildHookCommand } from "../../../core/settings/statusline.js";
 import { LABELS } from "../../../viewer/render.js";
 import type { ListenOptions } from "../../../core/view/server.js";
+import { BUILT_SCHEMA_VERSION } from "../../../core/db/database.js";
+import { DatabaseSync } from "node:sqlite";
 
 /** This repository's root, which contains hooks/statusline.sh. */
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -1407,5 +1409,23 @@ describe("view (D-097)", () => {
     const [a, b] = served.map((o) => o.token);
     expect(a).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(a).not.toBe(b);
+  });
+});
+
+describe("a database newer than this build (M15)", () => {
+  it("is refused with what to do, and nothing changes", () => {
+    const { deps, err } = testDeps();
+    const dir = join(deps.home, ".local", "share", "nilometer");
+    mkdirSync(dir, { recursive: true });
+    const db = new DatabaseSync(join(dir, "usage.db"));
+    db.exec(
+      "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL); INSERT INTO schema_migrations VALUES (999, '999_future.sql', 'x');",
+    );
+    db.close();
+    expect(runCli(["report"], deps)).toBe(1);
+    // The data folder made here isn't owner-only, so a tightening note may come first (D-043).
+    expect(err.slice(-1)).toEqual([
+      `this database was updated by a newer Nilometer (schema 999), and this build knows schema ${BUILT_SCHEMA_VERSION}. Update Nilometer, or in a clone run npm run build. Nothing was changed.`,
+    ]);
   });
 });

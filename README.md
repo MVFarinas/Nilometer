@@ -222,6 +222,8 @@ npm link          # optional: puts the `nilometer` command on your PATH
 nilometer init    # or, without npm link: npm start -- init
 ```
 
+After `git pull`, run `npm run build` again: the migrations are read from the clone but the code runs from `dist/`, and Nilometer stops with that instruction when they don't match ([D-098](decisions.md)).
+
 On Node 24 before 24.15, `npm ci` prints `EBADENGINE` warnings for three lint plugins that ask for a newer Node. They're development dependencies, they don't affect Nilometer, and the install still succeeds.
 
 `init` registers the status line hook in `~/.claude/settings.json`. If you already have a status line, it keeps running unchanged. It backs up the settings file, then backfills from every session log still on disk.

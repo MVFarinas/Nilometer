@@ -12,7 +12,7 @@ import { dirname } from "node:path";
 
 import { Command, CommanderError } from "commander";
 
-import { transaction } from "../core/db/database.js";
+import { SchemaVersionError, transaction } from "../core/db/database.js";
 
 import { type IngestCommandOutcome, runIngestCommand } from "../core/ingest/command.js";
 import { DiscoveryError } from "../core/ingest/discover.js";
@@ -687,7 +687,8 @@ export function isReportedError(error: unknown): error is Error {
     error instanceof PlanPriceError ||
     error instanceof RepositoryAliasError ||
     error instanceof NoDatabaseError ||
-    error instanceof UnknownMetricError
+    error instanceof UnknownMetricError ||
+    error instanceof SchemaVersionError
   );
 }
 

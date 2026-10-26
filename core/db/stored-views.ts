@@ -7,8 +7,8 @@
  * only by ingest, so ingest refreshes the tables after deriving, and only when an input changed.
  * The computed views stay the source of truth: a test fails if a table ever differs from its view.
  */
-import type { Db } from "../db/database.js";
-import { transaction } from "../db/database.js";
+import type { Db } from "./database.js";
+import { transaction } from "./transaction.js";
 
 /** Each stored table and the view whose rows it holds. */
 export const STORED_VIEWS = [

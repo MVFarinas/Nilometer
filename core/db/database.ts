@@ -14,38 +14,31 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { ensurePrivateDir, ensurePrivateFile, tightenMode } from "../install/private-files.js";
+import { refreshStoredViews } from "./stored-views.js";
+import { transaction } from "./transaction.js";
 
 /** A `node:sqlite` database handle. */
 export type Db = DatabaseSync;
 
+export { transaction };
+
 /**
- * Runs `work` in one transaction: committed when it returns, rolled back when it throws. Inside another
- * transaction it becomes a savepoint, so an inner failure undoes only the inner work, as better-sqlite3's
- * `db.transaction()` did before D-093.
- * @param db - An open database.
- * @param work - The statements to run together.
- * @returns What `work` returns.
- * @throws {Error} Whatever `work` throws, after the rollback.
+ * The newest migration this build was written for. Migrations are read from `core/schema` at run time,
+ * but the code that keeps their tables right is compiled, so a clone pulled without `npm run build`
+ * once ran migration 032 under code that never refreshed its tables (M15). A test keeps this equal to
+ * the files in `core/schema`.
  */
-export function transaction<T>(db: Db, work: () => T): T {
-  const nested = db.isTransaction;
-  // A savepoint name only has to be unique among the ones open at once, and nesting is strictly LIFO.
-  const begin = nested ? "SAVEPOINT nilometer_nested" : "BEGIN";
-  db.exec(begin);
-  try {
-    const result = work();
-    db.exec(nested ? "RELEASE nilometer_nested" : "COMMIT");
-    return result;
-  } catch (error) {
-    if (nested) {
-      // ROLLBACK TO keeps the savepoint open, so it's released too, leaving the outer transaction as it was.
-      db.exec("ROLLBACK TO nilometer_nested");
-      db.exec("RELEASE nilometer_nested");
-    } else if (db.isTransaction) {
-      // SQLite may already have rolled back on its own (a full disk, an interrupt); rolling back twice errors.
-      db.exec("ROLLBACK");
-    }
-    throw error;
+export const BUILT_SCHEMA_VERSION = 32;
+
+/** The schema files or the database are newer than this build. Raised before anything is applied. */
+export class SchemaVersionError extends Error {
+  /**
+   * Creates the error.
+   * @param message - Which side is newer, and what to do.
+   */
+  constructor(message: string) {
+    super(message);
+    this.name = "SchemaVersionError";
   }
 }
 
@@ -187,12 +180,27 @@ export function applyMigrations(
  * Opens (creating if needed) the database and brings its schema up to date.
  * @param path - Database file path, or `:memory:` for tests.
  * @param migrationsDir - Directory of migration files.
- * @returns An open database with WAL journaling, a busy timeout, and foreign keys enforced.
+ * @param builtVersion - The newest migration this build knows; injected by tests.
+ * @returns An open database with WAL journaling, a busy timeout, foreign keys enforced, and its
+ *   stored views up to date.
  * @throws {MigrationListError} If the migrations directory is misnumbered.
+ * @throws {SchemaVersionError} If the schema files, or the database, are newer than this build.
  * @throws {Error} Whatever SQLite raises while opening or migrating.
  */
-export function openDatabase(path: string, migrationsDir: string): Db {
+export function openDatabase(
+  path: string,
+  migrationsDir: string,
+  builtVersion: number = BUILT_SCHEMA_VERSION,
+): Db {
   const migrations = listMigrations(migrationsDir);
+  const newest = migrations.at(-1)?.version ?? 0;
+  // Before anything is created or applied: newer schema files under older code is how a pulled clone
+  // without a build left migration 032's tables stale on every later ingest (M15).
+  if (newest > builtVersion) {
+    throw new SchemaVersionError(
+      `this build of Nilometer knows migrations up to ${builtVersion}, but its schema folder holds ${newest}, so the compiled code is older than its schema files. In a clone, run npm run build after pulling`,
+    );
+  }
   if (path !== ":memory:") {
     ensurePrivateDir(dirname(path));
     // SQLite creates the -wal and -shm files with the database file's mode, so creating the file
@@ -209,6 +217,34 @@ export function openDatabase(path: string, migrationsDir: string): Db {
   // SQLite leaves foreign keys off unless asked, per connection. node:sqlite turns them on by default;
   // saying so here keeps the requirement visible rather than inherited.
   db.exec("PRAGMA foreign_keys = ON");
+  const applied = schemaVersion(db);
+  // A database a newer build migrated has tables this build doesn't know how to keep right.
+  if (applied > builtVersion) {
+    db.close();
+    throw new SchemaVersionError(
+      `this database was updated by a newer Nilometer (schema ${applied}), and this build knows schema ${builtVersion}. Update Nilometer, or in a clone run npm run build`,
+    );
+  }
   applyMigrations(db, migrations);
+  // Stored views left stale by anything that wrote their inputs without refilling them are refilled
+  // before anyone reads them; when nothing changed this is a 17 ms check (M15, D-096).
+  if (hasStoredViews(db)) {
+    refreshStoredViews(db);
+  }
   return db;
+}
+
+/**
+ * Whether the schema has the stored views (migration 032 on).
+ * @param db - An open, migrated database.
+ * @returns True when `requests_dedup_computed` exists.
+ */
+function hasStoredViews(db: Db): boolean {
+  return (
+    db
+      .prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'view' AND name = 'requests_dedup_computed'",
+      )
+      .get() !== undefined
+  );
 }

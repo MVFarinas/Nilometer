@@ -10,8 +10,10 @@ import { describe, expect, it } from "vitest";
 import { HAS_POSIX_MODES } from "../../../setup/platform.js";
 
 import {
+  BUILT_SCHEMA_VERSION,
   type Migration,
   MigrationListError,
+  SchemaVersionError,
   applyMigrations,
   blobBytes,
   listMigrations,
@@ -304,5 +306,35 @@ describe("blobBytes (D-093)", () => {
     // The trap D-093 records: no error, just the byte values joined by commas.
     expect(blob.toString()).toBe("123,34,97,34,58,49,125");
     expect(blobBytes(blob).toString("utf8")).toBe('{"a":1}');
+  });
+});
+
+describe("the build and schema versions agree (M15)", () => {
+  it("knows exactly the migrations in core/schema", () => {
+    const shipped = listMigrations(
+      join(dirname(fileURLToPath(import.meta.url)), "../../../../core/schema"),
+    );
+    expect(BUILT_SCHEMA_VERSION).toBe(shipped.at(-1)?.version);
+  });
+
+  it("refuses schema files newer than the build before creating anything", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "aua-db-")), "nested", "usage.db");
+    expect(() => openDatabase(path, migrationsDir(TWO), 1)).toThrow(SchemaVersionError);
+    expect(() => openDatabase(path, migrationsDir(TWO), 1)).toThrow(
+      "this build of Nilometer knows migrations up to 1, but its schema folder holds 2, so the compiled code is older than its schema files. In a clone, run npm run build after pulling",
+    );
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("refuses a database a newer build migrated, applying nothing", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "aua-db-")), "usage.db");
+    openDatabase(path, migrationsDir(TWO)).close();
+    const older = migrationsDir({ "001_first.sql": TWO["001_first.sql"] });
+    expect(() => openDatabase(path, older, 1)).toThrow(
+      "this database was updated by a newer Nilometer (schema 2), and this build knows schema 1. Update Nilometer, or in a clone run npm run build",
+    );
+    const reopened = openDatabase(path, migrationsDir(TWO));
+    expect(schemaVersion(reopened)).toBe(2);
+    reopened.close();
   });
 });
