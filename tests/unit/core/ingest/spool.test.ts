@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SH } from "../../../setup/platform.js";
 
 import { openDatabase } from "../../../../core/db/database.js";
@@ -52,6 +52,13 @@ function spoolLine(payload: Buffer | string, header: Record<string, unknown> = {
 function now(): Date {
   return new Date("2026-09-13T00:00:00Z");
 }
+
+// The end-to-end tests here start the real shell hook several times, and process start-up is slow on
+// Windows. From 0.2.1 the Windows CI job ran "ingests lines written by the real hook" in 4.0-7.7 s
+// against Vitest's 5-second default (1.2 s at 0.2.0; about 0.1 s on macOS either way), so this file
+// takes the integration tests' limit, as D-051 did for runGit. The slowdown itself is investigated
+// separately (M16).
+vi.setConfig({ testTimeout: 60_000 });
 
 describe("decodeSpoolLine", () => {
   it("decodes a valid line into its header and payload", () => {
@@ -282,10 +289,17 @@ describe("spool ingestion end to end", () => {
     ]);
     expect(db.prepare("SELECT COUNT(*) AS n FROM parsed_lines").get()).toEqual({ n: 0 });
     // A later hook write with a new payload is picked up incrementally.
-    spawnSync(SH, [hook, dataDir], { input: JSON.stringify({ model: { id: "later" } }) });
+    const later = spawnSync(SH, [hook, dataDir], {
+      input: JSON.stringify({ model: { id: "later" } }),
+    });
+    // Checked, so a hook that didn't run fails here and says so, not as a count of 0 below.
+    expect(later.status).toBe(0);
+    // unreadable: 0 first. On Windows before M17 (D-099), a spool file ID above 2^53 made this second
+    // ingest skip the spool as unreadable, which read as an offset bug. Confirmed on the PC: 29 of 40
+    // fresh temp files there had such an ID, and every failing run counted the spool unreadable.
     expect(
       ingestLogs(db, { roots: [logRoot], mode: "incremental", now, spoolDir: dataDir }),
-    ).toMatchObject({ linesRead: 1, linesStored: 1 });
+    ).toMatchObject({ unreadable: 0, linesRead: 1, linesStored: 1 });
     expect(deriveNewSpoolLines(db)).toBe(1);
   });
 

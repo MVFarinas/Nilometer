@@ -60,15 +60,15 @@ describe("store operations", () => {
       kind: "log" as const,
       root: "/r",
       relativePath: "projects/p/s.jsonl",
-      stat: { size: 10, inode: 5 },
+      stat: { size: 10, inode: 5n },
     };
     const created = findOrCreateSourceFile(db, file, run);
     expect(created.state).toBeNull();
-    saveFileState(db, created.id, { byteOffset: 8, lineCount: 2, size: 10, inode: 5 }, run);
+    saveFileState(db, created.id, { byteOffset: 8, lineCount: 2, size: 10, inode: 5n }, run);
     const found = findOrCreateSourceFile(db, file, run);
     expect(found).toEqual({
       id: created.id,
-      state: { byteOffset: 8, lineCount: 2, size: 10, inode: 5 },
+      state: { byteOffset: 8, lineCount: 2, size: 10, inode: 5n },
     });
   });
 
@@ -95,7 +95,7 @@ describe("store operations", () => {
     const run1 = startRun(db, "incremental", T0);
     const { id } = findOrCreateSourceFile(
       db,
-      { kind: "log", root: "/r", relativePath: "x.jsonl", stat: { size: 3, inode: 1 } },
+      { kind: "log", root: "/r", relativePath: "x.jsonl", stat: { size: 3, inode: 1n } },
       run1,
     );
     const bytes = Buffer.from("{}");

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2 (2026-10-26)
+
+- **Windows: log files were skipped after their first ingest.** NTFS file IDs are usually above 2^53, and since 0.2.0 reading one back failed, so `ingest` counted the file as unreadable and skipped any new lines in it from then on. IDs are now read and stored exactly. Run `nilometer ingest` after updating: it reads the skipped lines from where it stopped, as long as Claude Code still has the logs (it deletes them after 30 days).
+- **Only filesystem errors skip a file:** any other error is raised instead of being counted as "couldn't be read", and each skipped file's error code is recorded.
+
 ## 0.2.1 (2026-10-26)
 
 - **A clone pulled without `npm run build` no longer reports old numbers.** Its compiled code ran newer migrations it didn't know how to keep up to date, so the report and `verify` read a copy of the requests that stopped at the pull. Nilometer now stops with "run npm run build" when its schema files or its database are newer than its code, and opening the database refreshes that copy whenever it has fallen behind. npm installs weren't affected.

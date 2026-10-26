@@ -692,7 +692,7 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 
 ## D-051: The audit runs on Windows, and a path test states what `resolve` returns there (2026-09-18)
 
-- **Status:** accepted. Found by re-running D-050's changes on the Windows PC.
+- **Status:** accepted. Found by re-running D-050's changes on the Windows PC. Applied again 2026-10-26 to `tests/unit/core/ingest/spool.test.ts`, which timed out on the Windows CI job from 0.2.1 (M16).
 - **Context:** *Observed on the Windows 11 PC (2026-09-18, Node 24.12, Git for Windows):*
   - **An integration test timed out** at 6.9 s against Vitest's 5-second default, on macOS, under coverage — a flake, not a defect, but one that would recur on slower CI runners.
   - **`npx` failed the same way** in `scripts/compare/ccusage.ts` (check A7), which is why both spawn sites now go through one module rather than each solving it again.
@@ -1713,3 +1713,44 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
   - **Every new migration bumps `BUILT_SCHEMA_VERSION`;** the test fails otherwise.
   - **A clone pulled without a build** now stops with an instruction instead of reporting old numbers.
   - **A build from before this change can't be protected.** The second machine needs `npm run build`, or the npm package. Its next open then refills the table.
+
+## D-099: File IDs are read and stored exactly, and only filesystem errors count as unreadable files (2026-10-26)
+
+- **Status:** accepted. Maintenance step M17. Fixes a regression from [D-093](decisions.md).
+- **Context:** weekly pass 4's check on the work laptop, after it moved to 0.2.1, found `ingest` reporting "2 files or folders that couldn't be read" on every run. The laptop's own session traced it with a patched copy against a copy of its database.
+  - **The cause:** `source_files.inode` holds each log file's ID, so a replaced file is noticed and reread (D-003). NTFS file IDs are 64-bit and often above 2^53. Two of the laptop's ten were about 1.6e17 and 2.0e16.
+  - **Precision was already lost:** `statSync` returns the ID as a number, so it was rounded before it was stored.
+  - **Why it surfaced now:** `better-sqlite3` read such values back rounded but silently. `node:sqlite` throws `ERR_OUT_OF_RANGE`.
+  - **Why it was hidden:** ingest counted any error with a `code` as an unreadable file. So a database error read as a filesystem one, and only a count was kept.
+  - **The impact:**
+    - **On the laptop:** none yet, because both files had been read in full before 0.2.1.
+    - **On any Windows install from 0.2.0:** lines appended to such a file are skipped on every run after its first, with nothing saying why.
+    - **How common it is:** on the PC, 29 of 40 fresh temp files had an ID above 2^53, around 1.7e16.
+    - **The lines can still be read:** they stay in the logs, and the fix resumes from the stored offset. Logs Claude Code deletes after 30 days are the exception.
+  - **It was also the Windows test flake:** on the PC, the spool test failed intermittently at both 0.2.0 and 0.2.1. Run outside Vitest, its second ingest counted the spool `"unreadable": 1` in 8 rounds of 8, right after the spool grew. On the fixed code, the private Windows CI ran that test in 720 ms.
+- **Options:**
+  - **Exact IDs:**
+    - (a) **Read them with `stat(…, { bigint: true })`, store the same 64 bits as a signed SQLite INTEGER, and read them back as text then BigInt.** Chosen: no migration, and every ID is exact.
+    - (b) A TEXT column. Rejected: it needs a migration and a table rebuild for a value that fits in an INTEGER.
+    - (c) Read every integer as a bigint (`setReadBigInts`). Rejected for the ingest code: offsets, sizes and counts are numbers everywhere else. Used only in the fingerprint, which reads whole rows.
+  - **Rounded IDs already stored:**
+    - (a) **Treat a stored value equal to the current ID rounded to a number as the same file, and store the exact ID on the next save.** Chosen.
+    - (b) Let them mismatch. Rejected: every such file would be reread from the start once and logged as rewritten, for no change in the file.
+  - **The catch:**
+    - (a) **Count only real filesystem codes as unreadable, and raise the rest.** The codes are ENOENT, ENOTDIR, EISDIR, EACCES, EPERM, EBUSY, ELOOP, ENAMETOOLONG and EIO. Each skip is recorded in `ingest_report` as `file_unreadable`, with its code and relative path. Chosen.
+    - (b) Keep counting any coded error. Rejected: it's what hid this.
+- **Decision:** both (a)s, and the fingerprint reads integers as bigints, writing safe ones as plain numbers so fingerprints don't change.
+- **Proof:**
+  - **Tests:**
+    - `statFile` keeps a large ID exact, keeps 0 as unknown, and stores an ID above 2^63 as the same bits signed;
+    - a file with a large ID, read and then appended to, has its new line read: not skipped, not counted as unreadable, not reread;
+    - an ID stored rounded matches, so the file isn't reread;
+    - EACCES is counted and recorded, while `ERR_OUT_OF_RANGE` is raised;
+    - the fingerprint reads a large integer.
+  - **Guard proofs:**
+    - the stored ID read as a number failed 2 tests;
+    - every error code counted again failed 1;
+    - no match for rounded IDs failed 2.
+- **Consequences:**
+  - **On the laptop,** the two affected files are read again on the next ingest with the fix, as the same files, and their IDs are stored exactly.
+  - **A file skipped for a real filesystem reason** now names its code in `ingest_report`.

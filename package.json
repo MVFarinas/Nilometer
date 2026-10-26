@@ -1,6 +1,6 @@
 {
   "name": "nilometer",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Reports the observed cost of a Claude subscription: interruptions when the plan is too small, unused headroom when it is too big.",
   "license": "MIT",
   "author": "Mark Fariñas",

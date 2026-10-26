@@ -12,6 +12,8 @@ import {
   type ReaderFs,
   readCompleteLines,
   readStart,
+  sameInode,
+  storedInode,
 } from "../../../../core/ingest/reader.js";
 
 /**
@@ -48,10 +50,10 @@ function collect(
 }
 
 describe("readStart", () => {
-  const state = { byteOffset: 100, lineCount: 4, size: 120, inode: 7 };
+  const state = { byteOffset: 100, lineCount: 4, size: 120, inode: 7n };
 
   it("starts a never-seen file at the beginning", () => {
-    expect(readStart(null, { size: 50, inode: 7 })).toEqual({
+    expect(readStart(null, { size: 50, inode: 7n })).toEqual({
       byteOffset: 0,
       lineCount: 0,
       rewritten: false,
@@ -59,9 +61,9 @@ describe("readStart", () => {
   });
 
   it.each([
-    ["the file grew", { size: 200, inode: 7 }],
-    ["nothing changed", { size: 120, inode: 7 }],
-    ["the size equals the offset", { size: 100, inode: 7 }],
+    ["the file grew", { size: 200, inode: 7n }],
+    ["nothing changed", { size: 120, inode: 7n }],
+    ["the size equals the offset", { size: 100, inode: 7n }],
     ["the stored inode is unknown", { size: 150, inode: null }],
   ])("resumes at the stored offset when %s", (_name, stat) => {
     const start = readStart(stat.inode === null ? state : state, stat);
@@ -69,7 +71,7 @@ describe("readStart", () => {
   });
 
   it("ignores an inode comparison when the stored inode is null", () => {
-    expect(readStart({ ...state, inode: null }, { size: 150, inode: 9 })).toEqual({
+    expect(readStart({ ...state, inode: null }, { size: 150, inode: 9n })).toEqual({
       byteOffset: 100,
       lineCount: 4,
       rewritten: false,
@@ -77,7 +79,7 @@ describe("readStart", () => {
   });
 
   it("restarts when the file shrank below the offset", () => {
-    expect(readStart(state, { size: 99, inode: 7 })).toEqual({
+    expect(readStart(state, { size: 99, inode: 7n })).toEqual({
       byteOffset: 0,
       lineCount: 0,
       rewritten: true,
@@ -85,7 +87,7 @@ describe("readStart", () => {
   });
 
   it("restarts when the inode changed (the file was replaced)", () => {
-    expect(readStart(state, { size: 500, inode: 8 })).toEqual({
+    expect(readStart(state, { size: 500, inode: 8n })).toEqual({
       byteOffset: 0,
       lineCount: 0,
       rewritten: true,
@@ -212,5 +214,27 @@ describe("readCompleteLines", () => {
     const size = readFileSync(path).length;
     expect(result.linesRead).toBe(2);
     expect(size - result.byteOffset).toBe(40);
+  });
+});
+
+describe("large inodes (M17)", () => {
+  /** Above 2^53: a JavaScript number rounds it. */
+  const BIG = 160_000_000_000_000_123n;
+
+  it("stores the same 64 bits signed", () => {
+    expect(storedInode(5n)).toBe(5n);
+    expect(storedInode(2n ** 64n - 1n)).toBe(-1n);
+  });
+
+  it("treats an exact match, or the rounded value older builds stored, as the same file", () => {
+    expect(sameInode(BIG, BIG)).toBe(true);
+    expect(sameInode(BigInt(Number(BIG)), BIG)).toBe(true);
+    expect(sameInode(BIG + 4096n, BIG)).toBe(false);
+    const state = { byteOffset: 10, lineCount: 1, size: 10, inode: BigInt(Number(BIG)) };
+    expect(readStart(state, { size: 20, inode: BIG })).toEqual({
+      byteOffset: 10,
+      lineCount: 1,
+      rewritten: false,
+    });
   });
 });

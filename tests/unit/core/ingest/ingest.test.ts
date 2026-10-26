@@ -14,6 +14,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -25,6 +26,7 @@ import { fingerprintTables } from "../../../../core/db/fingerprint.js";
 import { discoverLogFiles } from "../../../../core/ingest/discover.js";
 import {
   ingestLogs,
+  UNREADABLE_CODES,
   normalizeWindowsRelativePaths,
   statFile,
 } from "../../../../core/ingest/ingest.js";
@@ -320,5 +322,101 @@ describe("ingestLogs", () => {
     ).toThrow("a bug, not a filesystem error");
     expect(db.prepare("SELECT COUNT(*) AS n FROM raw_lines").get()).toEqual({ n: 1 });
     expect(db.prepare("SELECT finished_at FROM ingest_runs").get()).toEqual({ finished_at: null });
+  });
+});
+
+describe("file IDs above 2^53 (M17)", () => {
+  /** An NTFS-sized file ID: above Number.MAX_SAFE_INTEGER, as the work laptop's were. */
+  const BIG = 160_000_000_000_000_123n;
+
+  it("reads the inode exactly, as a bigint, and keeps 0 as unknown", () => {
+    expect(statFile("/x", () => ({ size: 3n, ino: BIG }))).toEqual({ size: 3, inode: BIG });
+    expect(statFile("/x", () => ({ size: 3, ino: 0 }))).toEqual({ size: 3, inode: null });
+    // Above 2^63 the same 64 bits are stored signed, as SQLite's INTEGER holds them.
+    expect(statFile("/x", () => ({ size: 1, ino: 2n ** 64n - 1n }))?.inode).toBe(-1n);
+  });
+
+  it("reads lines appended to a file with a large ID, without skipping or rereading it", () => {
+    const db = openDatabase(":memory:", join(ROOT, "core/schema"));
+    const root = mkdtempSync(join(tmpdir(), "aua-bigid-"));
+    mkdirSync(join(root, "projects", "p"), { recursive: true });
+    const file = join(root, "projects", "p", "s.jsonl");
+    writeFileSync(file, '{"type":"user"}\n');
+    /**
+     * The real size, with a file ID too large for a JavaScript number.
+     * @param path - File path.
+     * @returns Size and the large ID.
+     */
+    const bigStat = (path: string) =>
+      statFile(path, () => ({ size: statSync(path).size, ino: BIG }));
+    const first = ingestLogs(db, { roots: [root], mode: "incremental", now, stat: bigStat });
+    writeFileSync(file, '{"type":"user"}\n{"type":"assistant"}\n');
+    const second = ingestLogs(db, { roots: [root], mode: "incremental", now, stat: bigStat });
+    expect([first.linesStored, first.unreadable]).toEqual([1, 0]);
+    expect([second.linesStored, second.unreadable, second.filesRewritten]).toEqual([1, 0, 0]);
+    expect(db.prepare("SELECT CAST(inode AS TEXT) AS inode FROM source_files").get()).toEqual({
+      inode: BIG.toString(),
+    });
+  });
+
+  it("matches an inode stored rounded before M17, so the file isn't reread", () => {
+    const db = openDatabase(":memory:", join(ROOT, "core/schema"));
+    const root = mkdtempSync(join(tmpdir(), "aua-legacyid-"));
+    mkdirSync(join(root, "projects", "p"), { recursive: true });
+    const file = join(root, "projects", "p", "s.jsonl");
+    writeFileSync(file, '{"type":"user"}\n');
+    /**
+     * The real size, with the large file ID.
+     * @param path - File path.
+     * @returns Size and the large ID.
+     */
+    const bigStat = (path: string) =>
+      statFile(path, () => ({ size: statSync(path).size, ino: BIG }));
+    ingestLogs(db, { roots: [root], mode: "incremental", now, stat: bigStat });
+    // What a build before M17 wrote: the ID as the nearest number, which isn't the real one.
+    db.prepare("UPDATE source_files SET inode = ?").run(BigInt(Number(BIG)));
+    expect(BigInt(Number(BIG))).not.toBe(BIG);
+    writeFileSync(file, '{"type":"user"}\n{"type":"assistant"}\n');
+    const later = ingestLogs(db, { roots: [root], mode: "incremental", now, stat: bigStat });
+    expect([later.linesStored, later.filesRewritten]).toEqual([1, 0]);
+  });
+
+  it("counts a filesystem error as an unreadable file and records its code; anything else is raised", () => {
+    const db = openDatabase(":memory:", join(ROOT, "core/schema"));
+    const root = mkdtempSync(join(tmpdir(), "aua-codes-"));
+    mkdirSync(join(root, "projects", "p"), { recursive: true });
+    writeFileSync(join(root, "projects", "p", "s.jsonl"), '{"type":"user"}\n');
+    /**
+     * Fails as a stat with the given code would.
+     * @param code - The error code.
+     * @returns A stat function that throws it.
+     */
+    const failing = (code: string) => () => {
+      throw Object.assign(new Error(code), { code });
+    };
+    const skipped = ingestLogs(db, {
+      roots: [root],
+      mode: "incremental",
+      now,
+      stat: failing("EACCES"),
+    });
+    expect(skipped.unreadable).toBe(1);
+    expect(
+      db
+        .prepare("SELECT problem, detail FROM ingest_report WHERE problem = 'file_unreadable'")
+        .all(),
+    ).toEqual([
+      { problem: "file_unreadable", detail: "EACCES reading log file projects/p/s.jsonl" },
+    ]);
+    expect(UNREADABLE_CODES.has("ENOENT")).toBe(true);
+    // The range error node:sqlite raised on the laptop is a fault, not an unreadable file.
+    expect(() =>
+      ingestLogs(db, {
+        roots: [root],
+        mode: "incremental",
+        now,
+        stat: failing("ERR_OUT_OF_RANGE"),
+      }),
+    ).toThrow("ERR_OUT_OF_RANGE");
   });
 });

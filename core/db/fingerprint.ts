@@ -26,14 +26,15 @@ export class UnknownTableError extends Error {
  * Serializes one SQLite value unambiguously.
  * @param value - A value as `node:sqlite` returns it (a blob is a `Uint8Array`; a `Buffer` is one too).
  * @returns A JSON-safe value. Blobs become `{"blob": "<hex>"}` so they can never collide with text,
- *   and bigints become `{"int": "<decimal>"}` so large integers keep full precision.
+ *   and an integer beyond 2^53 becomes `{"int": "<decimal>"}` so it keeps full precision.
  */
 export function canonicalValue(value: unknown): unknown {
   if (value instanceof Uint8Array) {
     return { blob: blobBytes(value).toString("hex") };
   }
   if (typeof value === "bigint") {
-    return { int: value.toString() };
+    // A safe integer is written as the number it is, so fingerprints read the same as before M17.
+    return Number.isSafeInteger(Number(value)) ? Number(value) : { int: value.toString() };
   }
   return value;
 }
@@ -63,6 +64,9 @@ export function fingerprintTables(db: Db, tableNames: readonly string[]): Record
     const rows = db.prepare(`SELECT * FROM "${table.replaceAll('"', '""')}"`);
     // Arrays rather than objects: column order is part of the content, and names are not.
     rows.setReturnArrays(true);
+    // Integers as bigints: node:sqlite refuses to read one above 2^53 as a number, and an NTFS file ID
+    // in source_files is often that large (M17). canonicalValue turns safe ones back into numbers.
+    rows.setReadBigInts(true);
     const values = rows.all() as unknown as unknown[][];
     // Sort serialized rows so the digest ignores physical order but not content.
     const serialized = values.map((row) => JSON.stringify(row.map(canonicalValue))).sort();

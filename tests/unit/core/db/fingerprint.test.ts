@@ -110,3 +110,14 @@ describe("fingerprintTables", () => {
     expect(new UnknownTableError("x").name).toBe("UnknownTableError");
   });
 });
+
+describe("integers beyond 2^53 (M17)", () => {
+  it("fingerprints a table holding one, writing it exactly and safe ones as plain numbers", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec("CREATE TABLE f (id INTEGER, inode INTEGER)");
+    db.prepare("INSERT INTO f VALUES (?, ?)").run(1, 160_000_000_000_000_123n);
+    expect(() => fingerprintTables(db, ["f"])).not.toThrow();
+    expect(canonicalValue(160_000_000_000_000_123n)).toEqual({ int: "160000000000000123" });
+    expect(canonicalValue(7n)).toBe(7);
+  });
+});

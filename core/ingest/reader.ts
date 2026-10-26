@@ -16,16 +16,42 @@ export interface FileState {
   readonly lineCount: number;
   /** File size at the last read. */
   readonly size: number;
-  /** Inode at the last read, or null where the platform has none. */
-  readonly inode: number | null;
+  /**
+   * Inode at the last read, as stored: a signed 64-bit integer (see {@link storedInode}), or null
+   * where the platform has none.
+   */
+  readonly inode: bigint | null;
 }
 
 /** The current size and inode of a file. */
 export interface FileStat {
   /** Size in bytes. */
   readonly size: number;
-  /** Inode, or null where the platform has none. */
-  readonly inode: number | null;
+  /** Inode as stored (see {@link storedInode}), or null where the platform has none. */
+  readonly inode: bigint | null;
+}
+
+/**
+ * Turns an inode from `stat(..., { bigint: true })` into the value SQLite stores. NTFS file IDs are
+ * unsigned 64-bit and often above 2^53, which a JavaScript number can't hold exactly; SQLite's INTEGER
+ * is signed 64-bit, so the same bits are stored as a signed value (M17).
+ * @param ino - The inode, unsigned.
+ * @returns The same 64 bits, signed.
+ */
+export function storedInode(ino: bigint): bigint {
+  return BigInt.asIntN(64, ino);
+}
+
+/**
+ * Whether a stored inode names the file that has the current one. Before M17 an inode above 2^53 was
+ * stored rounded to the nearest number a JavaScript number holds, so that rounded value also matches;
+ * otherwise each such file would be reread once from the start for no reason.
+ * @param stored - The stored inode.
+ * @param current - The file's inode now, as {@link storedInode} gives it.
+ * @returns True for the same file.
+ */
+export function sameInode(stored: bigint, current: bigint): boolean {
+  return stored === current || stored === BigInt(Number(current));
 }
 
 /** Where to start reading a file this run. */
@@ -50,7 +76,8 @@ export function readStart(state: FileState | null, stat: FileStat): ReadStart {
   }
   // A shorter file or a different inode means the bytes before our offset are no longer the ones
   // we read. Restart; raw-line identity makes rereading unchanged lines a no-op (D-002).
-  const inodeChanged = state.inode !== null && stat.inode !== null && state.inode !== stat.inode;
+  const inodeChanged =
+    state.inode !== null && stat.inode !== null && !sameInode(state.inode, stat.inode);
   if (stat.size < state.byteOffset || inodeChanged) {
     return { byteOffset: 0, lineCount: 0, rewritten: true };
   }

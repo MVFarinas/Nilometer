@@ -10,7 +10,13 @@ import { join } from "node:path";
 
 import { type Db, transaction } from "../db/database.js";
 import { type ListDir, discoverLogFiles } from "./discover.js";
-import { DEFAULT_CHUNK_SIZE, type FileStat, readCompleteLines, readStart } from "./reader.js";
+import {
+  DEFAULT_CHUNK_SIZE,
+  type FileStat,
+  readCompleteLines,
+  readStart,
+  storedInode,
+} from "./reader.js";
 import {
   type IngestMode,
   type SourceKind,
@@ -75,19 +81,39 @@ export interface IngestSummary {
 }
 
 /**
- * Reads a file's size and inode.
+ * Reads a file's size and inode. The inode is read as a bigint: an NTFS file ID is often above 2^53,
+ * where a number rounds it and node:sqlite then refuses to read it back (M17).
  * @param path - File path.
- * @param statImpl - Stat function, injectable so a zero inode can be tested.
- * @returns Size in bytes and inode (null when the platform reports 0).
+ * @param statImpl - Stat function, injectable so a zero or very large inode can be tested.
+ * @returns Size in bytes and the inode as stored (null when the platform reports 0).
  */
 export function statFile(
   path: string,
-  statImpl: (path: string) => { size: number; ino: number } = statSync,
+  statImpl: (path: string) => { size: number | bigint; ino: number | bigint } = (p) =>
+    statSync(p, { bigint: true }),
 ): FileStat {
   const stats = statImpl(path);
+  const ino = BigInt(stats.ino);
   // Some filesystems report inode 0 when they have none; treat that as unknown, not as a value.
-  return { size: stats.size, inode: stats.ino === 0 ? null : stats.ino };
+  return { size: Number(stats.size), inode: ino === 0n ? null : storedInode(ino) };
 }
+
+/**
+ * Error codes that mean a file or folder couldn't be read, so it is counted and skipped. Anything
+ * else, such as a database error, is a fault and is raised: M17 found a SQLite range error counted as
+ * an unreadable file, which hid it.
+ */
+export const UNREADABLE_CODES: ReadonlySet<string> = new Set([
+  "ENOENT",
+  "ENOTDIR",
+  "EISDIR",
+  "EACCES",
+  "EPERM",
+  "EBUSY",
+  "ELOOP",
+  "ENAMETOOLONG",
+  "EIO",
+]);
 
 /** File name of the hook's spool inside the data directory (hooks/statusline.sh). */
 export const SPOOL_FILE = "statusline.spool.jsonl";
@@ -275,9 +301,17 @@ function readFileOrCount(db: Db, file: FileRef, run: RunContext): void {
   try {
     ingestFile(db, file, run);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === undefined) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === undefined || !UNREADABLE_CODES.has(code)) {
       throw error;
     }
     run.counts.unreadable += 1;
+    // Which file and why, so a skip can be diagnosed from the database, not only counted (M17).
+    recordProblem(db, {
+      runId: run.runId,
+      fileId: null,
+      problem: "file_unreadable",
+      detail: `${code} reading ${file.kind} file ${file.relativePath}`,
+    });
   }
 }

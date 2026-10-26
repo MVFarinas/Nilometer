@@ -95,10 +95,11 @@ export function findOrCreateSourceFile(
 ): SourceFileRow {
   const existing = db
     .prepare(
-      "SELECT id, byte_offset, line_count, size, inode FROM source_files WHERE root = ? AND relative_path = ?",
+      // The inode as text: above 2^53 node:sqlite won't read it as a number, and a bigint keeps it exact (M17).
+      "SELECT id, byte_offset, line_count, size, CAST(inode AS TEXT) AS inode FROM source_files WHERE root = ? AND relative_path = ?",
     )
     .get(file.root, file.relativePath) as
-    | { id: number; byte_offset: number; line_count: number; size: number; inode: number | null }
+    | { id: number; byte_offset: number; line_count: number; size: number; inode: string | null }
     | undefined;
   if (existing !== undefined) {
     return {
@@ -107,7 +108,7 @@ export function findOrCreateSourceFile(
         byteOffset: existing.byte_offset,
         lineCount: existing.line_count,
         size: existing.size,
-        inode: existing.inode,
+        inode: existing.inode === null ? null : BigInt(existing.inode),
       },
     };
   }
