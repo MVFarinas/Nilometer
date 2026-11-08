@@ -18,7 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { type Db, openDatabase } from "../../../../core/db/database.js";
 import { DATABASE_FILE, runIngestCommand } from "../../../../core/ingest/command.js";
@@ -265,6 +265,11 @@ const A_CASES = ["01-streaming-snapshots", "08-limit-hits", "20-limit-quota-fiel
 const B_CASES = ["06-mixed-models", "15-retry-notices", "11-subagent-file"];
 /** Machine E's logs: report edges and a model fallback. */
 const E_CASES = ["17-report-edges", "22-model-refusal-fallback"];
+
+// Each test builds several databases and ingests them more than once. The public Windows CI timed out the
+// import-order test at 7.3 s and 9.8 s against Vitest's 5-second default while every result was right (0.3.0's
+// push; under a second on the Mac), so this file takes the integration tests' limit (D-051).
+vi.setConfig({ testTimeout: 60_000 });
 
 describe("combining machines", () => {
   it("gives each machine the views of one machine holding every machine's logs", () => {
