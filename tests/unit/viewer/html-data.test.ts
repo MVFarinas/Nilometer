@@ -1438,6 +1438,11 @@ describe("loadHtmlData at the edges", () => {
       home: "",
       // D-081: no hook finding in the meta, so no warning.
       missingHookPath: null,
+      // D-101: no folder set, so no machines and no per-machine prices.
+      combining: false,
+      machines: [],
+      latestWeek: null,
+      machinePrices: [],
       // D-092: no alias entered.
       repositoryAliases: [],
       burn: [],

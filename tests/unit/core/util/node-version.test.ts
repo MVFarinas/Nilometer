@@ -11,6 +11,8 @@ import {
   SUPPORTED_NODE_MAJOR,
   TESTED_NODE_MAJORS,
   checkNodeVersion,
+  isSqliteExperimentalWarning,
+  quietSqliteWarning,
 } from "../../../../core/util/node-version.js";
 
 /** Repository root. */
@@ -111,5 +113,46 @@ describe("the entry point", () => {
     const loadAt = entry.indexOf('await import("./program.js")');
     expect(checkAt).toBeGreaterThan(0);
     expect(loadAt).toBeGreaterThan(checkAt);
+  });
+});
+
+describe("node:sqlite's experimental notice (M18)", () => {
+  const NOTICE = "SQLite is an experimental feature and might change at any time";
+
+  it("recognises the notice by type and wording, however the type is passed", () => {
+    expect(isSqliteExperimentalWarning(NOTICE, "ExperimentalWarning")).toBe(true);
+    expect(isSqliteExperimentalWarning(NOTICE, { type: "ExperimentalWarning" })).toBe(true);
+    const error = Object.assign(new Error(NOTICE), { name: "ExperimentalWarning" });
+    expect(isSqliteExperimentalWarning(error, undefined)).toBe(true);
+    expect(isSqliteExperimentalWarning(NOTICE, "DeprecationWarning")).toBe(false);
+    expect(
+      isSqliteExperimentalWarning("Fetch is an experimental feature", "ExperimentalWarning"),
+    ).toBe(false);
+    expect(isSqliteExperimentalWarning(NOTICE, undefined)).toBe(false);
+    expect(isSqliteExperimentalWarning(NOTICE, { code: "X" })).toBe(false);
+  });
+
+  it("drops only that notice and passes every other warning through unchanged", () => {
+    const seen: unknown[][] = [];
+    const target = {
+      emitWarning: (...args: unknown[]) => {
+        seen.push(args);
+      },
+    };
+    quietSqliteWarning(target);
+    target.emitWarning(NOTICE, "ExperimentalWarning");
+    target.emitWarning("Something else", "ExperimentalWarning");
+    target.emitWarning("old API", { type: "DeprecationWarning", code: "DEP0" });
+    expect(seen).toEqual([
+      ["Something else", "ExperimentalWarning"],
+      ["old API", { type: "DeprecationWarning", code: "DEP0" }],
+    ]);
+  });
+
+  it("is installed by the entry point before the program, and so node:sqlite, loads", () => {
+    const entry = read("cli/main.cli.ts");
+    const quietAt = entry.indexOf("quietSqliteWarning(process");
+    expect(quietAt).toBeGreaterThan(0);
+    expect(entry.indexOf('await import("./program.js")')).toBeGreaterThan(quietAt);
   });
 });

@@ -181,6 +181,7 @@ describe("toIngestOptions", () => {
 describe("describeIngest", () => {
   /** An outcome with every count distinct, so each appears in a known place. */
   const outcome: IngestCommandOutcome = {
+    machines: { kind: "off" },
     databasePath: "/d/usage.db",
     roots: ["/h/.claude", "/alt"],
     run: {
@@ -250,6 +251,7 @@ describe("describeIngest wording", () => {
    */
   function outcomeWith(run: Partial<IngestCommandOutcome["run"]>): IngestCommandOutcome {
     return {
+      machines: { kind: "off" },
       databasePath: "/d/usage.db",
       roots: ["/h/.claude"],
       run: {
@@ -380,6 +382,7 @@ describe("describeVerify", () => {
     differences: [],
     unpricedModels: [],
     fromDeletedLogs: 0,
+    fromOtherMachines: 0,
     skippedToday: "2026-09-18",
   };
 
@@ -413,9 +416,17 @@ describe("describeVerify", () => {
 
   it("explains the days it could not compare, without failing on ours", () => {
     // Days only this tool has are the design working (D-002); days only ccusage has are not.
-    const kept = describeVerify({ ...clean, daysOnlyOurs: 3, fromDeletedLogs: 40 });
+    const kept = describeVerify({
+      ...clean,
+      daysOnlyOurs: 3,
+      fromDeletedLogs: 40,
+      fromOtherMachines: 7,
+    });
     expect(kept.lines.join("\n")).toMatch(/3 days only this tool has/);
-    expect(kept.lines.join("\n")).toMatch(/40 requests were left out/);
+    expect(kept.lines.join("\n")).toMatch(
+      /40 requests were left out: the logs they came from are gone/,
+    );
+    expect(kept.lines.join("\n")).toMatch(/7 requests from other machines were left out/);
     expect(kept.exitCode).toBe(0);
     const missed = describeVerify({ ...clean, daysOnlyTheirs: 2 });
     expect(missed.lines.join("\n")).toMatch(/2 days only ccusage reported/);
@@ -434,6 +445,7 @@ describe("describeVerify", () => {
       daysOnlyOurs: 1,
       daysOnlyTheirs: 1,
       fromDeletedLogs: 5,
+      fromOtherMachines: 3,
       unpricedModels: ["some-model-1"],
       differences: [{ key: "2026-09-13|claude-opus-5", field: "cache_read", ours: 1, theirs: 2 }],
     });

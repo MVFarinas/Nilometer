@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 (2026-11-07)
+
+- **Combine your machines:** `nilometer machines folder <synced folder> --name <name>` on each computer you use Claude Code on. Every ingest then writes this machine's records to that folder (iCloud Drive, Dropbox, OneDrive, or any folder your machines share) and reads the others'. Lockouts, limit hits and window readings from every machine are merged, and the report and page gain a **By machine** section: each machine's requests and tokens, and among the projections, its share of your recorded usage at API list price. Usage elsewhere (claude.ai, the mobile app, computers not added) is named, not numbered.
+- **What goes in the folder:** times, models, token counts, limit hits, status line readings, session and message IDs, and a hash of the Claude account. No prompts, responses, tool output, file paths or project names. A machine on another account is refused. Nilometer still makes no network requests; your sync provider moves the files.
+- **`verify` with machines combined:** it compares only this machine's own logs, which are all ccusage can read, and counts the other machines' requests on a line of their own.
+- **No "SQLite is an experimental feature" warning on older Node.js 24:** Node.js 24.0 to 24.14 printed it on every command. Nilometer is tested on the SQLite features it uses, so that one warning is no longer shown; every other warning still is.
+
 ## 0.2.2 (2026-10-26)
 
 - **Windows: log files were skipped after their first ingest.** NTFS file IDs are usually above 2^53, and since 0.2.0 reading one back failed, so `ingest` counted the file as unreadable and skipped any new lines in it from then on. IDs are now read and stored exactly. Run `nilometer ingest` after updating: it reads the skipped lines from where it stopped, as long as Claude Code still has the logs (it deletes them after 30 days).

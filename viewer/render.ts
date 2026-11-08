@@ -19,6 +19,8 @@ import type {
   BurnRateRow,
   CrossingRow,
   LockoutInterval,
+  MachinePriceRow,
+  MachineRow,
   ModelRow,
   ObservedReport,
   PlanPeriodRow,
@@ -73,6 +75,17 @@ export const LABELS = {
   byModel: "Claude Code tokens by model",
   byRepo: "Claude Code tokens by repository",
   alias: "Alias you entered (nilometer alias)",
+  // D-102 (G7): machines combined through a synced folder.
+  otherMachines: "Other machines (no working directory is sent)",
+  byMachine: "Claude Code usage by machine",
+  byMachineWhat: "The Claude Code requests and tokens each of your machines recorded.",
+  elsewhere:
+    "Usage elsewhere (computers not added, claude.ai, the mobile app, Claude Design) is in the account's window percentages, but in no row here: it can't be measured or priced.",
+  latestWeek: "Latest weekly window",
+  accountWeek: "The account's last reading in that window",
+  apiListPriceByMachine: "Observed tokens at API list price, by machine",
+  byMachineShare:
+    "Each machine's share of the usage your machines recorded, at API list price: never a share of a window, and nothing used elsewhere is in it.",
   burnRate: "Burn rate",
   burnRatePremise:
     "Premise: each window's usage started at 0% when it began, and its average rate since then continues.",
@@ -108,6 +121,12 @@ export const LABELS = {
     priced: "Priced requests",
     unpriced: "Unpriced requests",
     covers: "Covers",
+    machine: "Machine",
+    cacheWrite: "Cache write",
+    lastExport: "Last export",
+    share: "Share of recorded",
+    week: "Latest week",
+    weekShare: "Latest week share",
   },
 } as const;
 
@@ -234,6 +253,9 @@ export function repoKindName(kind: string): string {
       return "not a git repository";
     case "missing":
       return "directory no longer exists";
+    // D-103: another machine's export carries no working directory.
+    case "other_machine":
+      return "recorded on another machine";
     default:
       return "not resolved yet";
   }
@@ -562,9 +584,11 @@ export function renderObserved(observed: ObservedReport, timeZone: string, home 
         [c.repository, c.kind],
         observed.byRepo.map((row) => ({
           lead: [
-            row.repository === null
-              ? `${UNKNOWN} (no working directory)`
-              : displayPath(row.repository, home),
+            row.repo_kind === "other_machine"
+              ? LABELS.otherMachines
+              : row.repository === null
+                ? `${UNKNOWN} (no working directory)`
+                : displayPath(row.repository, home),
             repoKindName(row.repo_kind),
           ],
           row,
@@ -577,7 +601,126 @@ export function renderObserved(observed: ObservedReport, timeZone: string, home 
       ),
     );
   }
+  if (observed.combining) {
+    lines.push("", ...renderByMachine(observed, timeZone));
+  }
   return lines;
+}
+
+/**
+ * The latest weekly window's span and the account's last reading in it.
+ * @param row - Any per-machine row; they share the window.
+ * @param observed - Observed rows, for the window's last reading.
+ * @param timeZone - Display zone.
+ * @returns One line, or null with no weekly reading.
+ */
+export function latestWeekText(
+  row: Pick<MachineRow, "week_starts_at_utc" | "week_reset_at_utc"> | undefined,
+  observed: Pick<ObservedReport, "windows">,
+  timeZone: string,
+): string | null {
+  if (row?.week_reset_at_utc == null) {
+    return null;
+  }
+  const window = observed.windows.find(
+    (w) => w.window === "seven_day" && w.reset_at_utc === row.week_reset_at_utc,
+  );
+  return `${LABELS.latestWeek}: ${span(row.week_starts_at_utc, row.week_reset_at_utc, timeZone)}. ${LABELS.accountWeek}: ${n(window?.last_used_percentage, "percent")}.`;
+}
+
+/**
+ * Renders usage by machine (D-102): what each machine recorded, its span and last export, and the
+ * line saying what no machine can see.
+ * @param observed - Observed rows, with `combining` set.
+ * @param timeZone - Display zone.
+ * @returns Lines.
+ */
+export function renderByMachine(observed: ObservedReport, timeZone: string): string[] {
+  const c = LABELS.columns;
+  const rows = observed.byMachine;
+  const week = latestWeekText(rows[0], observed, timeZone);
+  return [
+    LABELS.byMachine,
+    `  ${LABELS.elsewhere}`,
+    ...(rows.length === 0
+      ? ["  No Claude Code requests in the logs yet."]
+      : renderTable(
+          [
+            c.machine,
+            c.requests,
+            c.input,
+            c.output,
+            c.cacheRead,
+            c.cacheWrite,
+            c.week,
+            c.covers,
+            c.lastExport,
+          ],
+          rows.map((row: MachineRow) => [
+            machineName(row),
+            n(row.requests, "count"),
+            n(row.input_tokens, "tokens"),
+            n(row.output_tokens, "tokens"),
+            n(row.cache_read_tokens, "tokens"),
+            n(row.cache_write_tokens, "tokens"),
+            n(row.week_requests, "count"),
+            span(row.covers_from, row.covers_to, timeZone),
+            row.is_this_machine === 1
+              ? "this machine"
+              : formatInstant(row.last_export_at_utc, timeZone),
+          ]),
+          ["left", "right", "right", "right", "right", "right", "right", "left", "left"],
+        )),
+    ...(week === null ? [] : [`  ${week}`]),
+  ];
+}
+
+/**
+ * A machine's name as shown: its label, with this machine marked.
+ * @param row - A per-machine row.
+ * @returns The name.
+ */
+export function machineName(row: Pick<MachineRow, "machine_label" | "is_this_machine">): string {
+  const label = printable(row.machine_label);
+  return row.is_this_machine === 1 ? `${label} (this machine)` : label;
+}
+
+/**
+ * Renders each machine's observed tokens at API list price and its share (D-102).
+ * @param rows - `proj_api_list_price_by_machine` rows.
+ * @param timeZone - Display zone.
+ * @returns Lines.
+ */
+export function renderPriceByMachine(rows: readonly MachinePriceRow[], timeZone: string): string[] {
+  const c = LABELS.columns;
+  /**
+   * A share as a percentage.
+   * @param value - The share, 0 to 1, or null.
+   * @returns The percentage, or unknown.
+   */
+  const share = (value: number | null): string => n(value === null ? null : value * 100, "percent");
+  return [
+    LABELS.apiListPriceByMachine,
+    `  ${LABELS.byMachineShare}`,
+    ...(rows.length === 0
+      ? ["  No Claude Code requests in the logs yet."]
+      : renderTable(
+          [c.machine, c.apiListPrice, c.share, c.week, c.weekShare, c.unpriced, c.covers],
+          rows.map((row) => [
+            machineName(row),
+            n(row.list_price_usd, "usd"),
+            share(row.share_of_recorded),
+            n(row.week_list_price_usd, "usd"),
+            share(row.week_share_of_recorded),
+            n(row.unpriced_requests, "count"),
+            span(row.covers_from, row.covers_to, timeZone),
+          ]),
+          ["left", "right", "right", "right", "right", "right", "left"],
+        )),
+    ...(rows[0]?.week_reset_at_utc == null
+      ? []
+      : [`  ${c.week}: ${span(rows[0].week_starts_at_utc, rows[0].week_reset_at_utc, timeZone)}.`]),
+  ];
 }
 
 /**
@@ -614,9 +757,14 @@ function planCell(row: ApiListPriceRow): string {
  * Renders the projected sections.
  * @param projected - Projected rows.
  * @param timeZone - Display zone.
+ * @param combining - Whether machines are combined (D-102): then each machine's share follows.
  * @returns Lines.
  */
-export function renderProjected(projected: ProjectedReport, timeZone: string): string[] {
+export function renderProjected(
+  projected: ProjectedReport,
+  timeZone: string,
+  combining = false,
+): string[] {
   const c = LABELS.columns;
   // A window whose reset has passed by the report's time has nothing left to project (D-083).
   const open = projected.burnRate.filter((row) => row.open_at_report === 1);
@@ -676,6 +824,9 @@ export function renderProjected(projected: ProjectedReport, timeZone: string): s
       "  To show a plan price beside these amounts: plan-price set <YYYY-MM> <usd> --name <plan>",
     );
   }
+  if (combining) {
+    lines.push("", ...renderPriceByMachine(projected.apiListPriceByMachine, timeZone));
+  }
   return lines;
 }
 
@@ -708,7 +859,7 @@ export function renderReport(input: ReportInput): string {
     ...header,
     ...renderObserved(input.observed, input.timeZone, input.home),
     "",
-    ...renderProjected(input.projected, input.timeZone),
+    ...renderProjected(input.projected, input.timeZone, input.observed.combining),
   ].join("\n");
 }
 

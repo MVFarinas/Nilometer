@@ -41,6 +41,9 @@ import type {
   MonthBar,
   PlanPeriodRef,
   PlanPeriodTotals,
+  LatestWeek,
+  MachineBar,
+  MachinePrice,
   RepoBar,
   SeriesHit,
   SeriesPoint,
@@ -51,6 +54,8 @@ import {
   type CrossingRow,
   type LimitHits,
   type LockoutTime,
+  type MachinePriceRow,
+  type MachineRow,
   type ObservedReport,
   type PlanPeriodRow,
   lastIngestAt,
@@ -780,6 +785,96 @@ function loadRepos(db: Db): RepoBar[] {
 }
 
 /**
+ * Loads each machine's recorded usage and its price, observed and projected kept in two lists, each
+ * entry with its requests (D-102, step G7.4).
+ * @param db - Open, migrated database.
+ * @returns Whether machines are combined, the two lists, and the latest weekly window.
+ */
+function loadMachines(db: Db): {
+  combining: boolean;
+  machines: MachineBar[];
+  machinePrices: MachinePrice[];
+  latestWeek: LatestWeek | null;
+} {
+  const combining =
+    (
+      db
+        .prepare(
+          "SELECT EXISTS (SELECT 1 FROM this_machine) OR EXISTS (SELECT 1 FROM machine_files) AS on_",
+        )
+        .get() as { on_: number }
+    ).on_ === 1;
+  if (!combining) {
+    return { combining, machines: [], machinePrices: [], latestWeek: null };
+  }
+  const ids = new Map(
+    (
+      db
+        .prepare(
+          // machine_requests is the set both per-machine views count, grouped the same way.
+          `SELECT r.machine_id, json_group_array(r.raw_line_id ORDER BY ${CANONICAL}) AS ids
+           FROM machine_requests r JOIN raw_lines l ON l.id = r.raw_line_id
+           GROUP BY r.machine_id`,
+        )
+        .all() as { machine_id: string; ids: string }[]
+    ).map((row) => [row.machine_id, parseIds(row.ids)]),
+  );
+  const observedRows = db
+    .prepare(
+      "SELECT * FROM obs_usage_by_machine ORDER BY is_this_machine DESC, requests DESC, machine_label",
+    )
+    .all() as unknown as MachineRow[];
+  const priceRows = db
+    .prepare(
+      "SELECT * FROM proj_api_list_price_by_machine ORDER BY is_this_machine DESC, list_price_usd DESC, machine_label",
+    )
+    .all() as unknown as MachinePriceRow[];
+  const first = observedRows[0];
+  const week =
+    first?.week_reset_at_utc == null || first.week_starts_at_utc == null
+      ? null
+      : {
+          startsAtUtc: first.week_starts_at_utc,
+          resetAtUtc: first.week_reset_at_utc,
+          lastUsedPercentage:
+            (
+              db
+                .prepare(
+                  "SELECT last_used_percentage AS p FROM obs_window_headroom WHERE window = 'seven_day' AND reset_at_utc = ?",
+                )
+                .get(first.week_reset_at_utc) as { p: number | null } | undefined
+            )?.p ?? null,
+        };
+  return {
+    combining,
+    machines: observedRows.map((row) => ({
+      label: row.machine_label,
+      isThisMachine: row.is_this_machine === 1,
+      requests: row.requests,
+      inputTokens: row.input_tokens,
+      outputTokens: row.output_tokens,
+      cacheReadTokens: row.cache_read_tokens,
+      cacheWriteTokens: row.cache_write_tokens,
+      weekRequests: row.week_requests,
+      span: { from: row.covers_from, to: row.covers_to },
+      lastExportAtUtc: row.last_export_at_utc,
+      events: ids.get(row.machine_id) ?? [],
+    })),
+    machinePrices: priceRows.map((row) => ({
+      label: row.machine_label,
+      isThisMachine: row.is_this_machine === 1,
+      listPriceUsd: row.list_price_usd,
+      share: row.share_of_recorded,
+      weekListPriceUsd: row.week_list_price_usd,
+      weekShare: row.week_share_of_recorded,
+      unpricedRequests: row.unpriced_requests,
+      events: ids.get(row.machine_id) ?? [],
+    })),
+    latestWeek: week,
+  };
+}
+
+/**
  * Loads the burn rate of every open window, a projection, each with the reading it starts from
  * (step G2.1). Read by its own function from its own view, never mixed into observed rows
  * (principle 2).
@@ -988,7 +1083,9 @@ export const loadHtmlData: LoadHtmlData = (
   const burn = loadBurn(db, at);
   const months = loadMonths(db);
   const priceNotes = loadPriceNotes(db);
+  const machines = loadMachines(db);
   const referenced = [
+    ...machines.machines.flatMap((bar) => bar.events),
     ...gauge.flatMap((g) => [...g.peakEvents, ...g.lastEvents, ...g.hitEvents]),
     ...series.flatMap((s) => [...s.points.map((p) => p.event), ...s.hits.map((h) => h.event)]),
     ...lockouts.flatMap((bar) => [
@@ -1032,9 +1129,13 @@ export const loadHtmlData: LoadHtmlData = (
       to: a.to,
     })),
     missingHookPath: meta.missingHookPath ?? null,
+    combining: machines.combining,
+    machines: machines.machines,
+    latestWeek: machines.latestWeek,
     burn,
     months,
     priceNotes,
+    machinePrices: machines.machinePrices,
     files,
     events,
   };

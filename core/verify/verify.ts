@@ -50,6 +50,8 @@ export interface VerifyResult {
   readonly unpricedModels: readonly string[];
   /** Requests left out because the log they came from is gone from disk (D-002). */
   readonly fromDeletedLogs: number;
+  /** Requests left out because another machine recorded them (D-103): ccusage reads only this machine's logs. */
+  readonly fromOtherMachines: number;
   /** The current UTC day, never compared because both sides are still being written to. */
   readonly skippedToday: string;
 }
@@ -60,6 +62,8 @@ export interface OurTotals {
   readonly totals: TotalsByDayModel;
   /** Requests skipped because the log they came from is gone, so ccusage cannot see them. */
   readonly fromDeletedLogs: number;
+  /** Requests skipped because they were read from another machine's export, which ccusage never sees. */
+  readonly fromOtherMachines: number;
 }
 
 /**
@@ -76,8 +80,12 @@ export interface OurTotals {
  */
 export function ourTotals(db: Db, exists: (path: string) => boolean = existsSync): OurTotals {
   // Which logs are still on disk. ccusage reads those; the database also holds ones it can't.
+  // Another machine's files are never looked for: their root names a machine, not a folder (G7.6
+  // found them counted as deleted logs), and they are counted on their own below.
   const files = db
-    .prepare("SELECT id, root, relative_path AS relativePath FROM source_files")
+    .prepare(
+      "SELECT id, root, relative_path AS relativePath FROM source_files WHERE id NOT IN (SELECT source_file_id FROM machine_files)",
+    )
     .all() as {
     id: number;
     root: string;
@@ -131,8 +139,16 @@ export function ourTotals(db: Db, exists: (path: string) => boolean = existsSync
       `WITH visible AS (${visible})
        SELECT COUNT(*) AS n FROM requests_dedup d
         WHERE d.raw_line_id NOT IN (SELECT raw_line_id FROM visible)
+          AND d.raw_line_id NOT IN (SELECT raw_line_id FROM line_machines WHERE machine_id IS NOT NULL)
           AND (d.dedup_key IS NULL
                OR d.dedup_key NOT IN (SELECT dedup_key FROM visible WHERE dedup_key IS NOT NULL))`,
+    )
+    .get() as { n: number };
+  // Recorded on another machine: never in ccusage's view of this one, so not a deleted log either.
+  const elsewhere = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM requests_dedup d
+        WHERE d.raw_line_id IN (SELECT raw_line_id FROM line_machines WHERE machine_id IS NOT NULL)`,
     )
     .get() as { n: number };
 
@@ -147,7 +163,7 @@ export function ourTotals(db: Db, exists: (path: string) => boolean = existsSync
       cost_usd: 0,
     };
   }
-  return { totals, fromDeletedLogs: gone.n };
+  return { totals, fromDeletedLogs: gone.n, fromOtherMachines: elsewhere.n };
 }
 
 /**
@@ -202,6 +218,7 @@ export function compareTotals(
     differences: diffTotals(oursShared, theirsShared, VERIFIED_FIELDS),
     unpricedModels: [...unpriced],
     fromDeletedLogs: ours.fromDeletedLogs,
+    fromOtherMachines: ours.fromOtherMachines,
     skippedToday: today,
   };
 }

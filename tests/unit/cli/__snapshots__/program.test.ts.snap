@@ -26,12 +26,15 @@ Commands:
                               with where each was read from, and re-add them.
                               Metrics: limit-hits, mid-task, lockout, by-plan,
                               not-resumed, headroom, peak, crossings,
-                              unattributed, by-model, by-repo, burn-rate,
-                              api-list-price.
+                              unattributed, by-model, by-repo, by-machine,
+                              burn-rate, api-list-price, price-by-machine.
   plan-price                  Enter or list the plan's USD list price, shown
                               beside API list price.
   alias                       Count a renamed or moved project's old path under
                               its new one.
+  machines                    Combine this machine's records with your other
+                              machines' through a folder you already sync
+                              (iCloud Drive, Dropbox, OneDrive).
   verify [options]            Compare this tool's token totals against ccusage,
                               on your own logs. Prints a verdict and any
                               differing days, never a path, repository name, or
@@ -59,8 +62,8 @@ exports[`runCli > prints stable help for explain 1`] = `
 
 List the events behind a number in the report, with where each was read from,
 and re-add them. Metrics: limit-hits, mid-task, lockout, by-plan, not-resumed,
-headroom, peak, crossings, unattributed, by-model, by-repo, burn-rate,
-api-list-price.
+headroom, peak, crossings, unattributed, by-model, by-repo, by-machine,
+burn-rate, api-list-price, price-by-machine.
 
 Options:
   --data-dir <path>  data directory holding the database

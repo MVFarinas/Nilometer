@@ -28,7 +28,7 @@ export { transaction };
  * once ran migration 032 under code that never refreshed its tables (M15). A test keeps this equal to
  * the files in `core/schema`.
  */
-export const BUILT_SCHEMA_VERSION = 32;
+export const BUILT_SCHEMA_VERSION = 33;
 
 /** The schema files or the database are newer than this build. Raised before anything is applied. */
 export class SchemaVersionError extends Error {

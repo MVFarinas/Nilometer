@@ -199,6 +199,10 @@ const DATA: HtmlReportData = {
   ],
   home: "",
   missingHookPath: null,
+  combining: false,
+  machines: [],
+  latestWeek: null,
+  machinePrices: [],
   repositoryAliases: [],
   // Both windows open at the last reading (13:05:10), latest reset first, as the text report lists them.
   // 7-day: 16% after 13 h 5 m 10 s (47,110 s), so 16 / (47110 / 3600) points per hour, reaching

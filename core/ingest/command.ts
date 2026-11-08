@@ -9,8 +9,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { openDatabase } from "../db/database.js";
-import { resolveDataDir } from "../install/locations.js";
+import { packageVersion, resolveDataDir } from "../install/locations.js";
 import { securePrivateDataDir } from "../install/private-files.js";
+import { claudeConfigPath, readAccount } from "../machines/account.js";
+import { type MachinesStep, runMachinesStep } from "../machines/machines.js";
 import { loadPriceTable, syncPrices } from "../pricing/prices.js";
 import { resolveRepositories } from "./attribution.js";
 import { ensureDerived } from "./derive.js";
@@ -88,6 +90,8 @@ export interface IngestCommandOutcome {
   readonly totals: StoredTotals;
   /** Data paths this run made owner-only because other accounts could read them (D-043). */
   readonly permissionsTightened: readonly string[];
+  /** Combining machines (G7): this machine's export and the others read, or why not; `off` with no folder set. */
+  readonly machines: MachinesStep;
 }
 
 /**
@@ -133,6 +137,13 @@ export function runIngestCommand(options: IngestCommandOptions): IngestCommandOu
       now: options.now,
       spoolDir: dataDir,
     });
+    // After this machine's lines are stored, so the export has them, and before deriving, so the
+    // other machines' lines are classified in this same run (D-103).
+    const machines = runMachinesStep(db, {
+      account: readAccount(claudeConfigPath(options.env, options.home)),
+      nilometerVersion: packageVersion(options.packageRoot),
+      now: options.now,
+    });
     syncPrices(db, prices);
     const derived = ensureDerived(db);
     const repositoriesResolved = resolveRepositories(db, options.now);
@@ -160,6 +171,7 @@ export function runIngestCommand(options: IngestCommandOptions): IngestCommandOu
       repositoriesResolved,
       totals: { ...row, hookErrors: countHookErrors(dataDir) },
       permissionsTightened,
+      machines,
     };
   } finally {
     db.close();

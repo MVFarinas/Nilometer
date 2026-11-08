@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { checkNodeVersion } from "../core/util/node-version.js";
+import { checkNodeVersion, quietSqliteWarning } from "../core/util/node-version.js";
 
 // Checked before the program is imported: on an older Node.js, the built-in `node:sqlite` is missing
 // (22.11 throws on import without a flag) or experimental (22.23 warns on every run), and Nilometer
@@ -18,6 +18,10 @@ const nodeCheck = checkNodeVersion(process.versions.node);
 if (nodeCheck.message !== undefined) {
   console.error(nodeCheck.message);
 }
+
+// Before node:sqlite loads: Node 24.0 to 24.14 print its "experimental feature" notice on every
+// command, though Nilometer is tested on the API it uses (M18). Other warnings still print.
+quietSqliteWarning(process as unknown as Parameters<typeof quietSqliteWarning>[0]);
 
 if (nodeCheck.status === "too_old") {
   process.exitCode = 1;

@@ -268,6 +268,62 @@ export interface RepoBar {
   readonly events: EventRef;
 }
 
+/** One machine's recorded Claude Code usage (D-102), observed, from `obs_usage_by_machine`. */
+export interface MachineBar {
+  /** Its label; this machine's is marked by {@link MachineBar.isThisMachine}. */
+  readonly label: string;
+  /** Whether it's the machine the page was made on. */
+  readonly isThisMachine: boolean;
+  /** Deduplicated requests. */
+  readonly requests: number;
+  /** Input tokens. */
+  readonly inputTokens: number;
+  /** Output tokens. */
+  readonly outputTokens: number;
+  /** Cache read tokens. */
+  readonly cacheReadTokens: number;
+  /** Cache write tokens, every duration. */
+  readonly cacheWriteTokens: number;
+  /** Requests in the latest weekly window. */
+  readonly weekRequests: number;
+  /** Its span, from its own requests (principle 5). */
+  readonly span: Span;
+  /** When it last wrote its export; null for this machine. */
+  readonly lastExportAtUtc: string | null;
+  /** Its requests. */
+  readonly events: EventRef;
+}
+
+/** One machine's observed tokens at API list price and share (D-102), a projection. */
+export interface MachinePrice {
+  /** As {@link MachineBar.label}. */
+  readonly label: string;
+  /** As {@link MachineBar.isThisMachine}. */
+  readonly isThisMachine: boolean;
+  /** At API list price, unrounded. */
+  readonly listPriceUsd: number;
+  /** Of every recorded machine's; null when nothing was priced. */
+  readonly share: number | null;
+  /** In the latest weekly window. */
+  readonly weekListPriceUsd: number;
+  /** Of every recorded machine's in that window. */
+  readonly weekShare: number | null;
+  /** Requests with no verified rate, left out of the amounts. */
+  readonly unpricedRequests: number;
+  /** Its requests. */
+  readonly events: EventRef;
+}
+
+/** The latest weekly window with a reading, which the machine tables also report on. */
+export interface LatestWeek {
+  /** Seven days before the reset. */
+  readonly startsAtUtc: string;
+  /** Its reset. */
+  readonly resetAtUtc: string;
+  /** The account's last reading in it; null when none was counted. */
+  readonly lastUsedPercentage: number | null;
+}
+
 /**
  * One open usage window's burn rate, a projection (D-026; step G2.1): the window's average rate
  * since it began, on the premise that its usage started at 0%, carried forward to the limit.
@@ -381,12 +437,20 @@ export interface HtmlReportData {
   readonly repositoryAliases: readonly { readonly from: string; readonly to: string }[];
   /** The hook file the status line names when it doesn't exist (D-081); null otherwise. */
   readonly missingHookPath: string | null;
+  /** Whether this machine has joined a folder (D-101); only then are machines shown. */
+  readonly combining: boolean;
+  /** Each machine's recorded usage, this machine first (D-102). */
+  readonly machines: readonly MachineBar[];
+  /** The latest weekly window, for the machine tables; null with no weekly reading. */
+  readonly latestWeek: LatestWeek | null;
   /** Open windows' burn rates, projected (below the seam), as the text report lists them (step G2.1). */
   readonly burn: readonly BurnWindow[];
   /** Months in order, projected (below the seam). */
   readonly months: readonly MonthBar[];
   /** The notes under the monthly amounts, from the same projected views as the text report. */
   readonly priceNotes: PriceNotes;
+  /** Each machine at API list price, projected (below the seam), in the same order as `machines`. */
+  readonly machinePrices: readonly MachinePrice[];
   /** Source file paths as stored (relative to their log root), indexed by {@link EventDetail.file}. */
   readonly files: readonly string[];
   /** Every event any element refers to, keyed by raw line ID. */

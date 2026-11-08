@@ -121,6 +121,26 @@ export interface RepoRow extends TokenColumns {
   readonly repo_kind: string;
 }
 
+/** One row of `obs_usage_by_machine` (D-102). */
+export interface MachineRow {
+  readonly machine_id: string;
+  readonly machine_label: string;
+  readonly is_this_machine: number;
+  readonly requests: number;
+  readonly input_tokens: number;
+  readonly output_tokens: number;
+  readonly cache_read_tokens: number;
+  readonly cache_write_tokens: number;
+  readonly week_requests: number;
+  readonly week_output_tokens: number;
+  readonly covers_from: string | null;
+  readonly covers_to: string | null;
+  /** When it last wrote its export; null for this machine. */
+  readonly last_export_at_utc: string | null;
+  readonly week_starts_at_utc: string | null;
+  readonly week_reset_at_utc: string | null;
+}
+
 /** One row of `obs_interruptions_by_plan` (D-075). */
 export interface PlanPeriodRow {
   /** `plan` inside an entered plan's months, `none` before the first, `unknown` for hits with no time. */
@@ -174,6 +194,10 @@ export interface ObservedReport {
   readonly byRepo: readonly RepoRow[];
   /** The aliases the user entered, by old path (D-092): their links, listed beside the numbers they move. */
   readonly repositoryAliases: readonly AliasRow[];
+  /** Whether this machine has joined a folder (D-101): only then is usage shown by machine. */
+  readonly combining: boolean;
+  /** Each machine's recorded requests and tokens (D-102), this machine first. */
+  readonly byMachine: readonly MachineRow[];
 }
 
 /** One row of `proj_burn_rate`. */
@@ -210,6 +234,23 @@ export interface ApiListPriceRow {
   readonly covers_to: string;
 }
 
+/** One row of `proj_api_list_price_by_machine` (D-102). */
+export interface MachinePriceRow {
+  readonly machine_id: string;
+  readonly machine_label: string;
+  readonly is_this_machine: number;
+  readonly list_price_usd: number;
+  readonly week_list_price_usd: number;
+  readonly unpriced_requests: number;
+  /** Of every recorded machine's, at API list price; null when nothing priced was recorded. */
+  readonly share_of_recorded: number | null;
+  readonly week_share_of_recorded: number | null;
+  readonly covers_from: string | null;
+  readonly covers_to: string | null;
+  readonly week_starts_at_utc: string | null;
+  readonly week_reset_at_utc: string | null;
+}
+
 /** Priced requests dated before the day their rate was read, for one reading date. */
 export interface RateReadingRow {
   readonly verified_on: string;
@@ -221,6 +262,8 @@ export interface ProjectedReport {
   readonly burnRate: readonly BurnRateRow[];
   readonly apiListPrice: readonly ApiListPriceRow[];
   readonly rateReadings: readonly RateReadingRow[];
+  /** Each machine's observed tokens at API list price and its share (D-102). */
+  readonly apiListPriceByMachine: readonly MachinePriceRow[];
 }
 
 /** The views {@link loadObserved} reads. Only `obs_` views belong here. */
@@ -236,6 +279,7 @@ export const OBSERVED_VIEWS = [
   "obs_weekly_crossings",
   "obs_usage_by_model",
   "obs_usage_by_repo",
+  "obs_usage_by_machine",
 ] as const;
 
 /**
@@ -247,7 +291,11 @@ export const OBSERVED_VIEWS = [
 export const EXPLAIN_ONLY_VIEWS = ["obs_unattributed_usage"] as const;
 
 /** The views {@link loadProjected} reads. Only `proj_` views belong here. */
-export const PROJECTED_VIEWS = ["proj_burn_rate", "proj_api_list_price"] as const;
+export const PROJECTED_VIEWS = [
+  "proj_burn_rate",
+  "proj_api_list_price",
+  "proj_api_list_price_by_machine",
+] as const;
 
 /**
  * Reads every row of one observed view.
@@ -314,6 +362,18 @@ export function loadObserved(db: Db, reportedAt?: Date): ObservedReport {
     byModel: observed<ModelRow>(db, "obs_usage_by_model", "output_tokens DESC, model"),
     byRepo: observed<RepoRow>(db, "obs_usage_by_repo", "output_tokens DESC, repository"),
     repositoryAliases: listAliases(db),
+    // A folder set now or before, or lines read from another machine (D-101).
+    combining:
+      db
+        .prepare(
+          "SELECT EXISTS (SELECT 1 FROM this_machine) OR EXISTS (SELECT 1 FROM machine_files) AS on_",
+        )
+        .get()?.["on_"] === 1,
+    byMachine: observed<MachineRow>(
+      db,
+      "obs_usage_by_machine",
+      "is_this_machine DESC, requests DESC, machine_label",
+    ),
   };
 }
 
@@ -350,6 +410,11 @@ export function loadProjected(db: Db, reportedAt?: Date): ProjectedReport {
          ORDER BY verified_on`,
       )
       .all() as unknown as RateReadingRow[],
+    apiListPriceByMachine: projected<MachinePriceRow>(
+      db,
+      "proj_api_list_price_by_machine",
+      "is_this_machine DESC, list_price_usd DESC, machine_label",
+    ),
   };
 }
 

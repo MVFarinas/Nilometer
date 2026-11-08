@@ -72,3 +72,51 @@ export function checkNodeVersion(version: string): NodeVersionCheck {
   }
   return { status: "ok", message: undefined };
 }
+
+/** How node:sqlite's own warning begins, on Node 24.0 to 24.14 (M18). */
+export const SQLITE_EXPERIMENTAL = "SQLite is an experimental feature";
+
+/**
+ * Whether a warning is node:sqlite's "experimental feature" notice. Node 24.0 to 24.14 print it on
+ * every command; 24.15 and later, and 26, don't (checked 2026-10-26). Nilometer is tested on the API
+ * it uses (D-093), so the notice only tells a user on an older 24 that their data is at risk, which it
+ * isn't.
+ * @param warning - What was passed to `process.emitWarning`.
+ * @param typeOrOptions - Its second argument: a type name, or an options object with `type`.
+ * @returns True for that notice only.
+ */
+export function isSqliteExperimentalWarning(
+  warning: string | Error,
+  typeOrOptions: unknown,
+): boolean {
+  const message = typeof warning === "string" ? warning : warning.message;
+  const type =
+    typeof typeOrOptions === "string"
+      ? typeOrOptions
+      : typeof typeOrOptions === "object" && typeOrOptions !== null && "type" in typeOrOptions
+        ? (typeOrOptions as { type?: unknown }).type
+        : warning instanceof Error
+          ? warning.name
+          : undefined;
+  return type === "ExperimentalWarning" && message.startsWith(SQLITE_EXPERIMENTAL);
+}
+
+/** The part of `process` {@link quietSqliteWarning} replaces. */
+export interface WarningTarget {
+  /** Node's `process.emitWarning`. */
+  emitWarning: (warning: string | Error, ...rest: unknown[]) => void;
+}
+
+/**
+ * Drops node:sqlite's experimental notice and passes every other warning through unchanged. Called by
+ * the entry point before anything loads node:sqlite (M18).
+ * @param target - `process`, or a stand-in in tests.
+ */
+export function quietSqliteWarning(target: WarningTarget): void {
+  const emit = target.emitWarning.bind(target);
+  target.emitWarning = (warning, ...rest) => {
+    if (!isSqliteExperimentalWarning(warning, rest[0])) {
+      emit(warning, ...rest);
+    }
+  };
+}

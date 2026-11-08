@@ -26,6 +26,10 @@ const HELPER_VIEWS = new Set([
   "plan_periods",
   // D-077 (step G2.4): auto-continuation markers with their session's latest hit.
   "auto_continuation_marks",
+  // D-102 (G7): which machine each line and request came from, and the latest weekly window.
+  "line_machines",
+  "machine_requests",
+  "latest_weekly_window",
 ]);
 
 /** Names an observed view must never depend on: cost data and user-entered plan prices. */
@@ -115,6 +119,8 @@ describe("metric view structure", () => {
     expect(unclassified).toEqual([]);
     expect([...views.keys()].filter((name) => name.startsWith("proj_")).sort()).toEqual([
       "proj_api_list_price",
+      // D-102 (G7): each machine's share of recorded usage at API list price.
+      "proj_api_list_price_by_machine",
       "proj_burn_rate",
     ]);
   });

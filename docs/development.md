@@ -88,7 +88,7 @@ extraction is the evidence it changed nothing.
 
 **Pass means every check passes, with zero skipped tests on macOS and Linux.** A `.only` test fails the audit everywhere. On Windows, only the platform skips named under [Testing](#testing) are allowed.
 
-**Tools it needs:** Node.js 24, Python 3, [gitleaks](https://github.com/gitleaks/gitleaks), and [shellcheck](https://www.shellcheck.net/). A7 downloads a pinned ccusage through `npx` the first time.
+**Tools it needs:** Node.js 24.15 or later (the cursor-budget test uses `db.limits`, D-100), Python 3, [gitleaks](https://github.com/gitleaks/gitleaks), and [shellcheck](https://www.shellcheck.net/). A7 downloads a pinned ccusage through `npx` the first time.
 
 ### A change's audit
 

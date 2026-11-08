@@ -59,6 +59,7 @@ function ours(totals: Record<string, number>, fromDeletedLogs = 0): OurTotals {
       ]),
     ),
     fromDeletedLogs,
+    fromOtherMachines: 0,
   };
 }
 
@@ -143,6 +144,39 @@ describe("ourTotals", () => {
     const absent = ourTotals(db, () => false);
     expect(absent.totals).toEqual({});
     expect(absent.fromDeletedLogs).toBe(1);
+  });
+
+  it("counts another machine's requests apart from deleted logs, and leaves them out (G7.6)", () => {
+    const db = ingest({
+      "-p/s.jsonl": [
+        request("s1", "u1", null, "2026-09-02T10:00:00Z", {
+          usage: { output_tokens: 5, input_tokens: 0 },
+        }),
+      ],
+      "-p/t.jsonl": [
+        request("s2", "u2", null, "2026-09-02T11:00:00Z", {
+          usage: { output_tokens: 7, input_tokens: 0 },
+        }),
+      ],
+    });
+    // Record t.jsonl as read from another machine's export, as the importer does.
+    db.prepare(
+      "INSERT INTO machine_files (source_file_id, machine_id, file_sha256) SELECT id, 'other', ? FROM source_files WHERE relative_path LIKE '%t.jsonl'",
+    ).run("0".repeat(64));
+    const looked: string[] = [];
+    const result = ourTotals(db, (path) => {
+      looked.push(path);
+      return true;
+    });
+    // Only this machine's request is compared, and the other machine's file is never looked for on disk.
+    expect(result.totals["2026-09-02|claude-sonnet-5"]?.output).toBe(5);
+    expect(result.fromOtherMachines).toBe(1);
+    expect(result.fromDeletedLogs).toBe(0);
+    expect(looked.some((path) => path.endsWith("t.jsonl"))).toBe(false);
+    // With every local log gone, the other machine's request is still not called a deleted log.
+    const absent = ourTotals(db, () => false);
+    expect(absent.fromDeletedLogs).toBe(1);
+    expect(absent.fromOtherMachines).toBe(1);
   });
 
   it("names models with no price row, so the report can say the comparison ignores them", () => {

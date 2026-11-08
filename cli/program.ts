@@ -15,6 +15,13 @@ import { Command, CommanderError } from "commander";
 import { SchemaVersionError, transaction } from "../core/db/database.js";
 
 import { type IngestCommandOutcome, runIngestCommand } from "../core/ingest/command.js";
+import { MachinesError, leaveFolder, setFolder } from "../core/machines/machines.js";
+import {
+  describeFolderSet,
+  describeLeave,
+  describeMachineList,
+  describeMachinesStep,
+} from "./machines.js";
 import { DiscoveryError } from "../core/ingest/discover.js";
 import {
   type DataDeletion,
@@ -388,6 +395,7 @@ export function describeIngest(outcome: IngestCommandOutcome): string[] {
     `Stored: ${totals.requests} requests (${totals.unkeyedRequests} without IDs), ${totals.limitHits} limit hits, ${totals.otherEvents} other error or retry events, ${totals.modelFallbacks} ${totals.modelFallbacks === 1 ? "request" : "requests"} refused and retried with another model; ${span}.`,
     `Status line: ${totals.statusReadings} readings, ${totals.malformedReadings} undecodable spool lines, ${totals.invalidWindows} flagged window values, ${totals.hookErrors} hook append failures.`,
     `Reported for review: ${totals.malformedLines} malformed log lines${run.unreadable === 0 ? "" : `, ${run.unreadable} files or folders that couldn't be read this run (skipped)`}.`,
+    ...describeMachinesStep(outcome.machines),
     ...optionalLine(describeTightened(outcome.permissionsTightened)),
     `Database: ${outcome.databasePath}`,
   ];
@@ -569,6 +577,11 @@ export function describeVerify(result: VerifyResult): { lines: string[]; exitCod
       `${plural(result.fromDeletedLogs, "request", "requests")} were left out: the logs they came from are gone from disk, so ccusage cannot see them. Keeping them is the point of the database.`,
     );
   }
+  if (result.fromOtherMachines > 0) {
+    lines.push(
+      `${plural(result.fromOtherMachines, "request", "requests")} from other machines were left out: ccusage reads only this machine's logs. Run \`nilometer verify\` on each machine to check its own.`,
+    );
+  }
   if (result.daysOnlyOurs > 0) {
     lines.push(
       `${plural(result.daysOnlyOurs, "day", "days")} only this tool has, and could not be compared: its logs are gone from disk, and the database keeps them on purpose.`,
@@ -676,7 +689,7 @@ export function describeUninstall(
  * Tells a known, safe-to-report error (bad input or environment) from a bug.
  * @param error - Anything thrown.
  * @returns True for a `SettingsError`, `InstallRecordError`, `DiscoveryError`, `PriceTableError`,
- *   `PlanPriceError`, `NoDatabaseError`, or `UnknownMetricError`.
+ *   `PlanPriceError`, `NoDatabaseError`, `UnknownMetricError`, `SchemaVersionError`, or `MachinesError`.
  */
 export function isReportedError(error: unknown): error is Error {
   return (
@@ -688,7 +701,8 @@ export function isReportedError(error: unknown): error is Error {
     error instanceof RepositoryAliasError ||
     error instanceof NoDatabaseError ||
     error instanceof UnknownMetricError ||
-    error instanceof SchemaVersionError
+    error instanceof SchemaVersionError ||
+    error instanceof MachinesError
   );
 }
 
@@ -1160,6 +1174,74 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
               `${displayPath(result.from, deps.home)} no longer counts under ${displayPath(result.to, deps.home)}.`,
             ],
           };
+        }),
+      );
+    });
+
+  // D-101 to D-103: combining machines through a folder the user already syncs.
+  const machines = program
+    .command("machines")
+    .description(
+      "Combine this machine's records with your other machines' through a folder you already sync (iCloud Drive, Dropbox, OneDrive).",
+    );
+
+  machines
+    .command("folder <path>")
+    .description(
+      "Write this machine's records to <path> and read every other machine's there, on each ingest. Run it on each machine.",
+    )
+    .option(
+      "--name <name>",
+      'what to call this machine on the page, e.g. "Desktop" (not its hostname)',
+    )
+    .option("--data-dir <path>", "data directory holding the database")
+    .action((path: string, flags: PlanPriceFlags) => {
+      setExitCode(
+        report(deps, () => {
+          const { result, tightened } = withPlanDatabase(toPlanDatabaseOptions(flags, deps), (db) =>
+            setFolder(db, path, flags.name),
+          );
+          noteTightened(deps, tightened);
+          // Straight away, so the folder holds this machine's records and the others are read now.
+          const outcome = runIngestCommand(toIngestOptions({ dataDir: flags.dataDir }, deps));
+          return {
+            exitCode: 0,
+            lines: [...describeFolderSet(result), ...describeMachinesStep(outcome.machines)],
+          };
+        }),
+      );
+    });
+
+  machines
+    .command("list")
+    .description("List this machine and the other machines found in the folder.")
+    .option("--data-dir <path>", "data directory holding the database")
+    .action((flags: PlanPriceFlags) => {
+      setExitCode(
+        report(deps, () => {
+          const { result, tightened } = withPlanDatabase(
+            toPlanDatabaseOptions(flags, deps),
+            describeMachineList,
+          );
+          noteTightened(deps, tightened);
+          return { exitCode: 0, lines: result };
+        }),
+      );
+    });
+
+  machines
+    .command("leave")
+    .description("Stop writing to and reading from the folder.")
+    .option("--remove-export", "also delete this machine's records from the folder")
+    .option("--data-dir <path>", "data directory holding the database")
+    .action((flags: PlanPriceFlags & { readonly removeExport?: boolean }) => {
+      setExitCode(
+        report(deps, () => {
+          const { result, tightened } = withPlanDatabase(toPlanDatabaseOptions(flags, deps), (db) =>
+            leaveFolder(db, flags.removeExport === true),
+          );
+          noteTightened(deps, tightened);
+          return { exitCode: 0, lines: describeLeave(result) };
         }),
       );
     });

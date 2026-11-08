@@ -1754,3 +1754,89 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 - **Consequences:**
   - **On the laptop,** the two affected files are read again on the next ingest with the fix, as the same files, and their IDs are stored exactly.
   - **A file skipped for a real filesystem reason** now names its code in `ingest_report`.
+
+## D-100: Nilometer drops node:sqlite's "experimental feature" notice, and keeps Node 24.0 as the floor (2026-10-26)
+
+- **Status:** accepted. Maintenance step M18. Found by the PC's check of 0.2.2 on Node 24.12.
+- **Context:** on Node 24.0 to 24.14, loading `node:sqlite` prints `ExperimentalWarning: SQLite is an experimental feature and might change at any time` on every command. From 24.15, and on 26, it doesn't. That was checked on 24.12, 24.13, 24.14, 24.15, 24.18, 24.21 and 26.12.
+  - **Why it matters:** it's the first thing a user on an older 24 sees. It says the database their history lives in is experimental.
+  - **Why it hadn't shown before:** D-057's spike ran on 24.21, so it didn't see the notice.
+  - **What else the older 24s lack:** the full suite passes on 24.0 and 24.12, apart from the test that expects an empty stderr, and the cursor-budget test, which needs `db.limits`. That arrived in 24.15, and Nilometer itself doesn't use it.
+- **Options:**
+  - (a) **Drop that one notice in the entry point, before node:sqlite loads, and keep 24.0 as the floor.** Chosen. The notice is matched by type and wording, and every other warning still prints.
+  - (b) Raise the floor to 24.15. Rejected: it refuses a working install for a message.
+  - (c) Start node with `--no-warnings`. Rejected: it hides every warning, and a shebang can't pass flags portably.
+  - (d) Document it and leave it. Rejected: it would sit in front of every new user on an older 24.
+- **Decision:** (a).
+  - `isSqliteExperimentalWarning` and `quietSqliteWarning` live in `core/util/node-version.ts`, and `cli/main.cli.ts` installs the filter first.
+  - The cursor-budget test fails with "this test needs db.limits, from Node 24.15" on older Node, rather than a `TypeError`.
+  - The development guide says the full suite needs Node 24.15 or later.
+- **Proof:**
+  - **Node 24.12:** `nilometer --version` prints 0.2.2, with nothing on stderr. Another `ExperimentalWarning` still prints.
+  - **Tests:** the matcher, for each way Node passes a type; the filter, which drops only the notice; and the entry point, which installs it before the program loads.
+  - **Guard proof:** without the call in the entry point, the structure test failed, and the CLI test on Node 24.12 failed on the notice. Restored, both pass.
+
+## D-101: Machines' data meets in a folder the user already syncs, not on a website (2026-11-07)
+
+- **Status:** accepted 2026-11-07 ("proceed with your design"). Plan group G7. Confirms D-034's recommendation, which was never confirmed, and replaces plan-v2's V4 for this scope.
+- **Context:** the Phase 8 review kept combining machines' data as the one v2 candidate (D-074). On 2026-11-07 the maintainer described the goal: see how usage splits across their machines, and how much went somewhere none of them recorded. They pictured a website where a user logs in with the email address of their Anthropic account and each machine's ingested data is pooled there.
+- **Options:**
+  - (a) **A folder the user already syncs** (iCloud Drive, Dropbox, OneDrive, Syncthing). Each machine writes its own export file there; `report` and `view` on any machine read every file. Chosen.
+  - (b) A hosted website with a login. Rejected for now:
+    - it ends "nothing leaves your computer", which is both a rule (README principles, D-034) and the pitch;
+    - it means holding strangers' usage data, with login security, hosting costs, uptime, a privacy policy, and someone answering when it breaks;
+    - an email login proves who owns an inbox, not whose Claude usage is uploaded: a third-party site has no way to confirm an email belongs to a given Anthropic account;
+    - a login framed around Anthropic accounts suggests an affiliation the README disclaims.
+  - (c) One SQLite database on a shared or synced filesystem. Rejected, as in D-034: sync providers corrupt a database written from two machines.
+  - (d) Copying exports by hand (a USB stick, email). Not rejected: the same file works, and the folder is only where `report` looks.
+- **Decision:** (a), on demand. A machine writes its file when it ingests (so `report`, `view` and its Refresh button), and reads the others' files then. No background job, no network requests, no account.
+- **Revisit when:** users ask for a hosted view. It would be a separate, opt-in service with its own decision, and (b)'s problems would each need an answer first.
+- **Consequences:** the README's "cloud sync" in "Explicitly out of scope" becomes "a hosted service or account"; "What this cannot see" says other machines are seen once they write to the folder.
+
+## D-102: Machines are compared by their recorded usage; usage elsewhere is named, not numbered (2026-11-07)
+
+- **Status:** accepted 2026-11-07 ("proceed with your design"). Plan group G7.
+- **Context:** the goal as stated: "40% of their usage on 1 local machine and 50% on another within a week. That means 10% of their total usage went somewhere else." The windows' percentages are account-wide, and every machine's readings show the same account total.
+  - **Splitting a percentage by machine needs a conversion** from tokens (or API list price) to percentage points. Measured on real data, 2026-11-07: points per dollar of API list price vary about threefold across 5-hour windows (10th percentile 0.44, median 0.76, 90th percentile 1.26) and across weekly windows (0.04 to 0.15). A 10-point remainder sits inside that spread.
+  - **The direct measure is a rise in a window with no request from any recorded machine in between.** That is the unattributed-usage view (D-025), and it has been 0 in every window (D-079), including weeks when a second machine was active: a reading is taken only when the reading machine makes a request, so another surface's usage arrives mixed into it.
+- **Options:**
+  - (a) **Each machine's share of the recorded Claude Code usage, observed:** requests, tokens and API list price per machine, as a share of all recorded machines, each with its span. Beside it, unchanged, the account's own window percentages. Usage elsewhere is named in words. Chosen.
+  - (b) "Elsewhere = account total − known machines", computed through the conversion. Rejected: it breaks principle 1 and D-009 (no limits inferred from tokens), and the threefold spread could turn a 10% remainder into 0% or 25%.
+  - (c) (b) shown as a projection with a range. Not now: the range would span most of the window, and a number that can't tell 0 from 25 tells the reader little. Reconsidered if merged readings narrow the spread.
+  - (d) Show unattributed rises across all machines as "at least N points" when nonzero, as a true lower bound. Kept in `explain` (D-079); on the page only if merged readings ever make it nonzero.
+- **Decision:** (a). The page's wording, for example: "Of the Claude Code usage your machines recorded this week: Machine A 85%, Machine B 15% (by API list price). The account used 46% of this week's window. Usage elsewhere (computers not added, claude.ai, the mobile app, Claude Design) is in that 46% but can't be measured here." The share's basis is always named, and it is never called a share of the window.
+- **Consequences:** limit hits, lockouts and window readings merge across machines, so a lockout recorded on any machine shows on every one. Headroom and peaks gain the other machines' readings.
+- **Built 2026-11-07 (steps G7.3 and G7.4), with one change:** usage at API list price is a projection in this codebase (`proj_api_list_price`), so the shares are too.
+  - `obs_usage_by_machine` holds requests and tokens, with no cost data, as the structure test requires of every observed view. `proj_api_list_price_by_machine` holds each machine's amount and share, under the seam.
+  - Both read `machine_requests`, and each also reports the latest weekly window, which is computed once per query. Looked up once per request, it took the page from 6.5 s to 523 s on real data. Computed once, the report and page take 4.7 s.
+  - **Shown only once this machine has joined a folder.** A single machine sees no change.
+  - **Another machine's requests** count in the repository table under their own kind, "Other machines", never as this machine's unresolved directories.
+  - `explain by-machine` and `explain price-by-machine` list each machine's requests.
+
+## D-103: What a machine's export holds (2026-11-07)
+
+- **Status:** accepted 2026-11-07 ("proceed with your design"). Plan group G7.
+- **Context:** the export sits in a folder a sync provider stores. Plan-v2's V4 designed encrypted, append-only segments with a pairing code; that suited a background job writing every minute, which D-074 dropped.
+- **Options:**
+  - (a) **One file per machine, rewritten whole on each ingest:** gzip-compressed JSON lines, written to a temporary name then renamed, so a reader sees the old file or the new one. Holds only what the views need: request times, model, token counts, speed and service tier; limit-hit and auto-continuation events; status line readings (window values and times); hashed session and message IDs, so cross-machine dedup stays exact. No prompts, responses, tool input or output, file paths, repository names or working directories. Chosen.
+  - (b) Append-only segments (plan-v2 V4.2). Rejected: an on-demand export needs no sequence numbers, and one file per machine can't produce a sync conflict, because only that machine writes it.
+  - (c) Encrypted exports. Not in the first version: the file holds counts, times and model names, and encryption needs a key shared between machines, which brings back the pairing step. Reconsidered if an export ever carries repository names or paths.
+- **Decision:** (a), amended as built (2026-11-07, step G7.1):
+  - **What a file holds:** this machine's own stored lines, each scrubbed to the fields the classifier and the views read (`core/machines/scrub.ts`), in a gzip file per kind (`logs`, `readings`) and per month of first reading. An export rewrites only the months that gained lines, so after the first export one small file changes per ingest.
+    - **Why lines, not view rows:** another machine then reads them with the same classifier and views as its own logs, and every rule (D-001 dedup, D-021 position, D-076 attachments, D-077 continuations) applies unchanged.
+    - **Proof on real data:** all 268,937 lines on the Mac were scrubbed into a fresh database, and every compared observed and projected view came out identical, requests, readings, lockouts, positions and costs included. Two simulated machines, one with the real database and one empty, then gave identical views end to end. The only exception was the plan-price views, since plan prices are entered per machine.
+    - **Size:** 132 MB of scrubbed lines for four months of heavy use, 16 MB compressed.
+  - **IDs travel as written, not hashed.** Session, message and request IDs are random and carry no content. Hashing them would stop one session's lines on two machines (after a machine move, say) from deduplicating against each other.
+  - **Each line carries its origin:** a hash of its source file's path and its bytes (`nilometerLine`). Two lines that become identical once scrubbed stay two lines, as they are on their machine; on real data, without it, retry notices and readings collapsed. An origin already stored is skipped, so a month written again, or a machine whose database was rebuilt and which comes back under a new ID, adds nothing twice.
+  - **Account check:** the file carries a hash of the account Claude Code is logged in to: `oauthAccount.accountUuid` in Claude Code's config file (`~/.claude.json`, or the one in `CLAUDE_CONFIG_DIR`), hashed with a fixed Nilometer prefix so the file never holds the ID itself. A file from another account is refused and listed, never merged. A machine whose config has no account (an API key, or logged out) exports nothing and says why.
+    - **Why not the session logs:** spike G7.0 found `ownerAccountUuid` in 3 of 442 log files on the Mac, and only inside tool output text, never as a field of a log line. The logs don't record the account.
+    - **What the check can't see:** it's the account logged in when the file is written. Logs from before a switch of accounts would be merged under the current one. The README says so.
+  - **Untrusted input:** every file is validated for version, size, account and shape; provider debris (conflict copies, placeholders, empty files) is ignored and counted.
+  - **Machine names:** a random machine ID and a label the user chooses, never the hostname.
+  - **Repositories stay per machine:** another machine's requests count under "Other machines" in the repository table.
+  - **Proofs (step G7.2 tests):** the merged views equal one machine holding every machine's logs, in either import order; nothing is stored twice after a re-export or a rebuilt database; another account, a forged description, a newer format and sync debris (conflict copies, placeholders, a truncated file, a line without an origin) are refused or ignored and counted; an export holds only allowlisted keys and none of the fixtures' text or paths.
+  - **Guard proofs:** exporting `cwd`, accepting any account, trusting a description's machine ID, and dropping `parentUuid` or `attachment.type` from the scrub each failed a test. Restored, all pass.
+  - **Not built:** D-042's clock tolerance for unattributed usage across machines. That metric is in `explain` only (D-079) and stays as it is.
+  - **Checked on two real machines (step G7.6, 2026-11-07):** a Mac and a Windows PC through one OneDrive folder. Each machine's own requests and tokens in the combined view equal its report from before combining, and each stored exactly the other's distinct line origins.
+    - **Placeholders:** OneDrive kept the other machine's files online-only on both systems, and reading them downloaded them. No special handling was needed.
+    - **What it found:** `verify` counted another machine's requests as requests whose logs are gone from disk, because it looked for their files on disk. They are now left out of the comparison under their own count, since ccusage reads only this machine's logs.

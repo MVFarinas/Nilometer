@@ -129,6 +129,7 @@ One screen. No daemon, no desktop app, no live updating: `nilometer view` serves
 |---|---|
 | Usage by repository | Session logs, grouped by git repository: worktrees and subfolders count as their repository, and a folder that no longer exists keeps its last known repository ([D-010](decisions.md), [D-028](decisions.md)) |
 | Usage by model | Session logs, grouped by model (e.g. Opus vs. Sonnet), by token type |
+| Usage by machine | Each machine's own session logs, once machines are combined through a synced folder: requests and tokens per machine, each with its span and last export. Their share at API list price is a projection ([D-102](decisions.md)) |
 
 ### Projected (labeled as such)
 
@@ -142,7 +143,7 @@ One screen. No daemon, no desktop app, no live updating: `nilometer view` serves
 
 ### Explicitly out of scope
 
-Auto-resume (now built into Claude Code) · multi-assistant support · prompt-quality or "efficiency" scoring · flow-interruption metrics · plugin architecture · cloud sync · recommendations engine
+Auto-resume (now built into Claude Code) · multi-assistant support · prompt-quality or "efficiency" scoring · flow-interruption metrics · plugin architecture · a hosted service or account ([D-101](decisions.md)) · recommendations engine
 
 ---
 
@@ -152,7 +153,7 @@ Auto-resume (now built into Claude Code) · multi-assistant support · prompt-qu
 
 The tool can't separate that usage out. The status line is read only when Claude Code makes a request, and each reading already includes whatever was used elsewhere, so the two arrive mixed in the same percentages ([D-079](decisions.md)). It can't report what that usage was, and it can't price it. Any breakdown or cost of non-CLI usage would break principle 1.
 
-The same goes for Claude Code on your other computers. Their session logs stay on those machines, so their tokens and limit hits aren't read here. Their usage still counts toward the account-wide percentages, so the headroom and peaks shown here include it.
+The same goes for Claude Code on your other computers, until you combine them ([below](#combining-your-machines)). Their session logs stay on those machines, so their tokens and limit hits aren't read here. Their usage still counts toward the account-wide percentages, so the headroom and peaks shown here include it. Once they're combined, each machine's usage is shown beside the others', but the part of a window used elsewhere still isn't a number: turning tokens into points of a window varies about threefold between windows, so "what's left" would be a guess ([D-102](decisions.md)).
 
 Rate-limit state is only sampled when Claude Code runs a turn. Between turns, the tool is blind. This is why headroom is a lower bound.
 
@@ -234,9 +235,10 @@ On Node 24 before 24.15, `npm ci` prints `EBADENGINE` warnings for three lint pl
 | `nilometer ingest` | Read new session log lines and status line readings into the database. `--full` rereads everything; `--json` prints the outcome as JSON |
 | `nilometer report` | Print what was observed, then projections in a separate section. `--json` prints unrounded rows and every label. `--save` also writes a dated copy (`report_YYYY-MM-DD_HHMMSS.txt` and `.json`) to `~/.local/share/nilometer/reports/`; `--save --html` adds a self-contained `.html` page with the same name, which works offline and makes no network requests. The page opens on an overview, has one tab per chart, and keeps the projections in their own labelled tabs. `--save --html --open` also opens the saved page in your browser; if it can't, the command says where the page is and still succeeds |
 | `nilometer view` | Show the report page in your browser from your own computer, with a **Refresh** button that reads new log lines and rebuilds the page in place, on the tab you're on. Runs until you press Ctrl+C. It listens on 127.0.0.1 only, behind a random address made for each run. `--port <n>` picks the port; `--no-open` prints the address without opening a browser |
-| `nilometer explain <metric>` | List the events behind a number in the report, with the file, line, and byte each came from, and add them back up. Metrics: `limit-hits`, `mid-task`, `lockout`, `by-plan`, `not-resumed`, `headroom`, `peak`, `crossings`, `unattributed`, `by-model`, `by-repo`, `burn-rate`, `api-list-price` |
+| `nilometer explain <metric>` | List the events behind a number in the report, with the file, line, and byte each came from, and add them back up. Metrics: `limit-hits`, `mid-task`, `lockout`, `by-plan`, `not-resumed`, `headroom`, `peak`, `crossings`, `unattributed`, `by-model`, `by-repo`, `by-machine`, `burn-rate`, `api-list-price`, `price-by-machine` |
 | `nilometer plan-price set <YYYY-MM> <usd> --name <plan>` | Record your plan's USD list price per month from that month on, shown beside API list price. `plan-price list` shows what's entered |
 | `nilometer alias set <old-path> <new-path>` | Count a renamed or moved project's old path under its new one, so it shows as one repository. The report lists every alias you entered under the repository table. `alias list` shows them; `alias remove <old-path>` undoes one ([D-092](decisions.md)) |
+| `nilometer machines folder <path> --name <name>` | Combine this machine with your others through a folder you already sync. Each ingest writes this machine's records there and reads the others'. `machines list` shows them; `machines leave` stops, and `--remove-export` also deletes this machine's records from the folder ([D-101](decisions.md), [below](#combining-your-machines)) |
 | `nilometer uninstall` | Remove the hook and restore the status line setting it replaced. Recorded data is kept |
 | `nilometer --version` | Print the installed version |
 
@@ -251,6 +253,23 @@ On Node 24 before 24.15, `npm ci` prints `EBADENGINE` warnings for three lint pl
 - **Everything stays on your computer.** Nilometer reads Claude Code's session logs and status line payload, and copies them into a local SQLite database. It makes no network requests when it runs, and it sends no telemetry. `nilometer view` listens on 127.0.0.1 for your own browser while it runs, and nothing else can reach it.
 - **The database holds copies of your session logs:** prompts, code, and file paths. That's why the data directory is readable only by your account.
 - **Reports contain spend figures and project names.** Think before sharing one. `nilometer explain` output also names session files and IDs.
+- **Combining machines writes to a folder you chose.** Only what the numbers need goes there: times, models, token counts, limit hits, status line readings, session and message IDs, and a hash of your Claude account. No prompts, responses, tool output, file paths, project names or working directories ([D-103](decisions.md)). Nilometer still makes no network requests; your sync provider moves the files.
+
+### Combining your machines
+
+If you use Claude Code on more than one computer, run this on each, with the same synced folder (iCloud Drive, Dropbox, OneDrive, or any folder your machines share):
+
+```sh
+nilometer machines folder ~/Library/Mobile\ Documents/com~apple~CloudDocs --name "Desk"
+```
+
+From then on every ingest, and so every `report`, `view` and Refresh, writes this machine's records to `<folder>/nilometer/<machine ID>/` and reads every other machine's. The report and page gain a **By machine** section: each machine's requests and tokens, its span and last export, and, among the projections, its share of your recorded usage at API list price.
+
+- **Same account only.** Each machine writes a hash of the Claude account it's logged in to, read from Claude Code's config. A machine on another account is refused and listed, never merged. The check is the account logged in now: logs from before a switch of accounts are counted under the current one.
+- **Usage elsewhere is named, not numbered.** Claude.ai, the mobile app, Claude Design and computers you haven't added are in the account's window percentages and in no machine's row.
+- **Repositories stay per machine.** Another machine's requests count in the repository table as "Other machines", since no working directory is sent.
+- **Plan prices you entered stay per machine.** Enter them on each machine where you read the report.
+- **The first export is the largest:** about 16 MB for four months of heavy use. After that, each ingest rewrites only the current month's file.
 
 ### Checking the numbers against another tool
 

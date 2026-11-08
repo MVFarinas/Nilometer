@@ -1248,7 +1248,12 @@ export const renderRepoBars: RenderChart<RepoChartInput> = (input, options) => {
   const named = input.bars.slice(0, REPOS.maxBars);
   const rest = input.bars.slice(REPOS.maxBars);
   const rows = named.map((bar) => {
-    const shown = bar.repository === null ? NO_REPOSITORY : displayPath(bar.repository, input.home);
+    const shown =
+      bar.kind === "other_machine"
+        ? LABELS.otherMachines
+        : bar.repository === null
+          ? NO_REPOSITORY
+          : displayPath(bar.repository, input.home);
     return {
       label: repoLabel(shown),
       title: `${shown} (${repoKindName(bar.kind)})`,

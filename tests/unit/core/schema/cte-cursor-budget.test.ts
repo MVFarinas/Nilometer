@@ -59,7 +59,13 @@ describe("the CTE cursor budget (D-094)", () => {
   });
 
   it(`prepares every view with the expression-depth limit at ${BUDGET}, which caps CTE cursors on SQLite 3.54+`, () => {
-    const { limits } = db as unknown as WithLimits;
+    const { limits } = db as unknown as Partial<WithLimits>;
+    // node:sqlite has db.limits from Node 24.15 (M18); say so rather than fail with a TypeError.
+    if (limits === undefined) {
+      throw new Error(
+        `this test needs db.limits, from Node 24.15; this is Node ${process.version}`,
+      );
+    }
     limits.exprDepth = BUDGET;
     try {
       expect(failing(db, views)).toEqual([]);

@@ -49,6 +49,7 @@ import type {
 import {
   LABELS,
   displayPath,
+  machineName,
   planPeriodMonths,
   planPeriodName,
   plural,
@@ -138,6 +139,7 @@ export const HTML_LABELS = {
   tabInterruptions: "Interruptions",
   tabModels: "By model",
   tabRepos: "By repository",
+  tabMachines: "By machine",
   tabBurn: "Burn rate",
   tabPrice: "API list price",
   openTab: "Open tab",
@@ -1113,6 +1115,9 @@ function renderModelSection(data: HtmlReportData, options: ChartOptions): string
  * @returns The display text, unescaped.
  */
 function repoName(bar: RepoBar, home: string): string {
+  if (bar.kind === "other_machine") {
+    return LABELS.otherMachines;
+  }
   return bar.repository === null
     ? "unknown (no working directory)"
     : displayPath(bar.repository, home);
@@ -1427,6 +1432,147 @@ function renderOverviewCards(data: HtmlReportData, options: ChartOptions): strin
   return `<div class="nm-cards">\n${cards.map(overviewCard).join("\n")}\n</div>`;
 }
 
+/**
+ * The latest weekly window's line under the machine tables, as the text report words it.
+ * @param data - Report data.
+ * @returns The line, or null with no weekly reading.
+ */
+function latestWeekLine(data: HtmlReportData): string | null {
+  const week = data.latestWeek;
+  if (week === null) {
+    return null;
+  }
+  return `${LABELS.latestWeek}: ${formatInstant(week.startsAtUtc, data.timeZone)} to ${formatInstant(week.resetAtUtc, data.timeZone)}. ${LABELS.accountWeek}: ${formatNumber(week.lastUsedPercentage, "percent")}.`;
+}
+
+/**
+ * The span every machine's requests cover together, from their own spans (principle 5).
+ * @param data - Report data.
+ * @returns The earliest start and the latest end.
+ */
+function machinesSpan(data: HtmlReportData): Span {
+  const froms = data.machines.flatMap((m) => (m.span.from === null ? [] : [m.span.from])).sort();
+  const tos = data.machines.flatMap((m) => (m.span.to === null ? [] : [m.span.to])).sort();
+  return { from: froms[0] ?? null, to: tos.at(-1) ?? null };
+}
+
+/**
+ * Renders usage by machine (D-102, step G7.4): what each machine recorded, as the text report
+ * lists it, with the line saying what no machine can see beside the numbers.
+ * @param data - Report data, with machines combined.
+ * @returns The section.
+ */
+function renderMachineSection(data: HtmlReportData): string {
+  const c = LABELS.columns;
+  const zone = data.timeZone;
+  const machines = data.machines;
+  const span = machinesSpan(data);
+  const rows = machines.map((m): Row => {
+    const name = machineName({ machine_label: m.label, is_this_machine: m.isThisMachine ? 1 : 0 });
+    return {
+      name,
+      cells: [
+        textCell(name),
+        numberCell(formatNumber(m.requests, "count"), m.events),
+        numberCell(formatNumber(m.inputTokens, "tokens"), m.events),
+        numberCell(formatNumber(m.outputTokens, "tokens"), m.events),
+        numberCell(formatNumber(m.cacheReadTokens, "tokens"), m.events),
+        numberCell(formatNumber(m.cacheWriteTokens, "tokens"), m.events),
+        textCell(formatNumber(m.weekRequests, "count")),
+        textCell(`${formatInstant(m.span.from, zone)} to ${formatInstant(m.span.to, zone)}`),
+        textCell(m.isThisMachine ? "this machine" : formatInstant(m.lastExportAtUtc, zone)),
+      ],
+    };
+  });
+  const week = latestWeekLine(data);
+  return chartSection({
+    id: "nm-machines",
+    heading: LABELS.byMachine,
+    info: [LABELS.byMachineWhat],
+    span: `Covers: ${sourceSpan("session logs", span, zone)}`,
+    body: [
+      // The caveat that changes what the table means stays beside it (D-091).
+      para(LABELS.elsewhere),
+      machines.length === 0
+        ? para(HTML_LABELS.noRequests)
+        : tableView(
+            LABELS.byMachine,
+            [
+              c.machine,
+              c.requests,
+              c.input,
+              c.output,
+              c.cacheRead,
+              c.cacheWrite,
+              c.week,
+              c.covers,
+              c.lastExport,
+            ],
+            rows,
+            true,
+          ),
+      ...(week === null ? [] : [para(week, "sub")]),
+    ].join("\n"),
+  });
+}
+
+/**
+ * Renders each machine's observed tokens at API list price and its share (D-102), below the seam.
+ * @param data - Report data, with machines combined.
+ * @returns The section.
+ */
+function renderMachinePriceSection(data: HtmlReportData): string {
+  const c = LABELS.columns;
+  /**
+   * A share as a percentage.
+   * @param value - The share, 0 to 1, or null.
+   * @returns The percentage, or unknown.
+   */
+  const share = (value: number | null): string =>
+    formatNumber(value === null ? null : value * 100, "percent");
+  const rows = data.machinePrices.map((m): Row => {
+    const name = machineName({ machine_label: m.label, is_this_machine: m.isThisMachine ? 1 : 0 });
+    return {
+      name,
+      cells: [
+        textCell(name),
+        numberCell(formatNumber(m.listPriceUsd, "usd"), m.events),
+        textCell(share(m.share)),
+        textCell(formatNumber(m.weekListPriceUsd, "usd")),
+        textCell(share(m.weekShare)),
+        textCell(formatNumber(m.unpricedRequests, "count")),
+      ],
+    };
+  });
+  const week = data.latestWeek;
+  const span = machinesSpan(data);
+  return chartSection({
+    id: "nm-machine-prices",
+    heading: LABELS.apiListPriceByMachine,
+    tag: HTML_LABELS.projectedTag,
+    span: `Covers: ${sourceSpan("session logs", span, data.timeZone)}`,
+    body: [
+      para(LABELS.byMachineShare),
+      rows.length === 0
+        ? para(HTML_LABELS.noRequests)
+        : tableView(
+            LABELS.apiListPriceByMachine,
+            [c.machine, c.apiListPrice, c.share, c.week, c.weekShare, c.unpriced],
+            rows,
+            true,
+          ),
+      ...(week === null
+        ? []
+        : [
+            para(
+              `${c.week}: ${formatInstant(week.startsAtUtc, data.timeZone)} to ${formatInstant(week.resetAtUtc, data.timeZone)}.`,
+              "sub",
+            ),
+          ]),
+    ].join("\n"),
+  });
+}
+
 /** The page's tabs, in order: observed first, then projected after a visible gap (D-084). */
 const TABS = [
   { key: "overview", label: HTML_LABELS.tabOverview, group: "observed" },
@@ -1434,6 +1580,8 @@ const TABS = [
   { key: "interruptions", label: HTML_LABELS.tabInterruptions, group: "observed" },
   { key: "models", label: HTML_LABELS.tabModels, group: "observed" },
   { key: "repos", label: HTML_LABELS.tabRepos, group: "observed" },
+  // Only once this machine has joined a folder (D-101); renderTabBar leaves it out otherwise.
+  { key: "machines", label: HTML_LABELS.tabMachines, group: "observed" },
   { key: "burn", label: HTML_LABELS.tabBurn, group: "projected" },
   { key: "price", label: HTML_LABELS.tabPrice, group: "projected" },
 ] as const;
@@ -1444,9 +1592,10 @@ type TabKey = (typeof TABS)[number]["key"];
 /**
  * Renders the tab bar (D-084): two tab lists, observed and projected, apart and labeled. Shown only
  * when the script runs; without it the page reads top to bottom, seam included.
+ * @param combining - Whether machines are combined; without, the machines tab isn't shown.
  * @returns The navigation HTML. The overview tab starts selected.
  */
-function renderTabBar(): string {
+function renderTabBar(combining: boolean): string {
   /**
    * Renders one group's tab list.
    * @param group - Which group.
@@ -1454,7 +1603,7 @@ function renderTabBar(): string {
    * @returns The group HTML.
    */
   const group = (group: "observed" | "projected", label: string): string => {
-    const tabs = TABS.filter((tab) => tab.group === group)
+    const tabs = TABS.filter((tab) => tab.group === group && (combining || tab.key !== "machines"))
       .map((tab) => {
         const selected = tab.key === "overview";
         return `<button type="button" role="tab" class="nm-tab" id="nm-tabbtn-${tab.key}" aria-controls="nm-tab-${tab.key}" aria-selected="${String(selected)}" tabindex="${selected ? 0 : -1}" data-tab="${tab.key}">${escapeHtml(tab.label)}</button>`;
@@ -2007,7 +2156,7 @@ function renderPage(data: HtmlReportData, serving?: PageServing): string {
     renderHeader(data, serving),
     // Navigation only: its labels name the tabs, so the projected group's label sits above the
     // seam, while every projected panel stays below it in the document (principle 2, D-084).
-    renderTabBar(),
+    renderTabBar(data.combining),
     '<section class="nm-part" id="nm-observed" aria-labelledby="nm-observed-h">',
     // The tab group's label already shows OBSERVED; the section keeps its heading for screen readers.
     `<h2 class="eyebrow sr-only" id="nm-observed-h">${escapeHtml(LABELS.observed)}</h2>`,
@@ -2022,12 +2171,19 @@ function renderPage(data: HtmlReportData, serving?: PageServing): string {
     tabPanel("interruptions", renderLockoutSection(data, options)),
     tabPanel("models", renderModelSection(data, options)),
     tabPanel("repos", renderRepoSection(data, options)),
+    ...(data.combining ? [tabPanel("machines", renderMachineSection(data))] : []),
     "</section>",
     // The seam: everything below it is derived from the observations above (principle 2).
     '<section class="nm-part" id="nm-projected" aria-labelledby="nm-seam">',
     `<h2 class="seam" id="nm-seam">${escapeHtml(LABELS.projected)}</h2>`,
     tabPanel("burn", renderBurnSection(data, options)),
-    tabPanel("price", renderMonthSection(data, options)),
+    tabPanel(
+      "price",
+      [
+        renderMonthSection(data, options),
+        ...(data.combining ? [renderMachinePriceSection(data)] : []),
+      ].join("\n"),
+    ),
     "</section>",
     "</main>",
     `<script type="application/json" id="nm-data">${embedded}</script>`,

@@ -257,6 +257,63 @@ const FULL: HtmlReportData = {
   ],
   home: "/home/example",
   missingHookPath: "/home/example/nilometer/hooks/statusline.sh",
+  // Combining machines (D-102), so the Machines tab and the per-machine prices are guarded too.
+  combining: true,
+  machines: [
+    {
+      label: "Desk",
+      isThisMachine: true,
+      requests: 2,
+      inputTokens: 10,
+      outputTokens: 200,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      weekRequests: 2,
+      span: { from: at("10:00:00"), to: at("13:05:10") },
+      lastExportAtUtc: null,
+      events: [1],
+    },
+    {
+      label: "Laptop",
+      isThisMachine: false,
+      requests: 1,
+      inputTokens: 5,
+      outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      weekRequests: 0,
+      span: { from: at("11:00:00"), to: at("11:00:00") },
+      lastExportAtUtc: at("12:00:00"),
+      events: [2],
+    },
+  ],
+  latestWeek: {
+    startsAtUtc: "2026-08-28T14:00:00.000Z",
+    resetAtUtc: at("14:00:00"),
+    lastUsedPercentage: 46,
+  },
+  machinePrices: [
+    {
+      label: "Desk",
+      isThisMachine: true,
+      listPriceUsd: 1.5,
+      share: 0.75,
+      weekListPriceUsd: 1.5,
+      weekShare: 1,
+      unpricedRequests: 0,
+      events: [1],
+    },
+    {
+      label: "Laptop",
+      isThisMachine: false,
+      listPriceUsd: 0.5,
+      share: 0.25,
+      weekListPriceUsd: 0,
+      weekShare: 0,
+      unpricedRequests: 0,
+      events: [2],
+    },
+  ],
   // An alias, so the line naming it is guarded too (D-092).
   repositoryAliases: [{ from: "/home/example/old-name", to: "/home/example/alpha" }],
   // Every sentence describeBurnRate can produce: limit before the reset, after it, already
@@ -396,6 +453,9 @@ const HOSTILE_PATH = "-evil/</script><script>alert(1)</script><!--.jsonl";
 const HOSTILE: HtmlReportData = {
   ...FULL,
   models: [{ model: "</script><b>x</b>", requests: 1, outputTokens: 1, events: [2] }],
+  // Another machine names itself (D-103): a label is checked for control characters, not markup.
+  machines: FULL.machines.map((m) => ({ ...m, label: "</script><b>x</b>" })),
+  machinePrices: FULL.machinePrices.map((m) => ({ ...m, label: "</script><b>x</b>" })),
   repos: [
     {
       repository: "/home/example/</script><b>x</b>",
@@ -669,8 +729,9 @@ describe.each(REPORTS)("the %s HTML report", (_name, data) => {
 
   it("(d) states a span in every chart section and every window's series", () => {
     const sections = html.split('<section class="panel nm-chart"').slice(1);
-    // Coverage, gauge, weekly crossings (D-087), lockouts, models, repositories, burn rate, months (D-084).
-    expect(sections).toHaveLength(8);
+    // Coverage, gauge, weekly crossings (D-087), lockouts, models, repositories, burn rate, months
+    // (D-084); with machines combined, usage by machine and its price too (D-102).
+    expect(sections).toHaveLength(data.combining ? 10 : 8);
     const span = /<p class="span">Covers: [^<]*(\d{4}-\d{2}-\d{2} \d{2}:\d{2} to|no data yet)/;
     for (const part of sections) {
       expect(part).toMatch(span);

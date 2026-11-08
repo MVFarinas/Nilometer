@@ -9,7 +9,7 @@
  */
 import type { Db } from "../core/db/database.js";
 import { type ValueKind, formatInstant, formatNumber, printable } from "./format.js";
-import type { PlanPeriodRow } from "./queries.js";
+import type { MachineRow, PlanPeriodRow } from "./queries.js";
 import {
   displayPath,
   planPeriodMonths,
@@ -232,6 +232,17 @@ function tokenGroup(
       ],
     })),
   };
+}
+
+/** A `machine_requests` row with its location (D-102). */
+interface MachineRequestRow extends Located {
+  readonly timestamp_utc: string | null;
+  readonly model: string;
+  readonly dedup_key: string | null;
+  readonly input_tokens: number;
+  readonly output_tokens: number;
+  readonly cache_read_tokens: number;
+  readonly cache_write_tokens: number;
 }
 
 /** A reading row with its location. */
@@ -699,6 +710,46 @@ const BUILDERS = {
       }),
     };
   },
+  // D-102 (G7): each machine's recorded requests and tokens, with the requests behind them.
+  "by-machine": (db: Db): Explanation => {
+    const requests = db.prepare(
+      `SELECT e.*, ${LOCATION_COLUMNS} FROM machine_requests e ${LOCATION_JOIN}
+       WHERE e.machine_id = ? ORDER BY e.timestamp_utc, e.raw_line_id`,
+    );
+    return {
+      metric: "by-machine",
+      title: "Claude Code usage by machine",
+      section: "observed",
+      groups: (
+        db
+          .prepare(
+            "SELECT * FROM obs_usage_by_machine ORDER BY is_this_machine DESC, requests DESC",
+          )
+          .all() as unknown as MachineRow[]
+      ).map((summary) => ({
+        title: `${summary.machine_label}${summary.is_this_machine === 1 ? " (this machine)" : ""}`,
+        measures: [
+          { label: "Requests", kind: "count", reported: summary.requests },
+          { label: "Input tokens", kind: "tokens", reported: summary.input_tokens },
+          { label: "Output tokens", kind: "tokens", reported: summary.output_tokens },
+          { label: "Cache read tokens", kind: "tokens", reported: summary.cache_read_tokens },
+          { label: "Cache write tokens", kind: "tokens", reported: summary.cache_write_tokens },
+        ],
+        events: (requests.all(summary.machine_id) as unknown as MachineRequestRow[]).map((row) => ({
+          at: row.timestamp_utc,
+          description: `request ${row.dedup_key ?? "without an ID"} | ${row.model}`,
+          location: formatLocation(row),
+          contributions: [
+            1,
+            row.input_tokens,
+            row.output_tokens,
+            row.cache_read_tokens,
+            row.cache_write_tokens,
+          ],
+        })),
+      })),
+    };
+  },
   "burn-rate": (db: Db): Explanation => ({
     metric: "burn-rate",
     title: "Burn rate",
@@ -783,6 +834,62 @@ const BUILDERS = {
             row.unpriced_reason === null ? 1 : 0,
             row.unpriced_reason === null ? 0 : 1,
           ],
+        })),
+      })),
+    };
+  },
+  // D-102 (G7): each machine at API list price; its share is of the amounts listed here.
+  "price-by-machine": (db: Db): Explanation => {
+    const requests = db.prepare(
+      `SELECT r.dedup_key, r.model, r.timestamp_utc, c.total_usd, c.unpriced_reason, ${LOCATION_COLUMNS}
+       FROM machine_requests r JOIN request_costs c ON c.raw_line_id = r.raw_line_id
+       JOIN raw_lines l ON l.id = r.raw_line_id JOIN source_files f ON f.id = l.source_file_id
+       WHERE r.machine_id = ? ORDER BY r.timestamp_utc, r.raw_line_id`,
+    );
+    return {
+      metric: "price-by-machine",
+      title: "Observed tokens at API list price, by machine",
+      section: "projected",
+      groups: (
+        db
+          .prepare(
+            "SELECT machine_id, machine_label, is_this_machine, list_price_usd, unpriced_requests FROM proj_api_list_price_by_machine ORDER BY is_this_machine DESC, list_price_usd DESC",
+          )
+          .all() as {
+          machine_id: string;
+          machine_label: string;
+          is_this_machine: number;
+          list_price_usd: number;
+          unpriced_requests: number;
+        }[]
+      ).map((m) => ({
+        title: `${m.machine_label}${m.is_this_machine === 1 ? " (this machine)" : ""}`,
+        measures: [
+          { label: "At API list price", kind: "usd", reported: m.list_price_usd },
+          {
+            label: "Unpriced requests",
+            kind: "count",
+            reported: m.unpriced_requests,
+            nullIsZero: true,
+          },
+        ],
+        events: (
+          requests.all(m.machine_id) as unknown as (Located & {
+            dedup_key: string | null;
+            model: string;
+            timestamp_utc: string;
+            total_usd: number | null;
+            unpriced_reason: string | null;
+          })[]
+        ).map((row) => ({
+          at: row.timestamp_utc,
+          description: `request ${row.dedup_key ?? "without an ID"} | ${row.model} | ${
+            row.unpriced_reason === null
+              ? formatNumber(row.total_usd, "usd")
+              : `unpriced (${row.unpriced_reason.replaceAll("_", " ")})`
+          }`,
+          location: formatLocation(row),
+          contributions: [row.total_usd, row.unpriced_reason === null ? 0 : 1],
         })),
       })),
     };
