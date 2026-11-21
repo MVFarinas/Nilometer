@@ -394,6 +394,12 @@ export function describeIngest(outcome: IngestCommandOutcome): string[] {
     `This run: ${run.logFiles} session ${run.logFiles === 1 ? "log" : "logs"}${run.spoolRead ? " and the status line spool" : ""}, ${run.linesRead} complete lines read, ${run.linesStored} new, ${run.filesRewritten} rewritten files reread.`,
     `Stored: ${totals.requests} requests (${totals.unkeyedRequests} without IDs), ${totals.limitHits} limit hits, ${totals.otherEvents} other error or retry events, ${totals.modelFallbacks} ${totals.modelFallbacks === 1 ? "request" : "requests"} refused and retried with another model; ${span}.`,
     `Status line: ${totals.statusReadings} readings, ${totals.malformedReadings} undecodable spool lines, ${totals.invalidWindows} flagged window values, ${totals.hookErrors} hook append failures.`,
+    // Shown only when it happened: a data folder moved or copied makes its spool a new file (D-104).
+    ...optionalLine(
+      run.spoolLinesFromOtherPath === 0
+        ? null
+        : `Status line: ${run.spoolLinesFromOtherPath} readings were already stored from the spool at its earlier path (the data folder was moved or copied), so they weren't stored twice.`,
+    ),
     `Reported for review: ${totals.malformedLines} malformed log lines${run.unreadable === 0 ? "" : `, ${run.unreadable} files or folders that couldn't be read this run (skipped)`}.`,
     ...describeMachinesStep(outcome.machines),
     ...optionalLine(describeTightened(outcome.permissionsTightened)),

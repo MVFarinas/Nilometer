@@ -230,6 +230,49 @@ describe("request_costs: rules without fixtures", () => {
     expect(cost(db, "sx/m/opus55-fast").total_usd).toBeCloseTo(0.00356, 12);
   });
 
+  it("prices Fable 5.2 and Mythos 5.2 at their own rates, with the 0.025× cache read, at standard and fast speed", () => {
+    // Rates read from the pricing page on 2026-11-21, when Fable 5.2 first appeared in real logs as
+    // unpriced. It costs less than Fable 5.1, so pricing it as 5.1 would overstate every token.
+    const db = ingest(
+      [],
+      [
+        line("fable52", "claude-fable-5-2", {
+          input_tokens: 1000,
+          output_tokens: 200,
+          cache_read_input_tokens: 10000,
+          cache_creation: { ephemeral_5m_input_tokens: 400, ephemeral_1h_input_tokens: 500 },
+        }),
+        line("mythos52", "claude-mythos-5-2", {
+          input_tokens: 1000,
+          output_tokens: 200,
+          cache_read_input_tokens: 10000,
+          cache_creation: { ephemeral_5m_input_tokens: 400, ephemeral_1h_input_tokens: 500 },
+        }),
+        line("fable52-fast", "claude-fable-5-2", {
+          input_tokens: 100,
+          output_tokens: 50,
+          cache_read_input_tokens: 1000,
+          cache_creation: { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 10 },
+          speed: "fast",
+        }),
+      ],
+    );
+    // 1000 × $8 = 8000, 200 × $40 = 8000, 10000 × $0.20 = 2000, 400 × $10 = 4000, 500 × $16 = 8000
+    // → 30000 µ$.
+    const standard = cost(db, "sx/m/fable52");
+    expect(standard.input_usd).toBeCloseTo(0.008, 12);
+    expect(standard.output_usd).toBeCloseTo(0.008, 12);
+    expect(standard.cache_read_usd).toBeCloseTo(0.002, 12);
+    expect(standard.cache_write_5m_usd).toBeCloseTo(0.004, 12);
+    expect(standard.cache_write_1h_usd).toBeCloseTo(0.008, 12);
+    expect(standard).toMatchObject({ unpriced_reason: null, verified_on: "2026-11-21" });
+    expect(standard.total_usd).toBeCloseTo(0.03, 12);
+    expect(cost(db, "sx/m/mythos52").total_usd).toBeCloseTo(0.03, 12);
+    // Fast: $16 / $80, caching multipliers on the $16 fast input. 100 × $16 = 1600, 50 × $80 = 4000,
+    // 1000 × $0.40 = 400, 20 × $20 = 400, 10 × $32 = 320 → 6720 µ$.
+    expect(cost(db, "sx/m/fable52-fast").total_usd).toBeCloseTo(0.00672, 12);
+  });
+
   it("prices every older and limited-access model at its own rates, by alias and by snapshot ID", () => {
     // Rates read from the pricing page on 2026-09-24. Every request is 1000 input, 200 output,
     // 10000 cache read, 400 five-minute and 500 one-hour cache-write tokens, so each family's

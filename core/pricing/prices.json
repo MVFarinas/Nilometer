@@ -2,6 +2,44 @@
   "comment": "Anthropic API list prices, USD per million tokens. Every row was read from source_url on verified_on. effective_from 0000-01-01 means in effect since release as far as can be verified (D-020). A price change adds a row; never edit a past row. See the pricing-table skill.",
   "rows": [
     {
+      "model_id": "claude-fable-5-2",
+      "effective_from": "0000-01-01",
+      "input": 8,
+      "output": 40,
+      "cache_write_5m": 10,
+      "cache_write_1h": 16,
+      "cache_read": 0.2,
+      "fast": {
+        "input": 16,
+        "output": 80,
+        "cache_write_5m": 20,
+        "cache_write_1h": 32,
+        "cache_read": 0.4
+      },
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-11-21"
+    },
+    {
+      "model_id": "claude-mythos-5-2",
+      "effective_from": "0000-01-01",
+      "input": 8,
+      "output": 40,
+      "cache_write_5m": 10,
+      "cache_write_1h": 16,
+      "cache_read": 0.2,
+      "fast": {
+        "input": 16,
+        "output": 80,
+        "cache_write_5m": 20,
+        "cache_write_1h": 32,
+        "cache_read": 0.4
+      },
+      "standard_rate_max_input_tokens": null,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verified_on": "2026-11-21"
+    },
+    {
       "model_id": "claude-fable-5-1",
       "effective_from": "0000-01-01",
       "input": 10,

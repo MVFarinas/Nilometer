@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 (2026-11-21)
+
+- **Claude Fable 5.2 and Claude Mythos 5.2 are priced:** $8 / $40 per million input and output tokens, with cache writes at $10 (5 minutes) and $16 (1 hour), cache reads at $0.20, and fast mode at $16 / $80. Until now their requests were counted as unpriced and left out of the API list price amounts. Rates were read from Anthropic's pricing page on 2026-11-21.
+- **A moved or copied data folder no longer stores status line readings twice:** pointing Nilometer at a moved data folder (`--data-dir`, `NILOMETER_HOME`) made the spool look like a new file, so every reading it already held was stored again. `ingest` now recognises them and says how many it found.
+- **Development:** ESLint 10.15 and typescript-eslint 8.73, which close a `minimatch` advisory in the development tools. The installed package is unaffected.
+
 ## 0.3.0 (2026-11-07)
 
 - **Combine your machines:** `nilometer machines folder <synced folder> --name <name>` on each computer you use Claude Code on. Every ingest then writes this machine's records to that folder (iCloud Drive, Dropbox, OneDrive, or any folder your machines share) and reads the others'. Lockouts, limit hits and window readings from every machine are merged, and the report and page gain a **By machine** section: each machine's requests and tokens, and among the projections, its share of your recorded usage at API list price. Usage elsewhere (claude.ai, the mobile app, computers not added) is named, not numbered.

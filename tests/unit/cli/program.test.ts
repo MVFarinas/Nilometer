@@ -193,6 +193,7 @@ describe("describeIngest", () => {
       linesStored: 30,
       linesAlreadyStored: 10,
       filesRewritten: 1,
+      spoolLinesFromOtherPath: 0,
       unreadable: 0,
     },
     derived: { lines: 30, rebuilt: false },
@@ -241,6 +242,17 @@ describe("describeIngest", () => {
     );
     expectNoBannedWording(empty);
   });
+
+  it("says when spool readings were already stored from the spool's earlier path (D-104)", () => {
+    const moved = describeIngest({
+      ...outcome,
+      run: { ...outcome.run, spoolLinesFromOtherPath: 25 },
+    });
+    expect(moved).toContain(
+      "Status line: 25 readings were already stored from the spool at its earlier path (the data folder was moved or copied), so they weren't stored twice.",
+    );
+    expectNoBannedWording(moved);
+  });
 });
 
 describe("describeIngest wording", () => {
@@ -263,6 +275,7 @@ describe("describeIngest wording", () => {
         linesStored: 4,
         linesAlreadyStored: 0,
         filesRewritten: 0,
+        spoolLinesFromOtherPath: 0,
         unreadable: 0,
         ...run,
       },

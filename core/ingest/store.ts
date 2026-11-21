@@ -17,6 +17,13 @@ export type SourceKind = "log" | "spool";
 export type IngestMode = "incremental" | "full";
 
 /**
+ * Prefix of the root under which another machine's export files are stored (D-103). A local root is
+ * a folder path, which can't start with it, so ingest can tell imported files apart without
+ * migration 033's tables.
+ */
+export const MACHINE_ROOT_PREFIX = "machine:";
+
+/**
  * Hashes line bytes for identity.
  * @param bytes - The exact line bytes.
  * @returns Lowercase hex SHA-256.

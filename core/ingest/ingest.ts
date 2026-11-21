@@ -19,7 +19,9 @@ import {
 } from "./reader.js";
 import {
   type IngestMode,
+  MACHINE_ROOT_PREFIX,
   type SourceKind,
+  contentHash,
   finishRun,
   findOrCreateSourceFile,
   rawLineWriter,
@@ -72,6 +74,11 @@ export interface IngestSummary {
   readonly linesAlreadyStored: number;
   /** Files whose rewrite was detected and which were reread from the start. */
   readonly filesRewritten: number;
+  /**
+   * Status line readings not stored again because the same line is already stored from the spool at
+   * another path: the data folder was moved or copied (D-104). Counted, and recorded per file.
+   */
+  readonly spoolLinesFromOtherPath: number;
   /**
    * Files and folders this run couldn't read: deleted between discovery and open, or permission
    * denied. They're skipped and counted, never fatal (D-050). Claude Code deletes session logs
@@ -132,6 +139,8 @@ interface RunCounts {
   linesStored: number;
   /** Files detected as rewritten. */
   filesRewritten: number;
+  /** Spool lines already stored from the spool at another path (D-104). */
+  spoolLinesFromOtherPath: number;
 }
 
 /** A file to ingest. */
@@ -182,6 +191,41 @@ export function normalizeWindowsRelativePaths(db: Db, platform: NodeJS.Platform)
 }
 
 /**
+ * Builds a check for whether a spool line is already stored from this machine's spool at another
+ * path (D-104).
+ *
+ * Source files are known by path, so a data folder that was moved or copied (`--data-dir`,
+ * `NILOMETER_HOME`) makes the same spool a new file, read from its first byte. Without this check
+ * every reading it already held was stored a second time: G7.6 found 25,706 doubled on one machine,
+ * and window readings listed twice. A spool line carries its own capture time and payload, and one
+ * file already stores identical lines once, so identical bytes at another path are the same reading.
+ * Another machine's readings are left out: they never share this machine's spool, and the importer
+ * has its own origin check (D-103).
+ * @param db - Open database, inside the file's transaction.
+ * @param fileId - The spool file being read.
+ * @returns A check by line bytes, or null when no other local spool path is stored.
+ */
+function spoolStoredElsewhere(db: Db, fileId: number): ((bytes: Buffer) => boolean) | null {
+  const others = (
+    db
+      .prepare(
+        // By root, not by machine_files: ingest also runs on databases from before migration 033.
+        "SELECT id FROM source_files WHERE kind = 'spool' AND id <> ? AND substr(root, 1, length(?)) <> ?",
+      )
+      .all(fileId, MACHINE_ROOT_PREFIX, MACHINE_ROOT_PREFIX) as { id: number }[]
+  ).map((row) => row.id);
+  if (others.length === 0) {
+    return null;
+  }
+  // The UNIQUE (source_file_id, content_hash) index answers each lookup; there are only ever a few
+  // spool paths, so the IN list stays short.
+  const seen = db.prepare(
+    `SELECT 1 FROM raw_lines WHERE source_file_id IN (${others.map(() => "?").join(", ")}) AND content_hash = ? LIMIT 1`,
+  );
+  return (bytes) => seen.get(...others, contentHash(bytes)) !== undefined;
+}
+
+/**
  * Reads one file's new complete lines into raw_lines and saves its position, in one transaction.
  * @param db - Open, migrated database.
  * @param file - Kind, root, and path below the root.
@@ -213,16 +257,31 @@ function ingestFile(db: Db, file: FileRef, run: RunContext): void {
       });
     }
     const store = rawLineWriter(db, row.id, runId);
+    const storedElsewhere = file.kind === "spool" ? spoolStoredElsewhere(db, row.id) : null;
+    let fromOtherPath = 0;
     const result = readCompleteLines(
       path,
       start,
       (line) => {
+        if (storedElsewhere?.(line.bytes) === true) {
+          fromOtherPath += 1;
+          return;
+        }
         if (store(line)) {
           counts.linesStored += 1;
         }
       },
       options.chunkSize ?? DEFAULT_CHUNK_SIZE,
     );
+    if (fromOtherPath > 0) {
+      counts.spoolLinesFromOtherPath += fromOtherPath;
+      recordProblem(db, {
+        runId,
+        fileId: row.id,
+        problem: "spool_line_stored_from_other_path",
+        detail: `${fromOtherPath} status line readings are already stored from the spool at another path (the data folder was moved or copied); not stored again`,
+      });
+    }
     counts.linesRead += result.linesRead;
     saveFileState(
       db,
@@ -258,6 +317,7 @@ export function ingestLogs(db: Db, options: IngestOptions): IngestSummary {
     linesRead: 0,
     linesStored: 0,
     filesRewritten: 0,
+    spoolLinesFromOtherPath: 0,
   };
   const run = { runId, options, stat, counts };
   for (const root of options.roots) {
@@ -282,6 +342,7 @@ export function ingestLogs(db: Db, options: IngestOptions): IngestSummary {
     linesStored: counts.linesStored,
     linesAlreadyStored: counts.linesRead - counts.linesStored,
     filesRewritten: counts.filesRewritten,
+    spoolLinesFromOtherPath: counts.spoolLinesFromOtherPath,
     unreadable: counts.unreadable,
   };
 }

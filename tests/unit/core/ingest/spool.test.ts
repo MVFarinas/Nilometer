@@ -318,6 +318,48 @@ describe("spool ingestion end to end", () => {
     });
   });
 
+  it("stores each reading once when the data folder moves, and reports the repeats (D-104)", () => {
+    // G7.6 copied a data folder and pointed Nilometer at the copy: the spool became a new path, was
+    // read from its first byte, and every reading it already held was stored a second time.
+    const lines = [1, 2, 3, 4, 5].map((n) =>
+      spoolLine(PAYLOAD, { captured_at_s: 1774030000 + n }).toString(),
+    );
+    const oldDir = mkdtempSync(join(tmpdir(), "aua-spool-moved-old-"));
+    writeFileSync(join(oldDir, SPOOL_FILE), `${lines.slice(0, 3).join("\n")}\n`);
+    const db = openDatabase(":memory:", join(ROOT, "core/schema"));
+    const logRoot = mkdtempSync(join(tmpdir(), "aua-spool-moved-logs-"));
+    mkdirSync(join(logRoot, "projects"));
+    expect(
+      ingestLogs(db, { roots: [logRoot], mode: "incremental", now, spoolDir: oldDir }),
+    ).toMatchObject({ linesStored: 3, spoolLinesFromOtherPath: 0 });
+    // The moved copy holds the same three readings and one recorded since the move.
+    const newDir = mkdtempSync(join(tmpdir(), "aua-spool-moved-new-"));
+    writeFileSync(join(newDir, SPOOL_FILE), `${lines.slice(0, 4).join("\n")}\n`);
+    expect(
+      ingestLogs(db, { roots: [logRoot], mode: "incremental", now, spoolDir: newDir }),
+    ).toMatchObject({ linesRead: 4, linesStored: 1, spoolLinesFromOtherPath: 3 });
+    expect(
+      db
+        .prepare(
+          "SELECT detail FROM ingest_report WHERE problem = 'spool_line_stored_from_other_path'",
+        )
+        .all(),
+    ).toEqual([
+      {
+        detail:
+          "3 status line readings are already stored from the spool at another path (the data folder was moved or copied); not stored again",
+      },
+    ]);
+    // Four readings, not seven: each stored once.
+    expect(deriveNewSpoolLines(db)).toBe(4);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM status_readings").get()).toEqual({ n: 4 });
+    // From then on the new path reads on from where it stopped, as any spool does.
+    writeFileSync(join(newDir, SPOOL_FILE), `${lines.join("\n")}\n`);
+    expect(
+      ingestLogs(db, { roots: [logRoot], mode: "incremental", now, spoolDir: newDir }),
+    ).toMatchObject({ linesRead: 1, linesStored: 1, spoolLinesFromOtherPath: 0 });
+  });
+
   it("reports no spool when the data directory has none", () => {
     const db = openDatabase(":memory:", join(ROOT, "core/schema"));
     const logRoot = mkdtempSync(join(tmpdir(), "aua-spool-none-"));

@@ -16,6 +16,7 @@ import { gunzipSync } from "node:zlib";
 import { type Db, transaction } from "../db/database.js";
 import { isObject } from "../ingest/classify.js";
 import {
+  MACHINE_ROOT_PREFIX,
   contentHash,
   findOrCreateSourceFile,
   recordProblem,
@@ -79,7 +80,7 @@ export interface ImportSummary {
  * @returns The `source_files.root` value.
  */
 export function machineRoot(machineId: string): string {
-  return `machine:${machineId}`;
+  return `${MACHINE_ROOT_PREFIX}${machineId}`;
 }
 
 /**
