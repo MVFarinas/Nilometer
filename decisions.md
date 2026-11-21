@@ -1853,3 +1853,14 @@ Most entries below come from studying five existing Claude usage tools (2026-09-
 - **Decision:** (a). Another machine's readings are left out of the check: they never share this machine's spool, and the importer already stores each line once by its origin (D-103).
 - **Cost:** none in normal use, where the database holds one local spool path and the check isn't prepared at all. After a move, one indexed lookup per spool line: 8 s for an ingest that recognised 32,871 readings on real data.
 - **Proof:** a copy of the Mac's real data folder, ingested at its new path, recognised all 32,871 readings it already held and stored the 107 written since, instead of 33,725 lines. A fixture moving a three-reading spool and adding one stores four, reports three, and then reads on from its offset. With the check removed, that test fails.
+
+## D-105: On Windows, every test takes the 60-second limit (2026-11-21)
+
+- **Status:** accepted 2026-11-21, during the 0.3.1 release. It changes one of D-051's decisions, the timeout for integration tests.
+- **Context:** D-051 raised the timeout file by file, for the files that had timed out. Windows CI runners have since timed out four more files in turn: the spool tests (M16, 4.0–7.7 s), the git attribution tests, `combine.test.ts` (0.3.0, 7.3–9.8 s), and then, on 0.3.1's push, `report.test.ts` (7.1 s) and `cli/machines.test.ts` (5.6 s). Each time every result was right, and the same tests run in under a second on a Mac. Each was found by a failed release CI run, after the push.
+- **Options:**
+  - (a) Keep raising the limit file by file. Rejected: every test that builds a real database is a candidate, and the next one is found only by a failed release.
+  - (b) **Raise the limit to 60 s for every test on Windows, in `vitest.config.ts`; keep the 5-second default on macOS and Linux.** Chosen.
+  - (c) Raise it everywhere. Rejected: a test that really slows down should still fail somewhere, and on macOS and Linux the default leaves room.
+- **Decision:** (b). The per-file limits D-051 added stay, since they also cover loaded Macs.
+- **Consequence:** a Windows-only slowdown under 60 s no longer fails CI. The Windows job's run times stay in its log.

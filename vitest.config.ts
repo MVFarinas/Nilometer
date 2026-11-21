@@ -11,6 +11,11 @@ export default defineConfig({
     globalSetup: ["tests/setup/temp-root.ts"],
     // A committed `.only` must fail the run everywhere, not only in CI.
     allowOnly: false,
+    // Windows CI runners run database-building tests 5-10x slower than a Mac, and four files in turn
+    // timed out at Vitest's 5-second default with every result right (D-051, D-105). There every test
+    // takes the integration limit; macOS and Linux keep the default, so a test that really slows down
+    // still fails somewhere.
+    ...(process.platform === "win32" ? { testTimeout: 60_000 } : {}),
     coverage: {
       provider: "v8",
       // Listing sources explicitly makes a file with no tests count as 0% rather than vanish.
