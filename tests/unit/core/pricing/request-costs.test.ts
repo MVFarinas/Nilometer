@@ -273,6 +273,51 @@ describe("request_costs: rules without fixtures", () => {
     expect(cost(db, "sx/m/fable52-fast").total_usd).toBeCloseTo(0.00672, 12);
   });
 
+  it("prices Haiku 5.5 up to 100,000 prompt tokens, and leaves a longer prompt unpriced, never at the lower rate", () => {
+    // Rates read from the pricing page on 2026-11-24, when Haiku 5.5 first appeared in real logs as
+    // unpriced. A prompt over 100,000 tokens, counting cache reads and writes, pays higher rates the
+    // table doesn't store, so it is reported as unpriced rather than priced at the lower ones.
+    const db = ingest(
+      [],
+      [
+        line("haiku55", "claude-haiku-5-5", {
+          input_tokens: 1000,
+          output_tokens: 200,
+          cache_read_input_tokens: 10000,
+          cache_creation: { ephemeral_5m_input_tokens: 400, ephemeral_1h_input_tokens: 500 },
+        }),
+        // Exactly 100,000 prompt tokens: "over 100,000" is strict, so this is still the lower rate.
+        line("haiku55-at", "claude-haiku-5-5", {
+          input_tokens: 90000,
+          output_tokens: 0,
+          cache_read_input_tokens: 10000,
+        }),
+        // 100,001 prompt tokens, of which 10,001 are cache reads.
+        line("haiku55-over", "claude-haiku-5-5", {
+          input_tokens: 90000,
+          output_tokens: 10,
+          cache_read_input_tokens: 10001,
+        }),
+      ],
+    );
+    // 1000 × $0.10 = 100, 200 × $0.50 = 100, 10000 × $0.01 = 100, 400 × $0.125 = 50, 500 × $0.20 = 100
+    // → 450 µ$.
+    const standard = cost(db, "sx/m/haiku55");
+    expect(standard.input_usd).toBeCloseTo(0.0001, 12);
+    expect(standard.output_usd).toBeCloseTo(0.0001, 12);
+    expect(standard.cache_read_usd).toBeCloseTo(0.0001, 12);
+    expect(standard.cache_write_5m_usd).toBeCloseTo(0.00005, 12);
+    expect(standard.cache_write_1h_usd).toBeCloseTo(0.0001, 12);
+    expect(standard).toMatchObject({ unpriced_reason: null, verified_on: "2026-11-24" });
+    expect(standard.total_usd).toBeCloseTo(0.00045, 12);
+    // 90000 × $0.10 = 9000, 10000 × $0.01 = 100 → 9100 µ$.
+    expect(cost(db, "sx/m/haiku55-at").total_usd).toBeCloseTo(0.0091, 12);
+    expect(cost(db, "sx/m/haiku55-over")).toMatchObject({
+      unpriced_reason: "long_context_rate_unverified",
+      total_usd: null,
+    });
+  });
+
   it("prices every older and limited-access model at its own rates, by alias and by snapshot ID", () => {
     // Rates read from the pricing page on 2026-09-24. Every request is 1000 input, 200 output,
     // 10000 cache read, 400 five-minute and 500 one-hour cache-write tokens, so each family's

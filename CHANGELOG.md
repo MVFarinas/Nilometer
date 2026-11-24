@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2 (2026-11-24)
+
+- **Claude Haiku 5.5 is priced:** $0.10 / $0.50 per million input and output tokens, with cache writes at $0.125 (5 minutes) and $0.20 (1 hour), and cache reads at $0.01. These are its rates for prompts up to 100,000 tokens, counting cache reads and writes. A longer prompt pays higher rates, and Nilometer reports it as unpriced rather than pricing it at the lower ones. Rates were read from Anthropic's pricing page on 2026-11-24.
+
 ## 0.3.1 (2026-11-21)
 
 - **Claude Fable 5.2 and Claude Mythos 5.2 are priced:** $8 / $40 per million input and output tokens, with cache writes at $10 (5 minutes) and $16 (1 hour), cache reads at $0.20, and fast mode at $16 / $80. Until now their requests were counted as unpriced and left out of the API list price amounts. Rates were read from Anthropic's pricing page on 2026-11-21.
